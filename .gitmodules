@@ -1,3 +1,4 @@
 [submodule "external/armsx2"]
 	path = external/armsx2
-	url = https://github.com/ARMSX2/ARMSX2.git
+	url = https://github.com/SPD13/armsx2-steam-frame.git
+	branch = ps2v
