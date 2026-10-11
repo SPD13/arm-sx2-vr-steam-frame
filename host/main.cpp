@@ -11,9 +11,12 @@
 //   4. bind the XR session to that device and run the frame loop on this thread.
 // Teardown runs the other way: the session goes before the GS destroys the device.
 
+#include "DepthView.h"
 #include "Emu.h"
 #include "ScreenLayer.h"
 #include "XrApp.h"
+
+#include "GS/GSVolumetric.h"
 
 #include "GS/Renderers/Vulkan/GSDeviceVK.h"
 #include "GS/Renderers/Vulkan/VKLibretro.h"
@@ -21,10 +24,14 @@
 #include "common/Console.h"
 #include "common/CrashHandler.h"
 #include "common/Error.h"
+#include "common/FileSystem.h"
+
+#include "fmt/format.h"
 
 #define VK_NO_PROTOTYPES
 #include "libretro_vulkan.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -36,6 +43,8 @@ struct ScreenOptions
 {
 	float width = 2.4f; // meters
 	float distance = 2.2f; // meters in front of the head
+	bool depth_panel = true; // M2 debug view of the depth beside the screen
+	std::string depth_dump_dir; // when set, dump depth + colour PNGs there every 10 s
 };
 
 static void PrintUsage(const char* argv0)
@@ -47,6 +56,10 @@ static void PrintUsage(const char* argv0)
 		"  --upscale N            Internal resolution multiplier (1-8)\n"
 		"  --screen-width M       Virtual screen width in meters (default 2.4)\n"
 		"  --screen-distance M    Virtual screen distance in meters (default 2.2)\n"
+		"  --no-depth-panel       Hide the depth debug view beside the screen\n"
+		"  --sdl-pad              Drive pad 1 from the first SDL gamepad (testing)\n"
+		"  --depth-trace          Log which colour/depth targets the 3D draws use\n"
+		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
 		"In the headset: both sticks clicked recenters the screen.\n",
 		argv0);
 }
@@ -69,6 +82,14 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, ScreenOptions* 
 			screen->width = std::strtof(argv[++i], nullptr);
 		else if (!std::strcmp(arg, "--screen-distance") && has_value)
 			screen->distance = std::strtof(argv[++i], nullptr);
+		else if (!std::strcmp(arg, "--sdl-pad"))
+			emu->sdl_pad = true;
+		else if (!std::strcmp(arg, "--depth-trace"))
+			GSVolumetric::SetTrace(true);
+		else if (!std::strcmp(arg, "--no-depth-panel"))
+			screen->depth_panel = false;
+		else if (!std::strcmp(arg, "--depth-dump") && has_value)
+			screen->depth_dump_dir = argv[++i];
 		else if (arg[0] == '-')
 		{
 			std::fprintf(stderr, "Unknown argument: %s\n", arg);
@@ -128,6 +149,20 @@ static XrPosef ScreenPoseInFrontOf(const XrPosef& head, float distance)
 	return pose;
 }
 
+// A panel beside the screen, `offset` meters to its right in the screen's plane, turned to face a
+// viewer `distance` in front of the screen.
+static XrPosef PanelBeside(const XrPosef& screen, float offset, float distance)
+{
+	const XrQuaternionf& q = screen.orientation; // yaw only, see ScreenPoseInFrontOf
+	const float yaw = 2.0f * std::atan2(q.y, q.w);
+	const float turn = std::atan2(-offset, distance);
+	XrPosef pose;
+	pose.orientation = {0.0f, std::sin((yaw + turn) * 0.5f), 0.0f, std::cos((yaw + turn) * 0.5f)};
+	pose.position = {screen.position.x + std::cos(yaw) * offset, screen.position.y,
+		screen.position.z - std::sin(yaw) * offset};
+	return pose;
+}
+
 int main(int argc, char* argv[])
 {
 	Emu::Options emu_options;
@@ -157,6 +192,9 @@ int main(int argc, char* argv[])
 		return EXIT_FAILURE;
 	VKLibretro::SetHWRenderInterface(&s_queue_interface);
 	VKLibretro::Active = true;
+	GSVolumetric::SetEnabled(true);
+	if (!screen_options.depth_dump_dir.empty())
+		FileSystem::EnsureDirectoryExists(screen_options.depth_dump_dir.c_str(), true);
 
 	Emu::Start(emu_options);
 	if (!Emu::WaitForGS())
@@ -169,10 +207,18 @@ int main(int argc, char* argv[])
 
 	GSDeviceVK* gs = GSDeviceVK::GetInstance();
 	ScreenLayer screen;
-	if (!xr.CreateSession(gs->GetDevice(), gs->GetGraphicsQueueFamilyIndex()) ||
-		!screen.Create(xr, gs->GetDevice(), gs->GetGraphicsQueue(), gs->GetGraphicsQueueFamilyIndex()))
+	ScreenLayer depth_panel;
+	DepthView depth_view;
+	const VkDevice device = gs->GetDevice();
+	const VkQueue queue = gs->GetGraphicsQueue();
+	const uint32_t queue_family = gs->GetGraphicsQueueFamilyIndex();
+	if (!xr.CreateSession(device, queue_family) || !screen.Create(xr, device, queue, queue_family) ||
+		!depth_panel.Create(xr, device, queue, queue_family) ||
+		!depth_view.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 	{
 		Emu::RequestShutdown();
+		depth_view.Destroy();
+		depth_panel.Destroy();
 		screen.Destroy();
 		xr.DestroySession();
 		VKLibretro::AbortPacing();
@@ -180,6 +226,13 @@ int main(int argc, char* argv[])
 		return EXIT_FAILURE;
 	}
 	screen.SetWidth(screen_options.width);
+	constexpr float depth_panel_width = 1.2f;
+	depth_panel.SetWidth(depth_panel_width);
+
+	using Clock = std::chrono::steady_clock;
+	Clock::time_point next_stats_log = Clock::now() + std::chrono::seconds(5);
+	Clock::time_point next_dump = Clock::now() + std::chrono::seconds(10);
+	int dump_index = 0;
 
 	bool screen_placed = false;
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
@@ -197,23 +250,52 @@ int main(int argc, char* argv[])
 		XrPosef head;
 		if ((!screen_placed || input.recenter) && xr.LocateHead(frame.display_time, &head))
 		{
-			screen.SetPose(ScreenPoseInFrontOf(head, screen_options.distance));
+			const XrPosef screen_pose = ScreenPoseInFrontOf(head, screen_options.distance);
+			screen.SetPose(screen_pose);
+			depth_panel.SetPose(PanelBeside(screen_pose, 0.5f * (screen_options.width + depth_panel_width) + 0.15f,
+				screen_options.distance));
 			screen_placed = true;
 		}
 
 		VKLibretro::Frame emu_frame;
 		if (VKLibretro::ConsumeFrame(&emu_frame))
+		{
 			screen.Update(emu_frame);
+			const Clock::time_point now = Clock::now();
+			if (!screen_options.depth_dump_dir.empty() && now >= next_dump && emu_frame.depth_image)
+			{
+				depth_view.RequestDump(fmt::format("{}/frame{:03d}", screen_options.depth_dump_dir, dump_index++));
+				next_dump = now + std::chrono::seconds(10);
+			}
+			VKLibretro::Frame depth_frame;
+			if ((screen_options.depth_panel || !screen_options.depth_dump_dir.empty()) &&
+				depth_view.Process(emu_frame, &depth_frame))
+				depth_panel.Update(depth_frame);
+			if (now >= next_stats_log)
+			{
+				next_stats_log = now + std::chrono::seconds(5);
+				if (!emu_frame.depth_image)
+					Console.WriteLn("Depth: none this frame");
+				else if (const auto stats = depth_view.LastStats())
+					Console.WriteLnFmt("Depth: coverage {:.0f}%, HUD {:.0f}%{}, range {:.6f}..{:.6f}, canvas {}x{}, scale {:.1f}",
+						stats->coverage * 100.0f, stats->hud * 100.0f, emu_frame.prehud_view ? "" : " (no pre-HUD copy)",
+						stats->zmin, stats->zmax, emu_frame.depth_width, emu_frame.depth_height, emu_frame.depth_scale);
+			}
+		}
 
-		const XrCompositionLayerBaseHeader* layers[1];
+		const XrCompositionLayerBaseHeader* layers[2];
 		uint32_t layer_count = 0;
 		if (screen.HasImage())
 			layers[layer_count++] = screen.Layer();
+		if (screen_options.depth_panel && depth_panel.HasImage())
+			layers[layer_count++] = depth_panel.Layer();
 		xr.EndFrame(frame, layers, layer_count);
 	}
 
 	Console.WriteLn("Shutting down.");
 	Emu::RequestShutdown();
+	depth_view.Destroy();
+	depth_panel.Destroy();
 	screen.Destroy();
 	xr.DestroySession();
 	VKLibretro::AbortPacing();

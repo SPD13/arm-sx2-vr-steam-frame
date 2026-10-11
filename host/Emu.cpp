@@ -29,6 +29,8 @@
 #include "common/StringUtil.h"
 #include "common/Threading.h"
 
+#include "fmt/format.h"
+
 #include "pcsx2/PrecompiledHeader.h"
 
 #include "pcsx2/Achievements.h"
@@ -161,7 +163,16 @@ bool Emu::InitializeConfig(const Options& options)
 		// Vulkan is the only renderer that can hand frames to the XR compositor.
 		s_base_settings->SetIntValue("EmuCore/GS", "Renderer", static_cast<int>(GSRendererType::VK));
 		// The Frame controllers also show up as an SDL gamepad (28de:11e0); OpenXR owns them.
-		s_base_settings->SetBoolValue("InputSources", "SDL", false);
+		s_base_settings->SetBoolValue("InputSources", "SDL", options.sdl_pad);
+		if (options.sdl_pad)
+		{
+			static constexpr std::pair<const char*, const char*> bindings[] = {
+				{"Up", "DPadUp"}, {"Down", "DPadDown"}, {"Left", "DPadLeft"}, {"Right", "DPadRight"},
+				{"Cross", "FaceSouth"}, {"Circle", "FaceEast"}, {"Square", "FaceWest"}, {"Triangle", "FaceNorth"},
+				{"Start", "Start"}, {"Select", "Back"}};
+			for (const auto& [button, sdl] : bindings)
+				s_base_settings->SetStringValue("Pad1", button, fmt::format("SDL-0/{}", sdl).c_str());
+		}
 		if (options.upscale)
 			s_base_settings->SetFloatValue("EmuCore/GS", "upscale_multiplier", static_cast<float>(*options.upscale));
 	}

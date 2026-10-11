@@ -162,7 +162,8 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
   - Test more demanding games.
 - **M1, native host skeleton: DONE 2026-10-11.** TC2 runs in our OpenXR app on the Frame on a flat quad layer, at 60 fps, with audio and native Frame controls. Details in `docs/m1-status.md`.
   - The device is shared through ARMSX2's existing `VKLibretro` hook rather than a new GSDeviceVK patch.
-- **M2, depth export.** The fork patches above, a depth/HUD debug view on a side panel, and a test matrix across the hard-case games.
+- **M2, depth export: DONE for TC2 (2026-10-11).** Depth snapshots per colour target, a pre-HUD colour mask, publishing through `VKLibretro::Frame`, and a debug panel in VR. Details in `docs/m2-status.md`.
+  - The test matrix across the hard-case games is still open; it needs more game dumps.
 - **M3, volumetric window.** Normalization, the displaced mesh, the HUD layer, per-game profiles, and comfort settings.
 - **M4, light gun.** Aim/button bridge, ray-heightfield hit, beam and dot, gun model, haptics, two-gun patch.
 - **M5, polish and ship.**

@@ -1,0 +1,59 @@
+// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// Range and coverage of the valid depth in the presented region. Positive floats order like their
+// bit patterns, so min/max run as uint atomics; each workgroup reduces in shared memory first.
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+#include "depth_common.glsl"
+
+shared uint group_min;
+shared uint group_max;
+shared uint group_valid;
+shared uint group_total;
+shared uint group_hud;
+
+void main()
+{
+	if (gl_LocalInvocationIndex == 0)
+	{
+		group_min = 0xFFFFFFFFu;
+		group_max = 0u;
+		group_valid = 0u;
+		group_total = 0u;
+		group_hud = 0u;
+	}
+	barrier();
+
+	const ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
+	if (all(lessThan(cell, params.out_size)))
+	{
+		const float z = SampleDepth(cell);
+		atomicAdd(group_total, 1u);
+		if (IsHud(cell))
+			atomicAdd(group_hud, 1u);
+		if (z > 0.0)
+		{
+			atomicMin(group_min, floatBitsToUint(z));
+			atomicMax(group_max, floatBitsToUint(z));
+			atomicAdd(group_valid, 1u);
+		}
+	}
+	barrier();
+
+	if (gl_LocalInvocationIndex == 0)
+	{
+		atomicAdd(stats.total, group_total);
+		atomicAdd(stats.hud, group_hud);
+		if (group_valid > 0u)
+		{
+			atomicMin(stats.zmin, group_min);
+			atomicMax(stats.zmax, group_max);
+			atomicAdd(stats.valid, group_valid);
+		}
+	}
+}

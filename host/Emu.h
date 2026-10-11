@@ -17,6 +17,7 @@ namespace Emu
 		bool bios_only = false;
 		bool fast_boot = true;
 		std::optional<int> upscale; // internal resolution multiplier, unset keeps the ini value
+		bool sdl_pad = false; // drive pad 1 from the first SDL gamepad (testing without the headset)
 	};
 
 	// Folders, fonts and the ini at $XDG_CONFIG_HOME/ps2v/inis/PCSX2.ini (created on first run).
