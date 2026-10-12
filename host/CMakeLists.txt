@@ -6,6 +6,8 @@ find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 
 add_executable(ps2v
 	main.cpp
+	Controls.cpp
+	Controls.h
 	Profile.cpp
 	Profile.h
 	DepthView.cpp

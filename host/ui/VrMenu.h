@@ -24,7 +24,7 @@ class VrMenu
 {
 public:
 	// running_stereo / running_flat: the mode this run started in, for the 3D page.
-	VrMenu(VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat);
+	VrMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo, bool running_flat);
 	~VrMenu();
 
 	// Loads the fonts and creates the layers. On failure the menus stay off.
@@ -81,6 +81,7 @@ private:
 
 	VrSettingsStore& m_settings;
 	WebServer& m_web;
+	ControlMap& m_controls;
 	bool m_running_stereo;
 	bool m_running_flat;
 	XrApp* m_xr = nullptr;

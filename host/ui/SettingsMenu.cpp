@@ -42,10 +42,11 @@ namespace
 	constexpr float RADIUS = 28.0f;
 } // namespace
 
-SettingsMenu::SettingsMenu(
-	VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat, Font& text, Font& icons)
+SettingsMenu::SettingsMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo,
+	bool running_flat, Font& text, Font& icons)
 	: m_settings(settings)
 	, m_web(web)
+	, m_controls(controls)
 	, m_running_stereo(running_stereo)
 	, m_running_flat(running_flat)
 	, m_gui(text, icons)
@@ -59,6 +60,7 @@ void SettingsMenu::Refresh()
 	Emu::RefreshSaveSlots();
 	m_slots = Emu::GetSaveSlots();
 	m_dialog = Dialog::None;
+	m_mapping.reset();
 	m_needs_draw = true;
 }
 
@@ -98,6 +100,8 @@ bool SettingsMenu::Update(const GuiInput& input)
 		m_needs_draw = true;
 	}
 
+	UpdateMapping();
+
 	m_gui.Begin(&m_canvas, input, false);
 	Run();
 	m_gui.End();
@@ -136,7 +140,7 @@ void SettingsMenu::Run()
 		c.ResetClip();
 	}
 
-	m_gui.SetBlocked(m_dialog != Dialog::None);
+	m_gui.SetBlocked(m_dialog != Dialog::None || m_mapping);
 	RunNav();
 
 	static constexpr std::array<std::string_view, 7> titles = {
@@ -160,14 +164,16 @@ void SettingsMenu::Run()
 	if (!m_toast.empty() && m_gui.Drawing())
 	{
 		const float w = m_gui.TextWidth(m_toast, Theme::body_size) + 56.0f;
-		const Rect r{std::round(CONTENT_X + 0.5f * (CONTENT_RIGHT - CONTENT_X - w)), HEIGHT - 92.0f, w, 52.0f};
-		m_gui.Draw().FillRect(r, Theme::control_hover, 26.0f);
+		const Rect r{std::round(CONTENT_X + 0.5f * (CONTENT_RIGHT - CONTENT_X - w)), HEIGHT - 72.0f, w, 48.0f};
+		m_gui.Draw().FillRect(r, Theme::control_hover, 24.0f);
 		m_gui.TextCentered(r, m_toast, Theme::body_size, Theme::text);
 	}
 
 	m_gui.SetBlocked(false);
 	if (m_dialog != Dialog::None)
 		RunDialog();
+	if (m_mapping)
+		RunMappingDialog();
 }
 
 void SettingsMenu::RunNav()
@@ -481,50 +487,121 @@ void SettingsMenu::RunTransfer()
 			Theme::small_size, Theme::text_muted);
 }
 
+std::string SettingsMenu::InputLabel(Ps2Control control) const
+{
+	const ControlInput input = m_controls.Get(control);
+	std::string label = ControlMap::Name(input, m_frame_controllers);
+	// Start and Select on one input: a tap is Start, a hold Select.
+	if ((control == Ps2Control::Start || control == Ps2Control::Select) &&
+		m_controls.Get(Ps2Control::Start) == m_controls.Get(Ps2Control::Select))
+		label += control == Ps2Control::Start ? " (tap)" : " (hold)";
+	return label;
+}
+
 void SettingsMenu::RunControls()
+{
+	m_gui.Text(CONTENT_X, m_y + 10.0f, m_frame_controllers ? "Steam Frame controllers" : "Controllers (Touch layout)",
+		Theme::small_size, Theme::accent);
+	if (m_gui.Button(GuiId("controls_reset"), {CONTENT_RIGHT - 240.0f, m_y - 4.0f, 240.0f, 48.0f}, "Reset to defaults",
+			Icon::restart))
+	{
+		m_controls.ResetToDefaults();
+		m_toast = "Controls reset to the defaults";
+		m_toast_until = Clock::now() + std::chrono::seconds(3);
+		m_needs_draw = true;
+	}
+	m_gui.Text(CONTENT_X, m_y + 52.0f,
+		"Click a control, then press what you want for it. Triggers too: in menus they still click.", Theme::small_size,
+		Theme::text_muted);
+
+	// Two columns of nine: buttons, then shoulders and sticks.
+	constexpr int rows = 9;
+	constexpr float gap = 16.0f, row_h = 48.0f, row_gap = 6.0f; // ends above the toasts
+	const float col_w = 0.5f * (CONTENT_RIGHT - CONTENT_X - gap);
+	const float top = m_y + 96.0f;
+	for (int i = 0; i < static_cast<int>(Ps2Control::Count); i++)
+	{
+		const Ps2Control control = static_cast<Ps2Control>(i);
+		const Rect cell{CONTENT_X + static_cast<float>(i / rows) * (col_w + gap),
+			top + static_cast<float>(i % rows) * (row_h + row_gap), col_w, row_h};
+		bool hovered = false;
+		if (m_gui.Clickable(GuiId("map", i), cell, &hovered))
+		{
+			m_mapping = control;
+			m_mapping_armed = false;
+			m_mapping_until = Clock::now() + std::chrono::seconds(5);
+			m_needs_draw = true;
+		}
+		if (!m_gui.Drawing())
+			continue;
+		Canvas& c = m_gui.Draw();
+		c.FillRect(cell, hovered ? Theme::item_hover : Theme::nav, 12.0f);
+		const float text_y = std::round(cell.y + 0.5f * (cell.h - m_gui.TextFont().LineHeight(Theme::body_size)));
+		m_gui.Text(cell.x + 18.0f, text_y, ControlMap::Name(control), Theme::body_size);
+		const bool unmapped = m_controls.Get(control) == ControlInput::None;
+		const std::string label = InputLabel(control);
+		const float label_w = m_gui.TextWidth(label, Theme::small_size) + 28.0f;
+		const Rect pill{cell.Right() - label_w - 10.0f, cell.y + 8.0f, label_w, cell.h - 16.0f};
+		c.FillRect(pill, hovered ? Theme::accent.WithAlpha(0.25f) : Theme::control, 0.5f * pill.h);
+		m_gui.TextCentered(pill, label, Theme::small_size,
+			unmapped ? Theme::danger : (hovered ? Theme::accent_hover : Theme::text_muted));
+	}
+}
+
+void SettingsMenu::UpdateMapping()
+{
+	const Clock::time_point now = Clock::now();
+	if (m_mapping)
+	{
+		// Wait for everything to be let go (the trigger that clicked the control, say), then take the
+		// first input pressed: a stick for a stick, a button (triggers included) otherwise.
+		if (!m_mapping_armed)
+			m_mapping_armed = ControlMap::AllReleased(m_controller);
+		else if (const ControlInput input =
+					 ControlMap::NewlyPressed(m_controller_before, m_controller, ControlMap::IsStick(*m_mapping));
+				 input != ControlInput::None)
+		{
+			m_controls.Set(*m_mapping, input);
+			m_toast = fmt::format("{}: {}", ControlMap::Name(*m_mapping), InputLabel(*m_mapping));
+			m_toast_until = now + std::chrono::seconds(3);
+			m_mapping.reset();
+			m_mapping_done = true;
+		}
+		if (m_mapping && now >= m_mapping_until)
+		{
+			m_toast = fmt::format("{} unchanged", ControlMap::Name(*m_mapping));
+			m_toast_until = now + std::chrono::seconds(3);
+			m_mapping.reset();
+		}
+		m_needs_draw = true; // the countdown moves, or the dialog went away
+	}
+	m_controller_before = m_controller;
+}
+
+void SettingsMenu::RunMappingDialog()
 {
 	if (!m_gui.Drawing())
 		return;
-	struct Line
-	{
-		std::string_view control, ps2;
-	};
-	static constexpr Line frame[] = {
-		{"A / B / X / Y", "Cross / Circle / Square / Triangle"},
-		{"Left D-pad", "D-pad"},
-		{"Left / right stick", "Left / right analog stick"},
-		{"Stick clicks", "L3 / R3"},
-		{"Left / right grip", "L1 / R1"},
-		{"Left / right trigger", "L2 / R2"},
-		{"View button", "Start (hold: Select)"},
-		{"Both sticks clicked", "Recenter the screen"},
-		{"Point at the gear, trigger", "Open this menu"},
-	};
-	static constexpr Line touch[] = {
-		{"A / B", "Cross / Circle"},
-		{"X / Y (left)", "Square / Triangle"},
-		{"Left stick pushed fully", "D-pad"},
-		{"Left / right stick", "Left / right analog stick"},
-		{"Stick clicks", "L3 / R3"},
-		{"Left / right grip", "L1 / R1"},
-		{"Left / right trigger", "L2 / R2"},
-		{"Menu button", "Start (hold: Select)"},
-		{"Both sticks clicked", "Recenter the screen"},
-		{"Point at the gear, trigger", "Open this menu"},
-	};
-	const std::span<const Line> lines = m_frame_controllers ? std::span<const Line>(frame) : std::span<const Line>(touch);
-	float y = m_y;
-	m_gui.Text(CONTENT_X, y, m_frame_controllers ? "Steam Frame controllers" : "Controllers (Touch layout)",
-		Theme::small_size, Theme::accent);
-	y += 44.0f;
-	const float split = CONTENT_X + 360.0f;
-	for (const Line& line : lines)
-	{
-		m_gui.Text(CONTENT_X, y, line.control, Theme::body_size, Theme::text_muted);
-		m_gui.Text(split, y, line.ps2, Theme::body_size);
-		y += 46.0f;
-		m_gui.Draw().FillRect({CONTENT_X, y - 9.0f, CONTENT_RIGHT - CONTENT_X, 1.0f}, Theme::border.WithAlpha(0.5f));
-	}
+	const Ps2Control control = *m_mapping;
+	const Rect box{0.5f * (WIDTH - 620.0f), 0.5f * (HEIGHT - 300.0f), 620.0f, 300.0f};
+	Canvas& c = m_gui.Draw();
+	c.FillRect({0, 0, WIDTH, HEIGHT}, Rgb(0x000000, 140), RADIUS);
+	c.FillRect(box, Theme::nav, 24.0f);
+	c.StrokeRect(box, Theme::border, 24.0f, 2.0f);
+	m_gui.Text(box.x + 40.0f, box.y + 36.0f, fmt::format("Map {}", ControlMap::Name(control)), Theme::title_size - 4.0f);
+	m_gui.TextWrapped(box.x + 40.0f, box.y + 96.0f, box.w - 80.0f,
+		ControlMap::IsStick(control) ?
+			fmt::format("Move the stick you want for the {}.", ControlMap::Name(control)) :
+			fmt::format("Press the button, grip or trigger you want for {}. It now has: {}.", ControlMap::Name(control),
+				InputLabel(control)),
+		Theme::body_size, Theme::text_muted);
+	// The time left, as a bar that runs out.
+	const float left = std::chrono::duration<float>(m_mapping_until - Clock::now()).count();
+	const Rect bar{box.x + 40.0f, box.Bottom() - 72.0f, box.w - 80.0f, 8.0f};
+	c.FillRect(bar, Theme::control, 4.0f);
+	c.FillRect({bar.x, bar.y, bar.w * std::clamp(left / 5.0f, 0.0f, 1.0f), bar.h}, Theme::accent, 4.0f);
+	m_gui.Text(bar.x, bar.y + 18.0f, fmt::format("Cancels in {} s", static_cast<int>(std::ceil(std::max(left, 0.0f)))),
+		Theme::small_size, Theme::text_muted);
 }
 
 void SettingsMenu::RunDialog()

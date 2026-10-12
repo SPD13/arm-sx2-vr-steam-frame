@@ -7,6 +7,7 @@
 
 #include "common/Console.h"
 
+#include <cmath>
 #include <cstring>
 #include <thread>
 
@@ -230,8 +231,8 @@ bool XrApp::SuggestBindings(const char* profile, const std::vector<std::pair<XrA
 bool XrApp::CreateActions()
 {
 	XrActionSetCreateInfo set_info{XR_TYPE_ACTION_SET_CREATE_INFO};
-	std::strcpy(set_info.actionSetName, "gamepad");
-	std::strcpy(set_info.localizedActionSetName, "DualShock 2");
+	std::strcpy(set_info.actionSetName, "controllers");
+	std::strcpy(set_info.localizedActionSetName, "Controllers");
 	XR_CHECK(xrCreateActionSet(m_instance, &set_info, &m_action_set));
 
 	xrStringToPath(m_instance, "/user/hand/left", &m_hand_paths[0]);
@@ -244,18 +245,38 @@ bool XrApp::CreateActions()
 		info.actionType = type;
 		return XR_SUCCEEDED(xrCreateAction(m_action_set, &info, action));
 	};
+	// One action per controller input; ControlMap decides what each does in the game.
+	struct InputAction
+	{
+		ControlInput input;
+		const char* name;
+		const char* label;
+		XrActionType type;
+	};
 	constexpr XrActionType B = XR_ACTION_TYPE_BOOLEAN_INPUT, F = XR_ACTION_TYPE_FLOAT_INPUT,
 	                       V = XR_ACTION_TYPE_VECTOR2F_INPUT;
-	const bool made = make(&m_cross, "cross", "Cross", B) && make(&m_circle, "circle", "Circle", B) &&
-	                  make(&m_square, "square", "Square", B) && make(&m_triangle, "triangle", "Triangle", B) &&
-	                  make(&m_dpad_up, "dpad_up", "D-pad up", B) && make(&m_dpad_down, "dpad_down", "D-pad down", B) &&
-	                  make(&m_dpad_left, "dpad_left", "D-pad left", B) &&
-	                  make(&m_dpad_right, "dpad_right", "D-pad right", B) &&
-	                  make(&m_menu, "start_select", "Start (hold: Select)", B) && make(&m_l1, "l1", "L1", F) &&
-	                  make(&m_r1, "r1", "R1", F) && make(&m_l2, "l2", "L2", F) && make(&m_r2, "r2", "R2", F) &&
-	                  make(&m_l3, "l3", "L3", B) && make(&m_r3, "r3", "R3", B) &&
-	                  make(&m_left_stick, "left_stick", "Left stick", V) &&
-	                  make(&m_right_stick, "right_stick", "Right stick", V);
+	static constexpr InputAction input_actions[] = {
+		{ControlInput::A, "button_a", "A", B},
+		{ControlInput::B, "button_b", "B", B},
+		{ControlInput::X, "button_x", "X", B},
+		{ControlInput::Y, "button_y", "Y", B},
+		{ControlInput::DpadUp, "dpad_up", "D-pad up", B},
+		{ControlInput::DpadDown, "dpad_down", "D-pad down", B},
+		{ControlInput::DpadLeft, "dpad_left", "D-pad left", B},
+		{ControlInput::DpadRight, "dpad_right", "D-pad right", B},
+		{ControlInput::Menu, "menu", "View / Menu button", B},
+		{ControlInput::LeftGrip, "left_grip", "Left grip", F},
+		{ControlInput::RightGrip, "right_grip", "Right grip", F},
+		{ControlInput::LeftTrigger, "left_trigger", "Left trigger", F},
+		{ControlInput::RightTrigger, "right_trigger", "Right trigger", F},
+		{ControlInput::LeftStickClick, "left_stick_click", "Left stick click", B},
+		{ControlInput::RightStickClick, "right_stick_click", "Right stick click", B},
+		{ControlInput::LeftStick, "left_stick", "Left stick", V},
+		{ControlInput::RightStick, "right_stick", "Right stick", V},
+	};
+	bool made = true;
+	for (const InputAction& action : input_actions)
+		made = made && make(&m_inputs[static_cast<size_t>(action.input)], action.name, action.label, action.type);
 	// The menu's pointers, one per hand.
 	XrActionCreateInfo aim_info{XR_TYPE_ACTION_CREATE_INFO};
 	std::strcpy(aim_info.actionName, "aim");
@@ -269,17 +290,19 @@ bool XrApp::CreateActions()
 		return false;
 	}
 
+	const auto action = [this](ControlInput input) { return m_inputs[static_cast<size_t>(input)]; };
 	// Shared by both profiles.
 	std::vector<std::pair<XrAction, const char*>> common = {
-		{m_cross, "/user/hand/right/input/a/click"},
-		{m_l1, "/user/hand/left/input/squeeze/value"},
-		{m_r1, "/user/hand/right/input/squeeze/value"},
-		{m_l2, "/user/hand/left/input/trigger/value"},
-		{m_r2, "/user/hand/right/input/trigger/value"},
-		{m_l3, "/user/hand/left/input/thumbstick/click"},
-		{m_r3, "/user/hand/right/input/thumbstick/click"},
-		{m_left_stick, "/user/hand/left/input/thumbstick"},
-		{m_right_stick, "/user/hand/right/input/thumbstick"},
+		{action(ControlInput::A), "/user/hand/right/input/a/click"},
+		{action(ControlInput::B), "/user/hand/right/input/b/click"},
+		{action(ControlInput::LeftGrip), "/user/hand/left/input/squeeze/value"},
+		{action(ControlInput::RightGrip), "/user/hand/right/input/squeeze/value"},
+		{action(ControlInput::LeftTrigger), "/user/hand/left/input/trigger/value"},
+		{action(ControlInput::RightTrigger), "/user/hand/right/input/trigger/value"},
+		{action(ControlInput::LeftStickClick), "/user/hand/left/input/thumbstick/click"},
+		{action(ControlInput::RightStickClick), "/user/hand/right/input/thumbstick/click"},
+		{action(ControlInput::LeftStick), "/user/hand/left/input/thumbstick"},
+		{action(ControlInput::RightStick), "/user/hand/right/input/thumbstick"},
 	};
 	// Suggested apart: a runtime that rejects them still gets the gamepad bindings.
 	const auto suggest = [this](const char* profile, std::vector<std::pair<XrAction, const char*>> bindings) {
@@ -300,14 +323,13 @@ bool XrApp::CreateActions()
 	{
 		auto frame = common;
 		frame.insert(frame.end(), {
-			{m_circle, "/user/hand/right/input/b/click"},
-			{m_square, "/user/hand/right/input/x/click"},
-			{m_triangle, "/user/hand/right/input/y/click"},
-			{m_dpad_up, "/user/hand/left/input/dpad_up/click"},
-			{m_dpad_down, "/user/hand/left/input/dpad_down/click"},
-			{m_dpad_left, "/user/hand/left/input/dpad_left/click"},
-			{m_dpad_right, "/user/hand/left/input/dpad_right/click"},
-			{m_menu, "/user/hand/left/input/view/click"},
+			{action(ControlInput::X), "/user/hand/right/input/x/click"},
+			{action(ControlInput::Y), "/user/hand/right/input/y/click"},
+			{action(ControlInput::DpadUp), "/user/hand/left/input/dpad_up/click"},
+			{action(ControlInput::DpadDown), "/user/hand/left/input/dpad_down/click"},
+			{action(ControlInput::DpadLeft), "/user/hand/left/input/dpad_left/click"},
+			{action(ControlInput::DpadRight), "/user/hand/left/input/dpad_right/click"},
+			{action(ControlInput::Menu), "/user/hand/left/input/view/click"},
 		});
 		suggest("/interaction_profiles/valve/frame_controller_valve", frame);
 	}
@@ -315,10 +337,9 @@ bool XrApp::CreateActions()
 	// Touch layout fallback: no D-pad, so it comes from the left stick (see ReadInput).
 	auto touch = common;
 	touch.insert(touch.end(), {
-		{m_circle, "/user/hand/right/input/b/click"},
-		{m_square, "/user/hand/left/input/x/click"},
-		{m_triangle, "/user/hand/left/input/y/click"},
-		{m_menu, "/user/hand/left/input/menu/click"},
+		{action(ControlInput::X), "/user/hand/left/input/x/click"},
+		{action(ControlInput::Y), "/user/hand/left/input/y/click"},
+		{action(ControlInput::Menu), "/user/hand/left/input/menu/click"},
 	});
 	suggest("/interaction_profiles/oculus/touch_controller", touch);
 
@@ -521,60 +542,34 @@ XrApp::Input XrApp::ReadInput()
 	if (XR_FAILED(xrSyncActions(m_session, &sync)))
 		return input;
 
-	Emu::PadState& pad = input.pad;
-	pad.cross = GetBool(m_cross);
-	pad.circle = GetBool(m_circle);
-	pad.square = GetBool(m_square);
-	pad.triangle = GetBool(m_triangle);
-	pad.l1 = GetFloat(m_l1);
-	pad.r1 = GetFloat(m_r1);
-	pad.l2 = GetFloat(m_l2);
-	pad.r2 = GetFloat(m_r2);
-	input.trigger[0] = pad.l2;
-	input.trigger[1] = pad.r2;
-	const XrVector2f ls = GetVector2(m_left_stick);
-	const XrVector2f rs = GetVector2(m_right_stick);
-	pad.lx = ls.x;
-	pad.ly = ls.y;
-	pad.rx = rs.x;
-	pad.ry = rs.y;
-
-	if (m_profile_has_dpad)
+	ControllerState& state = input.controller;
+	for (size_t i = 1; i < state.value.size(); i++)
 	{
-		pad.up = GetBool(m_dpad_up);
-		pad.down = GetBool(m_dpad_down);
-		pad.left = GetBool(m_dpad_left);
-		pad.right = GetBool(m_dpad_right);
+		const ControlInput which = static_cast<ControlInput>(i);
+		if (ControlMap::IsStick(which))
+			continue;
+		const XrAction action = m_inputs[i];
+		state.value[i] = (which >= ControlInput::LeftGrip && which <= ControlInput::RightTrigger) ? GetFloat(action) :
+		                                                                                           (GetBool(action) ? 1.0f : 0.0f);
 	}
-	else
+	const XrVector2f ls = GetVector2(m_inputs[static_cast<size_t>(ControlInput::LeftStick)]);
+	const XrVector2f rs = GetVector2(m_inputs[static_cast<size_t>(ControlInput::RightStick)]);
+	state.left_stick = {ls.x, ls.y};
+	state.right_stick = {rs.x, rs.y};
+	state[ControlInput::LeftStick] = std::hypot(ls.x, ls.y);
+	state[ControlInput::RightStick] = std::hypot(rs.x, rs.y);
+
+	if (!m_profile_has_dpad)
 	{
 		// No D-pad on the controllers: a firmly pushed left stick also presses it, for menus.
 		constexpr float threshold = 0.75f;
-		pad.up = ls.y > threshold;
-		pad.down = ls.y < -threshold;
-		pad.left = ls.x < -threshold;
-		pad.right = ls.x > threshold;
+		state[ControlInput::DpadUp] = ls.y > threshold ? 1.0f : 0.0f;
+		state[ControlInput::DpadDown] = ls.y < -threshold ? 1.0f : 0.0f;
+		state[ControlInput::DpadLeft] = ls.x < -threshold ? 1.0f : 0.0f;
+		state[ControlInput::DpadRight] = ls.x > threshold ? 1.0f : 0.0f;
 	}
-
-	// Both sticks clicked recenters the screen instead of pressing L3 + R3.
-	const bool l3 = GetBool(m_l3), r3 = GetBool(m_r3);
-	const bool recenter = l3 && r3;
-	input.recenter = recenter && !m_recenter_held;
-	m_recenter_held = recenter;
-	pad.l3 = l3 && !recenter;
-	pad.r3 = r3 && !recenter;
-
-	// One button for Start and Select: a short press taps Start, holding it holds Select.
-	const Clock::time_point now = Clock::now();
-	constexpr auto long_press = std::chrono::milliseconds(500);
-	const bool menu = GetBool(m_menu);
-	if (menu && !m_menu_down)
-		m_menu_down_since = now;
-	if (!menu && m_menu_down && now - m_menu_down_since < long_press)
-		m_start_pulse_until = now + std::chrono::milliseconds(120);
-	m_menu_down = menu;
-	pad.select = menu && now - m_menu_down_since >= long_press;
-	pad.start = now < m_start_pulse_until;
+	input.trigger[0] = state[ControlInput::LeftTrigger];
+	input.trigger[1] = state[ControlInput::RightTrigger];
 	return input;
 }
 

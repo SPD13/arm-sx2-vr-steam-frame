@@ -37,9 +37,10 @@ namespace
 static_assert(SettingsMenu::WIDTH == GameListMenu::WIDTH && SettingsMenu::HEIGHT == GameListMenu::HEIGHT,
 	"the menus share one panel layer");
 
-VrMenu::VrMenu(VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat)
+VrMenu::VrMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo, bool running_flat)
 	: m_settings(settings)
 	, m_web(web)
+	, m_controls(controls)
 	, m_running_stereo(running_stereo)
 	, m_running_flat(running_flat)
 {
@@ -76,7 +77,7 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		Destroy();
 		return false;
 	}
-	m_settings_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_running_stereo, m_running_flat, m_text, m_icons);
+	m_settings_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_controls, m_running_stereo, m_running_flat, m_text, m_icons);
 	m_game_list = std::make_unique<GameListMenu>(Path::Combine(EmuFolders::Settings, "favorites.txt"), m_text, m_icons);
 
 	// The pointer's dot: white with a dark rim, so it shows on light and dark pictures alike.
@@ -331,7 +332,10 @@ VrMenu::Result VrMenu::Update(
 		gui.pointer = panel_hit.hit;
 		gui.x = panel_hit.u * static_cast<float>(SettingsMenu::WIDTH);
 		gui.y = panel_hit.v * static_cast<float>(SettingsMenu::HEIGHT);
-		const bool usable = !just_opened && !m_swallow[hand];
+		// While a control is being mapped, a trigger press is the input to map: neither a click nor
+		// a click away that closes the menu.
+		const bool mapping = m_open == Panel::Settings && m_settings_menu->IsMappingControl();
+		const bool usable = !just_opened && !m_swallow[hand] && !mapping;
 		gui.down = usable && m_trigger_down[hand];
 		gui.pressed = usable && pressed[hand];
 		gui.released = released[hand];
@@ -339,6 +343,7 @@ VrMenu::Result VrMenu::Update(
 		bool close = false;
 		if (m_open == Panel::Settings)
 		{
+			m_settings_menu->SetControllerState(input.controller);
 			if (m_settings_menu->Update(gui) || just_opened)
 				m_panel.Upload(m_settings_menu->GetCanvas());
 			if (m_settings_menu->TakeRecenterRequest())
@@ -347,11 +352,18 @@ VrMenu::Result VrMenu::Update(
 				m_reanchor = true;
 			}
 			close = m_settings_menu->TakeCloseRequest();
+			// The trigger that was just mapped is still held: not a click until let go.
+			if (m_settings_menu->TakeMappingDone())
+			{
+				for (int h = 0; h < 2; h++)
+					m_swallow[h] = m_trigger_down[h];
+			}
 		}
 		else
 		{
 			// Either thumbstick scrolls the list.
-			const float stick = std::abs(input.pad.ly) > std::abs(input.pad.ry) ? input.pad.ly : input.pad.ry;
+			const ControllerState& c = input.controller;
+			const float stick = std::abs(c.left_stick.y) > std::abs(c.right_stick.y) ? c.left_stick.y : c.right_stick.y;
 			if (std::abs(stick) > 0.2f)
 				m_game_list->Scroll(-stick * SCROLL_SPEED);
 			if (m_game_list->Update(gui) || just_opened)

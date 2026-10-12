@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "Emu.h"
+#include "Controls.h"
 
 #include "GS/Renderers/Vulkan/VKLoader.h"
 
@@ -19,7 +19,7 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
-#include <chrono>
+#include <array>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -69,8 +69,7 @@ public:
 
 	struct Input
 	{
-		Emu::PadState pad;
-		bool recenter = false; // both sticks clicked: place the screen in front of the head again
+		ControllerState controller; // as the controllers are; ControlMap makes it a pad
 		float trigger[2] = {}; // left, right: the menu's pointer clicks with them
 	};
 	Input ReadInput();
@@ -115,20 +114,8 @@ private:
 
 	XrActionSet m_action_set = XR_NULL_HANDLE;
 	XrPath m_hand_paths[2] = {};
-	XrAction m_cross = XR_NULL_HANDLE, m_circle = XR_NULL_HANDLE, m_square = XR_NULL_HANDLE,
-	         m_triangle = XR_NULL_HANDLE;
-	XrAction m_dpad_up = XR_NULL_HANDLE, m_dpad_down = XR_NULL_HANDLE, m_dpad_left = XR_NULL_HANDLE,
-	         m_dpad_right = XR_NULL_HANDLE;
-	XrAction m_menu = XR_NULL_HANDLE; // short press = Start, long press = Select
-	XrAction m_l1 = XR_NULL_HANDLE, m_r1 = XR_NULL_HANDLE, m_l2 = XR_NULL_HANDLE, m_r2 = XR_NULL_HANDLE;
-	XrAction m_l3 = XR_NULL_HANDLE, m_r3 = XR_NULL_HANDLE;
-	XrAction m_left_stick = XR_NULL_HANDLE, m_right_stick = XR_NULL_HANDLE;
+	std::array<XrAction, static_cast<size_t>(ControlInput::Count)> m_inputs{}; // one per controller input
 	XrAction m_aim = XR_NULL_HANDLE; // per hand
 	XrSpace m_aim_spaces[2] = {};
 
-	using Clock = std::chrono::steady_clock;
-	bool m_menu_down = false;
-	Clock::time_point m_menu_down_since{};
-	Clock::time_point m_start_pulse_until{};
-	bool m_recenter_held = false;
 };

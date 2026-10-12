@@ -11,6 +11,7 @@
 //   4. bind the XR session to that device and run the frame loop on this thread.
 // Teardown runs the other way: the session goes before the GS destroys the device.
 
+#include "Controls.h"
 #include "DepthView.h"
 #include "Emu.h"
 #include "Profile.h"
@@ -269,6 +270,10 @@ int main(int argc, char* argv[])
 		{"roms", Emu::GetGamesFolder(), Emu::GetGameExtensions()},
 	});
 
+	// What the controllers do in the game, set in Settings › Controls.
+	ControlMap controls;
+	controls.Load(Path::Combine(EmuFolders::Settings, "Controls.ini"));
+
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
 	// The mode is fixed for the run. The stereo prototype shows the GS's own per-eye frames on a
 	// flat screen.
@@ -314,7 +319,7 @@ int main(int argc, char* argv[])
 	std::array<ScreenLayer, 2> eye_panels;
 	DepthView depth_view;
 	VolumetricWindow window;
-	VrMenu menu(settings, web, stereo, flat);
+	VrMenu menu(settings, web, controls, stereo, flat);
 	const VkDevice device = gs->GetDevice();
 	const VkQueue queue = gs->GetGraphicsQueue();
 	const uint32_t queue_family = gs->GetGraphicsQueueFamilyIndex();
@@ -400,6 +405,7 @@ int main(int argc, char* argv[])
 	std::array<Clock::time_point, 2> last_eye_frame{};
 	float screen_aspect = 4.0f / 3.0f;
 	bool menu_recenter = false; // the menu's Recenter, done the next frame
+	bool pad_recenter = false; // both sticks clicked, done the next frame
 	// Started without a game: the game list opens once the screen is in place.
 	bool show_game_list = emu_options.boot_path.empty() && !emu_options.bios_only;
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
@@ -446,8 +452,8 @@ int main(int argc, char* argv[])
 		// head pose is wherever it lies; or the dashboard closed), and on request.
 		if (xr.TakeFocusGained())
 			screen_placed = false;
-		const bool recenter = input.recenter || menu_recenter;
-		menu_recenter = false;
+		const bool recenter = pad_recenter || menu_recenter;
+		menu_recenter = pad_recenter = false;
 		if ((!screen_placed || recenter) && xr.LocateHead(frame.display_time, &head))
 		{
 			place_screen(ScreenPoseInFrontOf(head, vr.screen_distance));
@@ -457,8 +463,9 @@ int main(int argc, char* argv[])
 			screen_placed = true;
 		}
 
-		// The settings menu has the controllers while it is open, and its trigger while on the gear.
-		Emu::PadState pad = input.pad;
+		// The game's controls. A trigger is a menu click while a menu is open or the pointer is on a
+		// menu button; only otherwise does it count as the game button it is mapped to.
+		ControllerState controller = input.controller;
 		if (screen_placed)
 		{
 			if (std::exchange(show_game_list, false))
@@ -467,13 +474,15 @@ int main(int argc, char* argv[])
 				menu.Update(frame.display_time, input, screen_pose_now, vr.screen_width, vr.screen_width / screen_aspect);
 			menu_recenter = ui.recenter;
 			if (ui.open)
-				pad = {};
+				controller = {};
 			if (ui.block_trigger[0])
-				pad.l2 = 0.0f;
+				controller[ControlInput::LeftTrigger] = 0.0f;
 			if (ui.block_trigger[1])
-				pad.r2 = 0.0f;
+				controller[ControlInput::RightTrigger] = 0.0f;
 		}
-		Emu::SetPad(pad);
+		const ControlMap::Output game = controls.Apply(controller);
+		pad_recenter = game.recenter;
+		Emu::SetPad(game.pad);
 
 		// --stereo: where each eye is in front of the screen, for the GS's window parallax.
 		if (stereo && screen_placed)
