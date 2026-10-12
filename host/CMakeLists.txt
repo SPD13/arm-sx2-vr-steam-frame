@@ -20,6 +20,19 @@ add_executable(ps2v
 	Settings.h
 	XrApp.cpp
 	XrApp.h
+	XrMath.h
+	ui/Canvas.cpp
+	ui/Canvas.h
+	ui/Font.cpp
+	ui/Font.h
+	ui/Gui.cpp
+	ui/Gui.h
+	ui/OverlayLayer.cpp
+	ui/OverlayLayer.h
+	ui/SettingsMenu.cpp
+	ui/SettingsMenu.h
+	ui/VrMenu.cpp
+	ui/VrMenu.h
 )
 
 # Shaders become SPIR-V arrays in generated headers: shaders/name.stage -> name.stage.h, array name_stage.
@@ -41,6 +54,7 @@ foreach(shader ${PS2V_SHADERS})
 endforeach()
 
 target_include_directories(ps2v PRIVATE
+	"${CMAKE_CURRENT_SOURCE_DIR}"
 	"${CMAKE_BINARY_DIR}/common/include"
 	"${CMAKE_SOURCE_DIR}/pcsx2"
 	"${PS2V_SHADER_DIR}"
@@ -50,6 +64,7 @@ target_link_libraries(ps2v PRIVATE
 	PCSX2_FLAGS
 	PCSX2
 	libretro-headers
+	imgui # for its stb_truetype, see ui/Font.cpp
 	OpenXR::openxr_loader
 )
 

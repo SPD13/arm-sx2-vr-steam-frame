@@ -71,6 +71,7 @@ public:
 	{
 		Emu::PadState pad;
 		bool recenter = false; // both sticks clicked: place the screen in front of the head again
+		float trigger[2] = {}; // left, right: the menu's pointer clicks with them
 	};
 	Input ReadInput();
 
@@ -78,6 +79,10 @@ public:
 	bool LocateHead(XrTime time, XrPosef* pose) const;
 	// Both eyes' views in the LOCAL space at the given time, if tracked.
 	bool LocateEyes(XrTime time, XrView views[2]) const;
+	// A controller's aim pose (0 left, 1 right) in the LOCAL space: its ray points along -Z.
+	bool LocateAim(int hand, XrTime time, XrPosef* pose) const;
+	// Whether the controllers are Steam Frame ones (otherwise the Touch layout fallback).
+	bool HasFrameControllers() const { return m_profile_has_dpad; }
 
 	XrInstance Instance() const { return m_instance; }
 	XrSystemId System() const { return m_system; }
@@ -86,7 +91,7 @@ public:
 
 private:
 	bool CreateActions();
-	void SuggestBindings(const char* profile, const std::vector<std::pair<XrAction, const char*>>& bindings);
+	bool SuggestBindings(const char* profile, const std::vector<std::pair<XrAction, const char*>>& bindings);
 	void UpdateInteractionProfile();
 	bool GetBool(XrAction action) const;
 	float GetFloat(XrAction action) const;
@@ -118,6 +123,8 @@ private:
 	XrAction m_l1 = XR_NULL_HANDLE, m_r1 = XR_NULL_HANDLE, m_l2 = XR_NULL_HANDLE, m_r2 = XR_NULL_HANDLE;
 	XrAction m_l3 = XR_NULL_HANDLE, m_r3 = XR_NULL_HANDLE;
 	XrAction m_left_stick = XR_NULL_HANDLE, m_right_stick = XR_NULL_HANDLE;
+	XrAction m_aim = XR_NULL_HANDLE; // per hand
+	XrSpace m_aim_spaces[2] = {};
 
 	using Clock = std::chrono::steady_clock;
 	bool m_menu_down = false;

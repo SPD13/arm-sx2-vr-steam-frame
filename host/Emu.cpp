@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 #include "common/Console.h"
 #include "common/CrashHandler.h"
@@ -75,6 +76,12 @@ static std::thread s_gamelist_thread;
 
 static std::mutex s_serial_mutex;
 static std::string s_serial;
+
+// The VR menu's view of the save slots and its notices.
+static std::mutex s_menu_mutex;
+static std::vector<Emu::SaveSlot> s_save_slots(Emu::NUM_SAVE_SLOTS);
+static std::string s_notice;
+static std::atomic<bool> s_apply_pending{false};
 
 // The GS presents into an offscreen ring (VKLibretro::Active); this size only seeds it.
 static constexpr u32 SURFACE_WIDTH = 1280;
@@ -280,7 +287,6 @@ static void CPUThreadMain(VMBootParameters params)
 					VMManager::SetState(VMState::Running);
 					continue;
 				}
-
 				// The game ended and there is no game picker yet: quit.
 				if (VMManager::GetState() == VMState::Shutdown)
 				{
@@ -372,6 +378,131 @@ int Emu::Join()
 	if (s_cpu_thread.joinable())
 		s_cpu_thread.join();
 	return s_cpu_thread_ret.load();
+}
+
+void Emu::SetPaused(bool paused)
+{
+	Host::RunOnCPUThread([paused]() {
+		if (VMManager::HasValidVM())
+			VMManager::SetPaused(paused);
+	});
+}
+
+Emu::CoreSettings Emu::GetCoreSettings()
+{
+	CoreSettings settings;
+	auto lock = Host::GetSettingsLock();
+	if (!s_base_settings)
+		return settings;
+	settings.upscale = static_cast<int>(s_base_settings->GetFloatValue("EmuCore/GS", "upscale_multiplier", 1.0f));
+	settings.texture_filtering = s_base_settings->GetIntValue("EmuCore/GS", "filter", static_cast<int>(BiFiltering::PS2));
+	settings.volume = static_cast<int>(s_base_settings->GetUIntValue("SPU2/Output", "StandardVolume", 100));
+	settings.muted = s_base_settings->GetBoolValue("SPU2/Output", "OutputMuted", false);
+	return settings;
+}
+
+void Emu::SetCoreSettings(const CoreSettings& settings)
+{
+	{
+		auto lock = Host::GetSettingsLock();
+		if (!s_base_settings)
+			return;
+		s_base_settings->SetFloatValue("EmuCore/GS", "upscale_multiplier", static_cast<float>(settings.upscale));
+		s_base_settings->SetIntValue("EmuCore/GS", "filter", settings.texture_filtering);
+		s_base_settings->SetUIntValue("SPU2/Output", "StandardVolume", static_cast<u32>(settings.volume));
+		s_base_settings->SetBoolValue("SPU2/Output", "OutputMuted", settings.muted);
+		Host::CommitBaseSettingChanges();
+	}
+	// A slider sends a change per frame: queue one apply at a time, which reads the latest values.
+	if (!s_apply_pending.exchange(true))
+	{
+		Host::RunOnCPUThread([]() {
+			s_apply_pending.store(false);
+			if (VMManager::HasValidVM())
+				VMManager::ApplySettings();
+		});
+	}
+}
+
+static void SetNotice(std::string notice)
+{
+	std::lock_guard lock(s_menu_mutex);
+	s_notice = std::move(notice);
+}
+
+// On the CPU thread.
+static void ReadSaveSlots()
+{
+	std::vector<Emu::SaveSlot> slots(Emu::NUM_SAVE_SLOTS);
+	const std::string serial = VMManager::GetDiscSerial();
+	const u32 crc = VMManager::GetDiscCRC();
+	if (VMManager::HasValidVM() && (!serial.empty() || crc))
+	{
+		for (int slot = 1; slot <= Emu::NUM_SAVE_SLOTS; slot++)
+		{
+			FILESYSTEM_STAT_DATA sd;
+			const std::string path = VMManager::GetSaveStateFileName(serial.c_str(), crc, slot);
+			if (!path.empty() && FileSystem::StatFile(path.c_str(), &sd))
+				slots[slot - 1] = {true, sd.ModificationTime};
+		}
+	}
+	std::lock_guard lock(s_menu_mutex);
+	s_save_slots = std::move(slots);
+}
+
+void Emu::RefreshSaveSlots()
+{
+	Host::RunOnCPUThread(&ReadSaveSlots);
+}
+
+std::vector<Emu::SaveSlot> Emu::GetSaveSlots()
+{
+	std::lock_guard lock(s_menu_mutex);
+	return s_save_slots;
+}
+
+void Emu::SaveState(int slot)
+{
+	Host::RunOnCPUThread([slot]() {
+		if (!VMManager::HasValidVM())
+			return;
+		bool failed = false;
+		// Written before this returns, so the slot list below sees it.
+		VMManager::SaveStateToSlot(slot, false, [&failed](const std::string& error) {
+			failed = true;
+			SetNotice(fmt::format("Could not save: {}", error));
+		});
+		if (!failed)
+			SetNotice(fmt::format("Saved to slot {}", slot));
+		ReadSaveSlots();
+	});
+}
+
+void Emu::LoadState(int slot)
+{
+	Host::RunOnCPUThread([slot]() {
+		if (!VMManager::HasValidVM())
+			return;
+		Error error;
+		if (VMManager::LoadStateFromSlot(slot, false, &error))
+			SetNotice(fmt::format("Loaded slot {}", slot));
+		else
+			SetNotice(fmt::format("Could not load slot {}: {}", slot, error.GetDescription()));
+	});
+}
+
+void Emu::ResetGame()
+{
+	Host::RunOnCPUThread([]() {
+		if (VMManager::HasValidVM())
+			VMManager::Reset();
+	});
+}
+
+std::string Emu::TakeNotice()
+{
+	std::lock_guard lock(s_menu_mutex);
+	return std::exchange(s_notice, {});
 }
 
 void Emu::SetPad(const PadState& s)

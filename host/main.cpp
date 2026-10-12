@@ -18,6 +18,7 @@
 #include "Settings.h"
 #include "VolumetricWindow.h"
 #include "XrApp.h"
+#include "ui/VrMenu.h"
 
 #include "GS/GSVolumetric.h"
 
@@ -309,6 +310,7 @@ int main(int argc, char* argv[])
 	std::array<ScreenLayer, 2> eye_panels;
 	DepthView depth_view;
 	VolumetricWindow window;
+	VrMenu menu(settings, stereo, flat);
 	const VkDevice device = gs->GetDevice();
 	const VkQueue queue = gs->GetGraphicsQueue();
 	const uint32_t queue_family = gs->GetGraphicsQueueFamilyIndex();
@@ -321,6 +323,7 @@ int main(int argc, char* argv[])
 		(!flat && !window.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family)))
 	{
 		Emu::RequestShutdown();
+		menu.Destroy();
 		for (ScreenLayer& panel : eye_panels)
 			panel.Destroy();
 		window.Destroy();
@@ -333,6 +336,8 @@ int main(int argc, char* argv[])
 		Emu::Join();
 		return EXIT_FAILURE;
 	}
+	if (!menu.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family))
+		Console.Error("The settings menu is unavailable.");
 	if (stereo)
 	{
 		screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
@@ -390,6 +395,7 @@ int main(int argc, char* argv[])
 	// same eye every time), both eyes see the other's for a while.
 	std::array<Clock::time_point, 2> last_eye_frame{};
 	float screen_aspect = 4.0f / 3.0f;
+	bool menu_recenter = false; // the menu's Recenter, done the next frame
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
 	{
 		if (!xr.IsSessionRunning())
@@ -427,21 +433,38 @@ int main(int argc, char* argv[])
 
 		const XrApp::Frame frame = xr.BeginFrame();
 		const XrApp::Input input = xr.ReadInput();
-		Emu::SetPad(input.pad);
 
 		XrPosef head;
 		// In front of the head whenever the app gains focus (the headset was put on: before that the
 		// head pose is wherever it lies; or the dashboard closed), and on request.
 		if (xr.TakeFocusGained())
 			screen_placed = false;
-		if ((!screen_placed || input.recenter) && xr.LocateHead(frame.display_time, &head))
+		const bool recenter = input.recenter || menu_recenter;
+		menu_recenter = false;
+		if ((!screen_placed || recenter) && xr.LocateHead(frame.display_time, &head))
 		{
 			place_screen(ScreenPoseInFrontOf(head, vr.screen_distance));
 			Console.WriteLnFmt("Screen placed ({}): head ({:.3f} {:.3f} {:.3f}) q ({:.3f} {:.3f} {:.3f} {:.3f})",
-				input.recenter ? "recenter" : "first", head.position.x, head.position.y, head.position.z,
+				recenter ? "recenter" : "first", head.position.x, head.position.y, head.position.z,
 				head.orientation.x, head.orientation.y, head.orientation.z, head.orientation.w);
 			screen_placed = true;
 		}
+
+		// The settings menu has the controllers while it is open, and its trigger while on the gear.
+		Emu::PadState pad = input.pad;
+		if (screen_placed)
+		{
+			const VrMenu::Result ui =
+				menu.Update(frame.display_time, input, screen_pose_now, vr.screen_width, vr.screen_width / screen_aspect);
+			menu_recenter = ui.recenter;
+			if (ui.open)
+				pad = {};
+			if (ui.block_trigger[0])
+				pad.l2 = 0.0f;
+			if (ui.block_trigger[1])
+				pad.r2 = 0.0f;
+		}
+		Emu::SetPad(pad);
 
 		// --stereo: where each eye is in front of the screen, for the GS's window parallax.
 		if (stereo && screen_placed)
@@ -511,7 +534,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		const XrCompositionLayerBaseHeader* layers[4];
+		const XrCompositionLayerBaseHeader* layers[12];
 		uint32_t layer_count = 0;
 		if (flat && stereo)
 		{
@@ -561,6 +584,8 @@ int main(int argc, char* argv[])
 			if (debug_options.eye_panels && panel.HasImage())
 				layers[layer_count++] = panel.Layer();
 		}
+		if (screen_placed)
+			menu.AddLayers(layers, &layer_count);
 		xr.EndFrame(frame, layers, layer_count);
 		if (static int frames_logged = 0; frame.should_render && frames_logged < 3)
 		{
@@ -572,6 +597,7 @@ int main(int argc, char* argv[])
 	Console.WriteLn("Shutting down.");
 	settings.Update(true);
 	Emu::RequestShutdown();
+	menu.Destroy();
 	for (ScreenLayer& panel : eye_panels)
 		panel.Destroy();
 	window.Destroy();

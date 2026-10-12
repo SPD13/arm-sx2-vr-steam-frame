@@ -206,7 +206,7 @@ bool XrApp::CreateSession(VkDevice device, uint32_t queue_family_index)
 	return CreateActions();
 }
 
-void XrApp::SuggestBindings(const char* profile, const std::vector<std::pair<XrAction, const char*>>& bindings)
+bool XrApp::SuggestBindings(const char* profile, const std::vector<std::pair<XrAction, const char*>>& bindings)
 {
 	std::vector<XrActionSuggestedBinding> suggested;
 	for (const auto& [action, path] : bindings)
@@ -220,7 +220,11 @@ void XrApp::SuggestBindings(const char* profile, const std::vector<std::pair<XrA
 	info.countSuggestedBindings = static_cast<uint32_t>(suggested.size());
 	info.suggestedBindings = suggested.data();
 	if (const XrResult res = xrSuggestInteractionProfileBindings(m_instance, &info); XR_FAILED(res))
+	{
 		Console.WarningFmt("XR: bindings for {} rejected ({})", profile, static_cast<int>(res));
+		return false;
+	}
+	return true;
 }
 
 bool XrApp::CreateActions()
@@ -252,7 +256,14 @@ bool XrApp::CreateActions()
 	                  make(&m_l3, "l3", "L3", B) && make(&m_r3, "r3", "R3", B) &&
 	                  make(&m_left_stick, "left_stick", "Left stick", V) &&
 	                  make(&m_right_stick, "right_stick", "Right stick", V);
-	if (!made)
+	// The menu's pointers, one per hand.
+	XrActionCreateInfo aim_info{XR_TYPE_ACTION_CREATE_INFO};
+	std::strcpy(aim_info.actionName, "aim");
+	std::strcpy(aim_info.localizedActionName, "Menu pointer");
+	aim_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
+	aim_info.countSubactionPaths = 2;
+	aim_info.subactionPaths = m_hand_paths;
+	if (!made || XR_FAILED(xrCreateAction(m_action_set, &aim_info, &m_aim)))
 	{
 		Console.Error("XR: could not create the controller actions.");
 		return false;
@@ -269,6 +280,17 @@ bool XrApp::CreateActions()
 		{m_r3, "/user/hand/right/input/thumbstick/click"},
 		{m_left_stick, "/user/hand/left/input/thumbstick"},
 		{m_right_stick, "/user/hand/right/input/thumbstick"},
+	};
+	// Suggested apart: a runtime that rejects them still gets the gamepad bindings.
+	const auto suggest = [this](const char* profile, std::vector<std::pair<XrAction, const char*>> bindings) {
+		auto with_aim = bindings;
+		with_aim.insert(with_aim.end(),
+			{{m_aim, "/user/hand/left/input/aim/pose"}, {m_aim, "/user/hand/right/input/aim/pose"}});
+		if (!SuggestBindings(profile, with_aim))
+		{
+			Console.WarningFmt("XR: no aim pose for {}; the menu pointer is unavailable.", profile);
+			SuggestBindings(profile, bindings);
+		}
 	};
 
 	// Steam Frame native profile: all four face buttons on the right controller, a D-pad on the
@@ -287,7 +309,7 @@ bool XrApp::CreateActions()
 			{m_dpad_right, "/user/hand/left/input/dpad_right/click"},
 			{m_menu, "/user/hand/left/input/view/click"},
 		});
-		SuggestBindings("/interaction_profiles/valve/frame_controller_valve", frame);
+		suggest("/interaction_profiles/valve/frame_controller_valve", frame);
 	}
 
 	// Touch layout fallback: no D-pad, so it comes from the left stick (see ReadInput).
@@ -298,12 +320,21 @@ bool XrApp::CreateActions()
 		{m_triangle, "/user/hand/left/input/y/click"},
 		{m_menu, "/user/hand/left/input/menu/click"},
 	});
-	SuggestBindings("/interaction_profiles/oculus/touch_controller", touch);
+	suggest("/interaction_profiles/oculus/touch_controller", touch);
 
 	XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
 	attach.countActionSets = 1;
 	attach.actionSets = &m_action_set;
 	XR_CHECK(xrAttachSessionActionSets(m_session, &attach));
+
+	for (int hand = 0; hand < 2; hand++)
+	{
+		XrActionSpaceCreateInfo space_info{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+		space_info.action = m_aim;
+		space_info.subactionPath = m_hand_paths[hand];
+		space_info.poseInActionSpace.orientation.w = 1.0f;
+		XR_CHECK(xrCreateActionSpace(m_session, &space_info, &m_aim_spaces[hand]));
+	}
 	return true;
 }
 
@@ -325,6 +356,12 @@ void XrApp::DestroySession()
 	if (m_session == XR_NULL_HANDLE)
 		return;
 	std::lock_guard lock(GraphicsQueueMutex());
+	for (XrSpace& space : m_aim_spaces)
+	{
+		if (space)
+			xrDestroySpace(space);
+		space = XR_NULL_HANDLE;
+	}
 	if (m_action_set)
 		xrDestroyActionSet(m_action_set);
 	if (m_view_space)
@@ -493,6 +530,8 @@ XrApp::Input XrApp::ReadInput()
 	pad.r1 = GetFloat(m_r1);
 	pad.l2 = GetFloat(m_l2);
 	pad.r2 = GetFloat(m_r2);
+	input.trigger[0] = pad.l2;
+	input.trigger[1] = pad.r2;
 	const XrVector2f ls = GetVector2(m_left_stick);
 	const XrVector2f rs = GetVector2(m_right_stick);
 	pad.lx = ls.x;
@@ -557,6 +596,20 @@ bool XrApp::LocateHead(XrTime time, XrPosef* pose) const
 {
 	XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
 	if (XR_FAILED(xrLocateSpace(m_view_space, m_local_space, time, &location)))
+		return false;
+	constexpr XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+	if ((location.locationFlags & needed) != needed)
+		return false;
+	*pose = location.pose;
+	return true;
+}
+
+bool XrApp::LocateAim(int hand, XrTime time, XrPosef* pose) const
+{
+	if (!m_aim_spaces[hand])
+		return false;
+	XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+	if (XR_FAILED(xrLocateSpace(m_aim_spaces[hand], m_local_space, time, &location)))
 		return false;
 	constexpr XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
 	if ((location.locationFlags & needed) != needed)

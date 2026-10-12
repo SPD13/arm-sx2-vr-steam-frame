@@ -89,7 +89,8 @@ ps2-volumetric/                      (this repo, GPLv3)
               VolumetricWindow.*     displaced grid mesh (later: per-eye relief ray-march)
     gun/      LightGun.*             ray → heightfield hit → GunCon2 aim + buttons, beam + dot, haptics
               GunModel.*             glTF loader (cgltf), muzzle node, grip alignment
-    ui/       Panel.*                PCSX2 FullscreenUI (ImGui) drawn to an offscreen texture on a VR panel, laser-pointer input
+    ui/       VrMenu.*, SettingsMenu.*  gear button + settings panel as quad layers, laser-pointer input; drawn on the
+                                     CPU (Canvas/Gui), since PCSX2's ImGui context is a global the GS threads own
   profiles/   *.yaml                 per-game depth overrides (Z mode, HUD rules, capture pass, depth scale)
   assets/     lightgun.glb
   tools/      build-sr4-arm64.sh, deploy.sh
@@ -168,7 +169,8 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
   - Next: full multiview port (both eyes every frame), then sprite/bullet placement and profile-driven parameters.
 - **M4, light gun.** Aim/button bridge, ray-heightfield hit, beam and dot, gun model, haptics, two-gun patch.
 - **M5, polish and ship.**
-  - FullscreenUI on a VR panel: game list, BIOS onboarding (the user supplies their own BIOS dump), settings.
+  - In-headset settings menu: started (gear button, Display / 3D / Graphics / Audio / Game / Controls pages, Exit).
+  - Still to do in the menu: game list (from the roms folder), BIOS onboarding (the user supplies their own BIOS dump).
   - Foveation (`XR_META_foveation_eye_tracked`).
   - Steam packaging with a GPL source offer.
 

@@ -6,8 +6,10 @@
 
 #pragma once
 
+#include <ctime>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Emu
 {
@@ -39,6 +41,38 @@ namespace Emu
 	// Lets the CPU thread close the GS, which destroys the Vulkan device, then joins it and returns
 	// its exit code. Call once the XR side no longer uses the device.
 	int Join();
+
+	// Pauses or resumes the game (the VR menu pauses it while it is open).
+	void SetPaused(bool paused);
+
+	// The emulator settings the VR menu offers, kept in PCSX2.ini. Any thread.
+	struct CoreSettings
+	{
+		int upscale = 1; // internal resolution multiplier
+		int texture_filtering = 2; // BiFiltering: 0 nearest, 1 bilinear forced, 2 bilinear as the PS2 asks
+		int volume = 100; // percent
+		bool muted = false;
+	};
+	CoreSettings GetCoreSettings();
+	// Saves them and has the CPU thread apply them.
+	void SetCoreSettings(const CoreSettings& settings);
+
+	// Save states of the running game, in slots 1 to NUM_SAVE_SLOTS. These run on the CPU thread;
+	// their outcome comes back through TakeNotice.
+	inline constexpr int NUM_SAVE_SLOTS = 5;
+	struct SaveSlot
+	{
+		bool used = false;
+		std::time_t time = 0; // when it was saved
+	};
+	// Reads the slots again (asynchronously); GetSaveSlots has the result.
+	void RefreshSaveSlots();
+	std::vector<SaveSlot> GetSaveSlots(); // NUM_SAVE_SLOTS entries, slot 1 first
+	void SaveState(int slot);
+	void LoadState(int slot);
+	void ResetGame();
+	// A short message for the user about the last of those, once; empty when there is none.
+	std::string TakeNotice();
 
 	// DualShock 2 state for port 1, applied from the XR thread each frame.
 	struct PadState
