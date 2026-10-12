@@ -170,6 +170,7 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
 - **M4, light gun.** Aim/button bridge, ray-heightfield hit, beam and dot, gun model, haptics, two-gun patch.
 - **M5, polish and ship.**
   - In-headset settings menu: started (gear button, Display / 3D / Graphics / Audio / Game / Controls pages, Exit).
+  - Wi-Fi transfer: started (web page served by the headset for the BIOS and roms folders, switched on in the menu).
   - Still to do in the menu: game list (from the roms folder), BIOS onboarding (the user supplies their own BIOS dump).
   - Foveation (`XR_META_foveation_eye_tracked`).
   - Steam packaging with a GPL source offer.

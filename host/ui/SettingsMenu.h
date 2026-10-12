@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The settings page the gear button opens: a navigation bar of categories on the left (Display,
-// 3D, Graphics, Audio, Game, Controls, and Exit last) and the selected category's settings on the
+// 3D, Graphics, Audio, Game, Wi-Fi Transfer, Controls, and Exit last) and the selected category's settings on the
 // right. It draws on a Canvas and knows nothing of OpenXR; VrMenu shows it in the headset and
 // feeds it the pointer.
 
@@ -10,6 +10,7 @@
 
 #include "Emu.h"
 #include "Settings.h"
+#include "web/WebServer.h"
 #include "ui/Canvas.h"
 #include "ui/Gui.h"
 
@@ -25,7 +26,8 @@ public:
 	static constexpr int HEIGHT = 800;
 
 	// running_stereo / running_flat: the 3D mode this run started in (changing it needs a restart).
-	SettingsMenu(VrSettingsStore& settings, bool running_stereo, bool running_flat, Font& text, Font& icons);
+	// web: the Wi-Fi transfer server the menu switches on and off.
+	SettingsMenu(VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat, Font& text, Font& icons);
 
 	// Reads the emulator's settings and save slots again, for a menu that is being opened.
 	void Refresh();
@@ -48,6 +50,7 @@ private:
 		Graphics,
 		Audio,
 		Game,
+		Transfer,
 		Controls,
 	};
 	enum class Dialog
@@ -65,6 +68,7 @@ private:
 	void RunGraphics();
 	void RunAudio();
 	void RunGame();
+	void RunTransfer();
 	void RunControls();
 	void RunDialog();
 
@@ -79,6 +83,8 @@ private:
 	void SetCore(const Emu::CoreSettings& settings);
 
 	VrSettingsStore& m_settings;
+	WebServer& m_web;
+	WebServer::Status m_web_status;
 	bool m_running_stereo;
 	bool m_running_flat;
 	Canvas m_canvas;

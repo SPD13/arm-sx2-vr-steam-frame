@@ -30,8 +30,9 @@ namespace
 	constexpr uint32_t GEAR_ICON = 0xf013;
 } // namespace
 
-VrMenu::VrMenu(VrSettingsStore& settings, bool running_stereo, bool running_flat)
+VrMenu::VrMenu(VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat)
 	: m_settings(settings)
+	, m_web(web)
 	, m_running_stereo(running_stereo)
 	, m_running_flat(running_flat)
 {
@@ -67,7 +68,7 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		Destroy();
 		return false;
 	}
-	m_menu = std::make_unique<SettingsMenu>(m_settings, m_running_stereo, m_running_flat, m_text, m_icons);
+	m_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_running_stereo, m_running_flat, m_text, m_icons);
 
 	// The pointer's dot: white with a dark rim, so it shows on light and dark pictures alike.
 	Canvas canvas;

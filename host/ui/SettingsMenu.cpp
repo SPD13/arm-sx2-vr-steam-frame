@@ -27,6 +27,7 @@ namespace Icon
 	static constexpr uint32_t load = 0xf093; // upload
 	static constexpr uint32_t restart = 0xf2ea; // rotate-left
 	static constexpr uint32_t info = 0xf05a; // circle-info
+	static constexpr uint32_t transfer = 0xf1eb; // wifi
 } // namespace Icon
 
 namespace
@@ -41,8 +42,10 @@ namespace
 	constexpr float RADIUS = 28.0f;
 } // namespace
 
-SettingsMenu::SettingsMenu(VrSettingsStore& settings, bool running_stereo, bool running_flat, Font& text, Font& icons)
+SettingsMenu::SettingsMenu(
+	VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat, Font& text, Font& icons)
 	: m_settings(settings)
+	, m_web(web)
 	, m_running_stereo(running_stereo)
 	, m_running_flat(running_flat)
 	, m_gui(text, icons)
@@ -80,6 +83,14 @@ bool SettingsMenu::Update(const GuiInput& input)
 		m_toast = std::move(notice);
 		m_toast_until = now + std::chrono::seconds(3);
 		m_needs_draw = true;
+	}
+	// The transfer page follows the server: its address, code and uploads.
+	if (WebServer::Status web = m_web.GetStatus(); web.running != m_web_status.running || web.url != m_web_status.url ||
+		web.code != m_web_status.code || web.error != m_web_status.error || web.transfer != m_web_status.transfer ||
+		static_cast<int>(web.progress * 100.0f) != static_cast<int>(m_web_status.progress * 100.0f))
+	{
+		m_web_status = std::move(web);
+		m_needs_draw |= m_page == Page::Transfer;
 	}
 	if (!m_toast.empty() && now >= m_toast_until)
 	{
@@ -128,7 +139,8 @@ void SettingsMenu::Run()
 	m_gui.SetBlocked(m_dialog != Dialog::None);
 	RunNav();
 
-	static constexpr std::array<std::string_view, 6> titles = {"Display", "3D", "Graphics", "Audio", "Game", "Controls"};
+	static constexpr std::array<std::string_view, 7> titles = {
+		"Display", "3D", "Graphics", "Audio", "Game", "Wi-Fi Transfer", "Controls"};
 	m_gui.Text(CONTENT_X, 42.0f, titles[static_cast<size_t>(m_page)], Theme::title_size);
 	if (m_gui.IconButton(GuiId("close"), {CONTENT_RIGHT - 52.0f, 36.0f, 60.0f, 60.0f}, Icon::close, 28.0f))
 		m_close_requested = true;
@@ -141,6 +153,7 @@ void SettingsMenu::Run()
 		case Page::Graphics: RunGraphics(); break;
 		case Page::Audio: RunAudio(); break;
 		case Page::Game: RunGame(); break;
+		case Page::Transfer: RunTransfer(); break;
 		case Page::Controls: RunControls(); break;
 	}
 
@@ -171,12 +184,13 @@ void SettingsMenu::RunNav()
 		uint32_t icon;
 		std::string_view label;
 	};
-	static constexpr std::array<Item, 6> items = {{
+	static constexpr std::array<Item, 7> items = {{
 		{Page::Display, Icon::display, "Display"},
 		{Page::Stereo, Icon::stereo, "3D"},
 		{Page::Graphics, Icon::graphics, "Graphics"},
 		{Page::Audio, Icon::audio, "Audio"},
 		{Page::Game, Icon::game, "Game"},
+		{Page::Transfer, Icon::transfer, "Wi-Fi Transfer"},
 		{Page::Controls, Icon::controls, "Controls"},
 	}};
 	float y = PAGE_TOP;
@@ -387,6 +401,84 @@ void SettingsMenu::RunGame()
 		m_dialog = Dialog::Restart;
 		m_needs_draw = true;
 	}
+}
+
+void SettingsMenu::RunTransfer()
+{
+	const WebServer::Status& web = m_web_status;
+	bool on = web.running;
+	if (m_gui.Toggle(GuiId("web"),
+			Row("Wi-Fi transfer", "Add games and BIOS files from a computer or phone on the same Wi-Fi network, in "
+								  "its web browser.", 52.0f, !on && !web.error.empty()),
+			&on))
+	{
+		if (on)
+			m_web.Start(m_settings.Get().web_require_code);
+		else
+			m_web.Stop();
+		m_web_status = m_web.GetStatus();
+	}
+	if (!on && !web.error.empty())
+		Note(web.error, Theme::danger);
+
+	VrSettings vr = m_settings.Get();
+	if (m_gui.Toggle(GuiId("web_require_code"),
+			Row("Access code", "The page asks for a 6-digit code shown here. A new one is made each time the "
+							   "transfer starts."),
+			&vr.web_require_code))
+	{
+		SetVr(vr);
+		m_web.SetRequireCode(vr.web_require_code);
+		m_web_status = m_web.GetStatus();
+	}
+
+	if (!web.running)
+		return;
+	// Where to go, in large type.
+	const Rect box{CONTENT_X, m_y + 4.0f, CONTENT_RIGHT - CONTENT_X, web.code.empty() ? 128.0f : 196.0f};
+	if (m_gui.Drawing())
+		m_gui.Draw().FillRect(box, Theme::nav, 16.0f);
+	float y = box.y + 22.0f;
+	if (web.url.empty())
+	{
+		m_gui.TextWrapped(box.x + 28.0f, y, box.w - 56.0f,
+			"No network connection. Connect the headset to Wi-Fi to use the transfer.", Theme::body_size, Theme::text_muted);
+	}
+	else
+	{
+		m_gui.Text(box.x + 28.0f, y, "Open this address in a browser", Theme::small_size, Theme::text_muted);
+		m_gui.Text(box.x + 28.0f, y + 30.0f, web.url, Theme::title_size + 4.0f, Theme::accent);
+		if (!web.code.empty())
+		{
+			y += 96.0f;
+			m_gui.Text(box.x + 28.0f, y, "Access code", Theme::small_size, Theme::text_muted);
+			m_gui.Text(box.x + 28.0f, y + 30.0f, web.code.substr(0, 3) + " " + web.code.substr(3), Theme::title_size + 4.0f);
+			if (m_gui.Button(GuiId("web_new_code"), {box.Right() - 28.0f - 200.0f, y + 18.0f, 200.0f, 52.0f}, "New code"))
+			{
+				m_web.SetRequireCode(true);
+				m_web_status = m_web.GetStatus();
+				m_needs_draw = true;
+			}
+		}
+	}
+	m_y = box.Bottom() + 20.0f;
+
+	// The upload in progress.
+	if (!web.transfer.empty())
+	{
+		m_gui.Text(CONTENT_X, m_y, fmt::format("Receiving {}", web.transfer), Theme::body_size);
+		const std::string percent = fmt::format("{}%", static_cast<int>(web.progress * 100.0f));
+		m_gui.Text(CONTENT_RIGHT - m_gui.TextWidth(percent, Theme::body_size), m_y, percent, Theme::body_size, Theme::text_muted);
+		if (m_gui.Drawing())
+		{
+			const Rect bar{CONTENT_X, m_y + 40.0f, CONTENT_RIGHT - CONTENT_X, 8.0f};
+			m_gui.Draw().FillRect(bar, Theme::control, 4.0f);
+			m_gui.Draw().FillRect({bar.x, bar.y, bar.w * web.progress, bar.h}, Theme::accent, 4.0f);
+		}
+	}
+	else
+		m_gui.Text(CONTENT_X, m_y, "Files sent from the browser appear in the emulator's BIOS and games folders.",
+			Theme::small_size, Theme::text_muted);
 }
 
 void SettingsMenu::RunControls()

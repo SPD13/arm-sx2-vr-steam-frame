@@ -19,6 +19,7 @@
 #include "VolumetricWindow.h"
 #include "XrApp.h"
 #include "ui/VrMenu.h"
+#include "web/WebServer.h"
 
 #include "GS/GSVolumetric.h"
 
@@ -265,6 +266,15 @@ int main(int argc, char* argv[])
 			return EXIT_FAILURE;
 		}
 	}
+	// Wi-Fi transfer, switched on from the menu: the BIOS folder and the games folder.
+	WebServer web;
+	web.SetFolders({
+		{"bios", EmuFolders::Bios, {".bin", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm"}},
+		{"roms", Path::Combine(EmuFolders::DataRoot, "roms"),
+			{".iso", ".chd", ".cso", ".zso", ".gz", ".bin", ".cue", ".img", ".mdf", ".mds", ".nrg", ".elf"}},
+	});
+	web.SetProtectedFile(emu_options.boot_path);
+
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
 	// The mode is fixed for the run. The stereo prototype shows the GS's own per-eye frames on a
 	// flat screen.
@@ -310,7 +320,7 @@ int main(int argc, char* argv[])
 	std::array<ScreenLayer, 2> eye_panels;
 	DepthView depth_view;
 	VolumetricWindow window;
-	VrMenu menu(settings, stereo, flat);
+	VrMenu menu(settings, web, stereo, flat);
 	const VkDevice device = gs->GetDevice();
 	const VkQueue queue = gs->GetGraphicsQueue();
 	const uint32_t queue_family = gs->GetGraphicsQueueFamilyIndex();
@@ -596,6 +606,7 @@ int main(int argc, char* argv[])
 
 	Console.WriteLn("Shutting down.");
 	settings.Update(true);
+	web.Stop();
 	Emu::RequestShutdown();
 	menu.Destroy();
 	for (ScreenLayer& panel : eye_panels)

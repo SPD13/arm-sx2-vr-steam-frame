@@ -33,7 +33,18 @@ add_executable(ps2v
 	ui/SettingsMenu.h
 	ui/VrMenu.cpp
 	ui/VrMenu.h
+	web/WebServer.cpp
+	web/WebServer.h
 )
+
+# The Wi-Fi transfer page, embedded in the binary.
+set(PS2V_WEB_PAGE "${CMAKE_CURRENT_BINARY_DIR}/web/web_page.h")
+add_custom_command(OUTPUT "${PS2V_WEB_PAGE}"
+	COMMAND ${CMAKE_COMMAND} "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html" "-DOUTPUT=${PS2V_WEB_PAGE}"
+		-P "${CMAKE_CURRENT_SOURCE_DIR}/web/embed.cmake"
+	DEPENDS web/index.html web/embed.cmake
+	COMMENT "Embedding web/index.html")
+target_sources(ps2v PRIVATE "${PS2V_WEB_PAGE}")
 
 # Shaders become SPIR-V arrays in generated headers: shaders/name.stage -> name.stage.h, array name_stage.
 set(PS2V_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
@@ -58,6 +69,7 @@ target_include_directories(ps2v PRIVATE
 	"${CMAKE_BINARY_DIR}/common/include"
 	"${CMAKE_SOURCE_DIR}/pcsx2"
 	"${PS2V_SHADER_DIR}"
+	"${CMAKE_CURRENT_BINARY_DIR}/web"
 )
 
 target_link_libraries(ps2v PRIVATE

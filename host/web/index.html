@@ -1,0 +1,460 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0+ -->
+<!-- Served by WebServer from the headset; embedded into the binary at build time. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PS2 Volumetric Transfer</title>
+<style>
+:root {
+	--bg: #0f1115;
+	--panel: #15171c;
+	--raised: #1c1f26;
+	--hover: #272b35;
+	--border: #2e333e;
+	--text: #eceef3;
+	--muted: #9097a6;
+	--accent: #4f8cff;
+	--accent-hover: #6c9fff;
+	--danger: #e5484d;
+	--ok: #3fb950;
+	--radius: 14px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+	font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	min-height: 100vh;
+	padding: 24px 16px 48px;
+}
+main { max-width: 860px; margin: 0 auto; }
+header { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+header svg { flex: none; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; }
+.sub { color: var(--muted); font-size: 14px; }
+button {
+	font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--border);
+	border-radius: 10px; padding: 9px 16px; cursor: pointer;
+}
+button:hover { background: var(--hover); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: var(--accent-hover); }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.icon { padding: 7px; line-height: 0; background: transparent; border-color: transparent; color: var(--muted); }
+button.icon:hover { background: var(--hover); color: var(--danger); }
+.hidden { display: none !important; }
+
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* Access code */
+#login { max-width: 380px; margin: 12vh auto 0; padding: 32px 28px; text-align: center; }
+#login h2 { margin: 0 0 6px; font-size: 20px; }
+#login p { color: var(--muted); margin: 0 0 22px; }
+#code {
+	width: 100%; font: 600 30px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.4em; text-align: center;
+	padding: 14px 0 14px 0.4em; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+}
+#login button { width: 100%; margin-top: 14px; padding: 12px; }
+#login-error { color: var(--danger); min-height: 1.45em; margin-top: 12px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 6px; padding: 5px; background: var(--raised); border-radius: 12px; width: max-content; margin-bottom: 18px; }
+.tabs button { border: none; background: transparent; color: var(--muted); padding: 8px 22px; border-radius: 8px; }
+.tabs button[aria-selected="true"] { background: var(--accent); color: #fff; }
+.tabs button:not([aria-selected="true"]):hover { background: var(--hover); color: var(--text); }
+
+/* Storage */
+.storage { padding: 16px 18px; margin-bottom: 14px; }
+.storage .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; margin-bottom: 9px; }
+.storage .row span:last-child { color: var(--muted); }
+.bar { height: 8px; background: var(--raised); border-radius: 4px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--accent); border-radius: 4px; transition: width .3s; }
+.storage.low .bar > div { background: var(--danger); }
+
+/* Drop zone */
+.drop {
+	display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+	padding: 18px; margin-bottom: 14px; border: 1.5px dashed var(--border); border-radius: var(--radius);
+	background: var(--panel); transition: border-color .15s, background .15s;
+}
+.drop.over { border-color: var(--accent); background: #18223a; }
+.drop strong { display: block; font-weight: 600; }
+.drop span { color: var(--muted); font-size: 13px; }
+
+/* Uploads */
+#uploads:empty { display: none; }
+#uploads { margin-bottom: 14px; padding: 6px 0; }
+.upload { padding: 10px 18px; }
+.upload .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; margin-bottom: 7px; }
+.upload .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload .state { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+.upload.done .bar > div { background: var(--ok); }
+.upload.failed .state { color: var(--danger); }
+.upload.failed .bar > div { background: var(--danger); }
+
+/* Files */
+.files { overflow: hidden; }
+.files .head, .file { display: grid; grid-template-columns: 1fr 96px 120px 40px; gap: 12px; align-items: center; padding: 0 10px 0 18px; }
+.files .head { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; height: 40px; border-bottom: 1px solid var(--border); }
+.file { min-height: 52px; border-bottom: 1px solid var(--border); }
+.file:last-child { border-bottom: none; }
+.file:hover { background: var(--raised); }
+.file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file .size, .file .date { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.num { text-align: right; }
+.empty { padding: 36px 18px; text-align: center; color: var(--muted); }
+
+/* Dialog */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dialog { max-width: 420px; width: 100%; padding: 24px; }
+.dialog h3 { margin: 0 0 8px; font-size: 18px; }
+.dialog p { margin: 0 0 22px; color: var(--muted); word-break: break-word; }
+.dialog .actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+#toast {
+	position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px);
+	background: var(--hover); border: 1px solid var(--border); padding: 10px 18px; border-radius: 999px; font-size: 14px;
+}
+
+@media (max-width: 560px) {
+	.files .head { display: none; }
+	.file { grid-template-columns: 1fr 40px; grid-template-rows: auto auto; padding: 8px 6px 8px 14px; row-gap: 2px; }
+	.file .name { grid-column: 1; }
+	.file .size { grid-row: 2; grid-column: 1; text-align: left; }
+	.file .date { display: none; }
+	.file button { grid-row: 1 / span 2; grid-column: 2; }
+	.tabs { width: 100%; }
+	.tabs button { flex: 1; }
+}
+</style>
+</head>
+<body>
+<main>
+	<header>
+		<svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+			<rect width="40" height="40" rx="10" fill="#4f8cff"/>
+			<path d="M11 26.5l9-5.2 9 5.2-9 5.2z" fill="#fff" opacity=".55"/>
+			<path d="M11 20l9-5.2 9 5.2-9 5.2z" fill="#fff" opacity=".8"/>
+			<path d="M11 13.5l9-5.2 9 5.2-9 5.2z" fill="#fff"/>
+		</svg>
+		<div>
+			<h1>PS2 Volumetric</h1>
+			<div class="sub">Wi-Fi transfer to your headset</div>
+		</div>
+	</header>
+
+	<section id="login" class="card hidden">
+		<h2>Enter the access code</h2>
+		<p>It is shown in the headset, in Settings › Wi-Fi Transfer.</p>
+		<form id="login-form">
+			<input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" aria-label="Access code">
+			<button class="primary" type="submit">Continue</button>
+		</form>
+		<div id="login-error" role="alert"></div>
+	</section>
+
+	<section id="app" class="hidden">
+		<div class="tabs" role="tablist">
+			<button role="tab" data-folder="bios" aria-selected="true">BIOS</button>
+			<button role="tab" data-folder="roms" aria-selected="false">ROMs</button>
+		</div>
+
+		<div class="storage card" id="storage">
+			<div class="row"><span id="free">&nbsp;</span><span id="total"></span></div>
+			<div class="bar"><div id="used" style="width:0"></div></div>
+		</div>
+
+		<div class="drop" id="drop">
+			<div>
+				<strong id="drop-title">Drop files here</strong>
+				<span id="drop-hint"></span>
+			</div>
+			<button class="primary" type="button" id="choose">Choose files</button>
+			<input type="file" id="picker" multiple class="hidden">
+		</div>
+
+		<div id="uploads" class="card"></div>
+
+		<div class="files card">
+			<div class="head"><span>Name</span><span class="num">Size</span><span class="num">Added</span><span></span></div>
+			<div id="list"></div>
+		</div>
+	</section>
+</main>
+
+<div id="dialog" class="backdrop hidden">
+	<div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+		<h3 id="dialog-title"></h3>
+		<p id="dialog-text"></p>
+		<div class="actions">
+			<button type="button" id="dialog-cancel">Cancel</button>
+			<button type="button" id="dialog-ok" class="danger"></button>
+		</div>
+	</div>
+</div>
+<div id="toast" class="hidden" role="status"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const FOLDERS = {
+	bios: { hint: "Your own PS2 BIOS dump", empty: "No BIOS yet. The emulator needs one to start games." },
+	roms: { hint: "Your PS2 game images", empty: "No games yet." },
+};
+const SPACE_MARGIN = 64 * 1024 * 1024; // the headset keeps this much free (WebServer.cpp)
+let folder = "bios";
+let extensions = [];
+const queue = [];
+let uploading = false;
+
+function size(bytes) {
+	const units = ["B", "KB", "MB", "GB", "TB"];
+	let i = 0;
+	while (bytes >= 1000 && i < units.length - 1) { bytes /= 1000; i++; }
+	return (i === 0 ? bytes : bytes.toFixed(bytes < 10 ? 1 : 0)) + " " + units[i];
+}
+
+function date(seconds) {
+	return new Date(seconds * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+let toastTimer;
+function toast(text) {
+	const t = $("toast");
+	t.textContent = text;
+	t.classList.remove("hidden");
+	clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
+}
+
+function ask(title, text, ok) {
+	return new Promise((resolve) => {
+		$("dialog-title").textContent = title;
+		$("dialog-text").textContent = text;
+		$("dialog-ok").textContent = ok;
+		$("dialog").classList.remove("hidden");
+		const done = (answer) => {
+			$("dialog").classList.add("hidden");
+			$("dialog-ok").onclick = $("dialog-cancel").onclick = null;
+			resolve(answer);
+		};
+		$("dialog-ok").onclick = () => done(true);
+		$("dialog-cancel").onclick = () => done(false);
+		$("dialog-ok").focus();
+	});
+}
+
+async function api(method, path, body) {
+	const options = { method, headers: {}, credentials: "same-origin" };
+	if (method !== "GET") options.headers["X-Requested-With"] = "ps2v";
+	if (body !== undefined) {
+		options.headers["Content-Type"] = "application/json";
+		options.body = JSON.stringify(body);
+	}
+	const response = await fetch(path, options);
+	let data = {};
+	try { data = await response.json(); } catch (e) {}
+	if (response.status === 401 && path !== "/api/login") showLogin();
+	return { status: response.status, data };
+}
+
+function showLogin() {
+	$("app").classList.add("hidden");
+	$("login").classList.remove("hidden");
+	$("code").focus();
+}
+
+function showApp() {
+	$("login").classList.add("hidden");
+	$("app").classList.remove("hidden");
+	selectFolder(localStorage.getItem("ps2v-folder") || "bios");
+}
+
+$("login-form").addEventListener("submit", async (event) => {
+	event.preventDefault();
+	const { status, data } = await api("POST", "/api/login", { code: $("code").value });
+	if (status === 200) {
+		$("login-error").textContent = "";
+		showApp();
+	} else {
+		$("login-error").textContent = data.error || "Could not sign in.";
+		$("code").select();
+	}
+});
+$("code").addEventListener("input", () => {
+	$("code").value = $("code").value.replace(/\D/g, "").slice(0, 6);
+	if ($("code").value.length === 6) $("login-form").requestSubmit();
+});
+
+function selectFolder(id) {
+	if (!FOLDERS[id]) id = "bios";
+	folder = id;
+	try { localStorage.setItem("ps2v-folder", id); } catch (e) {}
+	for (const tab of document.querySelectorAll("[role=tab]"))
+		tab.setAttribute("aria-selected", tab.dataset.folder === id ? "true" : "false");
+	$("list").innerHTML = "";
+	refresh();
+}
+for (const tab of document.querySelectorAll("[role=tab]"))
+	tab.addEventListener("click", () => selectFolder(tab.dataset.folder));
+
+async function refresh() {
+	const shown = folder;
+	const { status, data } = await api("GET", "/api/files/" + shown);
+	if (status !== 200 || shown !== folder) return;
+	extensions = data.extensions;
+	$("drop-hint").textContent = FOLDERS[shown].hint + " (" + extensions.join(", ") + ")";
+	$("picker").accept = extensions.join(",");
+
+	const used = data.total - data.free;
+	$("free").textContent = size(data.free) + " free";
+	$("total").textContent = "of " + size(data.total);
+	$("used").style.width = (data.total ? (100 * used / data.total) : 0).toFixed(1) + "%";
+	$("storage").classList.toggle("low", data.free < 2e9);
+
+	const list = $("list");
+	list.innerHTML = "";
+	if (!data.files.length) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+		empty.textContent = FOLDERS[shown].empty;
+		list.append(empty);
+	}
+	for (const file of data.files) {
+		const row = document.createElement("div");
+		row.className = "file";
+		const name = document.createElement("span");
+		name.className = "name";
+		name.textContent = name.title = file.name;
+		const bytes = document.createElement("span");
+		bytes.className = "size num";
+		bytes.textContent = size(file.size);
+		const added = document.createElement("span");
+		added.className = "date num";
+		added.textContent = date(file.mtime);
+		const remove = document.createElement("button");
+		remove.className = "icon";
+		remove.title = "Delete";
+		remove.setAttribute("aria-label", "Delete " + file.name);
+		remove.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+		remove.addEventListener("click", () => removeFile(shown, file.name));
+		row.append(name, bytes, added, remove);
+		list.append(row);
+	}
+}
+
+async function removeFile(id, name) {
+	if (!(await ask("Delete " + name + "?", "It is removed from the headset for good.", "Delete"))) return;
+	const { status, data } = await api("DELETE", "/api/files/" + id + "/" + encodeURIComponent(name));
+	toast(status === 200 ? "Deleted " + name : (data.error || "Could not delete " + name));
+	refresh();
+}
+
+// Uploads, one at a time.
+function addFiles(files) {
+	for (const file of files) {
+		const lower = file.name.toLowerCase();
+		const item = document.createElement("div");
+		item.className = "upload";
+		item.innerHTML = '<div class="row"><span class="name"></span><span class="state">Waiting</span></div><div class="bar"><div style="width:0"></div></div>';
+		item.querySelector(".name").textContent = file.name;
+		$("uploads").append(item);
+		const entry = { file, folder, item };
+		if (!extensions.some((ext) => lower.endsWith(ext))) {
+			finish(entry, false, "Not a " + (folder === "bios" ? "BIOS" : "game") + " file");
+			continue;
+		}
+		queue.push(entry);
+	}
+	next();
+}
+
+function finish(entry, ok, text) {
+	entry.item.classList.add(ok ? "done" : "failed");
+	entry.item.querySelector(".state").textContent = text;
+	if (ok) entry.item.querySelector(".bar > div").style.width = "100%";
+	setTimeout(() => entry.item.remove(), ok ? 4000 : 10000);
+}
+
+function send(entry, overwrite) {
+	return new Promise((resolve) => {
+		const xhr = new XMLHttpRequest();
+		xhr.open("PUT", "/api/files/" + entry.folder + "/" + encodeURIComponent(entry.file.name) + (overwrite ? "?overwrite=1" : ""));
+		xhr.setRequestHeader("X-Requested-With", "ps2v");
+		const state = entry.item.querySelector(".state");
+		const bar = entry.item.querySelector(".bar > div");
+		const started = performance.now();
+		xhr.upload.onprogress = (event) => {
+			if (!event.lengthComputable) return;
+			const seconds = (performance.now() - started) / 1000;
+			bar.style.width = (100 * event.loaded / event.total).toFixed(1) + "%";
+			state.textContent = Math.floor(100 * event.loaded / event.total) + "%" +
+				(seconds > 1 ? " · " + size(event.loaded / seconds) + "/s" : "");
+		};
+		xhr.onload = () => {
+			let error = "";
+			try { error = JSON.parse(xhr.responseText).error || ""; } catch (e) {}
+			resolve({ status: xhr.status, error });
+		};
+		xhr.onerror = () => resolve({ status: 0, error: "Connection lost" });
+		xhr.send(entry.file);
+	});
+}
+
+async function next() {
+	if (uploading || !queue.length) return;
+	uploading = true;
+	const entry = queue.shift();
+	// Check first: the headset refuses a big upload before reading it, which the browser only
+	// reports as a broken connection.
+	const replace = () => ask("Replace " + entry.file.name + "?", "A file with this name is already on the headset.", "Replace");
+	const { status, data } = await api("GET", "/api/files/" + entry.folder);
+	let overwrite = false, skip = "";
+	if (status === 401) skip = "Sign in first";
+	else if (status === 200) {
+		if (data.files.some((f) => f.name === entry.file.name)) {
+			if (await replace()) overwrite = true; else skip = "Skipped";
+		}
+		if (!skip && entry.file.size + SPACE_MARGIN > data.free) skip = "Not enough space on the headset";
+	}
+	if (skip) finish(entry, false, skip);
+	else {
+		entry.item.querySelector(".state").textContent = "0%";
+		let result = await send(entry, overwrite);
+		if (result.status === 409 && await replace())
+			result = await send(entry, true);
+		if (result.status === 200) finish(entry, true, "Done");
+		else if (result.status === 409) finish(entry, false, "Skipped");
+		else finish(entry, false, result.error || "Failed");
+		if (result.status === 401) showLogin();
+	}
+	uploading = false;
+	if (entry.folder === folder) refresh();
+	next();
+}
+
+$("choose").addEventListener("click", () => $("picker").click());
+$("picker").addEventListener("change", () => { addFiles($("picker").files); $("picker").value = ""; });
+const drop = $("drop");
+drop.addEventListener("dragover", (event) => { event.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (event) => {
+	event.preventDefault();
+	drop.classList.remove("over");
+	addFiles(event.dataTransfer.files);
+});
+window.addEventListener("beforeunload", (event) => {
+	if (uploading) event.preventDefault();
+});
+
+(async () => {
+	const { data } = await api("GET", "/api/status");
+	if (data.authorized) showApp(); else showLogin();
+})();
+</script>
+</body>
+</html>

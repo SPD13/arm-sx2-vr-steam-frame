@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <array>
 
-static constexpr std::array<VrSettingInfo, 11> s_settings = {{
+static constexpr std::array<VrSettingInfo, 12> s_settings = {{
 	{"Screen", "screen_width", &VrSettings::screen_width, nullptr, 0.3f, 10.0f, false},
 	{"Screen", "screen_distance", &VrSettings::screen_distance, nullptr, 0.3f, 10.0f, false},
 	{"Mode", "flat", nullptr, &VrSettings::flat, 0.0f, 0.0f, true},
@@ -25,6 +25,7 @@ static constexpr std::array<VrSettingInfo, 11> s_settings = {{
 	{"Stereo", "stereo_depth", &VrSettings::stereo_depth, nullptr, 0.0f, 20.0f, false},
 	{"Stereo", "stereo_convergence", &VrSettings::stereo_convergence, nullptr, 0.001f, 100.0f, false},
 	{"Stereo", "stereo_z_mode", nullptr, &VrSettings::stereo_z_mode, 0.0f, 0.0f, false},
+	{"Web", "web_require_code", nullptr, &VrSettings::web_require_code, 0.0f, 0.0f, false},
 }};
 
 std::span<const VrSettingInfo> VrSettingList()

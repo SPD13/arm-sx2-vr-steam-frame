@@ -36,6 +36,8 @@ struct VrSettings
 	float stereo_depth = 1.0f; // meters behind the screen for the farthest geometry
 	float stereo_convergence = 1.0f; // Q (or normalised Z in Z mode) on the screen plane
 	bool stereo_z_mode = false; // drive the parallax by Z instead of Q
+	// Wi-Fi transfer
+	bool web_require_code = true; // the page asks for a 6-digit code shown in the menu
 };
 
 // One setting, for the code that handles them all alike (the ini, the command line, later the menu).
