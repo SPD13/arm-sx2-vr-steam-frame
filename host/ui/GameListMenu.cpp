@@ -56,7 +56,8 @@ namespace
 		return fmt::format("Played {} h {} min", seconds / 3600, (seconds % 3600) / 60);
 	}
 
-	std::string FormatLastPlayed(std::time_t when)
+	// "<what> today at 14:32", "<what> yesterday at 09:10", "<what> 12 Oct 2026".
+	std::string FormatWhen(std::string_view what, std::time_t when)
 	{
 		const std::time_t now = std::time(nullptr);
 		std::tm then{}, today{};
@@ -67,12 +68,12 @@ namespace
 		const auto day_number = [](const std::tm& tm) { return tm.tm_year * 400 + tm.tm_yday; };
 		const int days = day_number(today) - day_number(then);
 		if (days == 0)
-			return fmt::format("Last played today at {}", clock);
+			return fmt::format("{} today at {}", what, clock);
 		if (days == 1)
-			return fmt::format("Last played yesterday at {}", clock);
+			return fmt::format("{} yesterday at {}", what, clock);
 		char date[32];
 		std::strftime(date, sizeof(date), "%d %b %Y", &then);
-		return fmt::format("Last played {}", date[0] == '0' ? date + 1 : date);
+		return fmt::format("{} {}", what, date[0] == '0' ? date + 1 : date);
 	}
 } // namespace
 
@@ -133,14 +134,21 @@ std::vector<const GameListMenu::Game*> GameListMenu::Shown() const
 	std::vector<const Game*> shown;
 	for (const Game& game : m_games)
 	{
-		const bool keep = m_tab == Tab::All || (m_tab == Tab::Recent && (game.info.last_played || IsRunning(game))) ||
+		const bool keep = m_tab == Tab::All || m_tab == Tab::RecentlyAdded ||
+		                  (m_tab == Tab::RecentPlay && (game.info.last_played || IsRunning(game))) ||
 		                  (m_tab == Tab::MostPlayed && game.info.played_seconds > 0) ||
 		                  (m_tab == Tab::Favorites && m_favorites.count(game.key));
 		if (keep)
 			shown.push_back(&game);
 	}
 	const auto by_title = [](const Game* a, const Game* b) { return a->info.title < b->info.title; };
-	if (m_tab == Tab::Recent)
+	if (m_tab == Tab::RecentlyAdded)
+	{
+		std::stable_sort(shown.begin(), shown.end(), [&](const Game* a, const Game* b) {
+			return a->info.added != b->info.added ? a->info.added > b->info.added : by_title(a, b);
+		});
+	}
+	else if (m_tab == Tab::RecentPlay)
 	{
 		// The running game first: it is being played now.
 		std::stable_sort(shown.begin(), shown.end(), [&](const Game* a, const Game* b) {
@@ -225,9 +233,9 @@ void GameListMenu::Run()
 	}
 	m_gui.SetBlocked(m_confirm != nullptr);
 
-	static constexpr std::array<std::string_view, 4> tabs = {"All", "Recent", "Most played", "Favorites"};
+	static constexpr std::array<std::string_view, 5> tabs = {"All", "Recently Added", "Recent Play", "Most Played", "Favorites"};
 	int tab = static_cast<int>(m_tab);
-	if (m_gui.Segmented(GuiId("tabs"), {300.0f, 40.0f, 640.0f, 52.0f}, tabs, &tab))
+	if (m_gui.Segmented(GuiId("tabs"), {226.0f, 40.0f, 868.0f, 52.0f}, tabs, &tab))
 	{
 		m_tab = static_cast<Tab>(tab);
 		m_scroll = 0.0f;
@@ -262,7 +270,8 @@ void GameListMenu::RunList()
 	const Rect view{LIST_LEFT, LIST_TOP, LIST_RIGHT - LIST_LEFT, LIST_BOTTOM - LIST_TOP};
 	if (shown.empty())
 	{
-		static constexpr std::array<std::string_view, 4> empty = {
+		static constexpr std::array<std::string_view, 5> empty = {
+			"No games yet. Add them in Settings › Wi-Fi Transfer, from a computer or phone.",
 			"No games yet. Add them in Settings › Wi-Fi Transfer, from a computer or phone.",
 			"Games you play show up here.",
 			"Games you play show up here, the most played first.",
@@ -328,10 +337,13 @@ void GameListMenu::RunList()
 			const float text_w = row.Right() - badge_w - 24.0f - text_x;
 			m_gui.Text(text_x, row.y + 14.0f, m_gui.Elide(game.info.title, Theme::label_size, text_w), Theme::label_size);
 			std::string details;
-			if (running)
+			// On Recently Added, when it arrived even for the running game: its badge says it runs.
+			if (m_tab == Tab::RecentlyAdded)
+				details = FormatWhen("Added", game.info.added);
+			else if (running)
 				details = "Playing now";
-			else if (m_tab == Tab::Recent)
-				details = FormatLastPlayed(game.info.last_played);
+			else if (m_tab == Tab::RecentPlay)
+				details = FormatWhen("Last played", game.info.last_played);
 			else if (m_tab == Tab::MostPlayed)
 				details = FormatPlayed(game.info.played_seconds);
 			else

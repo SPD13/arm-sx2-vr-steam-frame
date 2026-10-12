@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The game list the games button opens: tabs for all games, the recently played ones, the most
-// played ones and the favourites, one row per game with a star that marks it as a favourite.
+// The game list the games button opens: tabs for all games, the recently added ones, the recently
+// played ones, the most played ones and the favourites, one row per game with a star that marks it as a favourite.
 // Clicking a row starts the game, after asking when another one is running. Like SettingsMenu it
 // draws on a Canvas; VrMenu shows it and feeds it the pointer and the thumbsticks' scrolling.
 
@@ -42,7 +42,8 @@ private:
 	enum class Tab
 	{
 		All,
-		Recent,
+		RecentlyAdded,
+		RecentPlay,
 		MostPlayed,
 		Favorites,
 	};

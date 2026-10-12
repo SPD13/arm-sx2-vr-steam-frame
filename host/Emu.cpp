@@ -25,6 +25,8 @@
 #include <filesystem>
 #include <map>
 
+#include <sys/stat.h>
+
 #include "common/Console.h"
 #include "common/CrashHandler.h"
 #include "common/Error.h"
@@ -253,7 +255,7 @@ static void ListGames()
 			if (!entry || (entry->type != GameList::EntryType::PS2Disc && entry->type != GameList::EntryType::ELF))
 				continue;
 			by_path[entry->path] = games.size();
-			games.push_back({entry->path, entry->GetTitle(), entry->serial, entry->total_size, entry->last_played_time,
+			games.push_back({entry->path, entry->GetTitle(), entry->serial, entry->total_size, 0, entry->last_played_time,
 				entry->total_played_time});
 		}
 	}
@@ -272,7 +274,15 @@ static void ListGames()
 		if ((ext == ".bin" && std::filesystem::exists(std::filesystem::path(path).replace_extension(".cue"), ec)) ||
 			(ext == ".mdf" && std::filesystem::exists(std::filesystem::path(path).replace_extension(".mds"), ec)))
 			continue;
-		games.push_back({path.string(), path.stem().string(), {}, static_cast<uint64_t>(it->file_size(ec)), 0, 0});
+		games.push_back({path.string(), path.stem().string(), {}, static_cast<uint64_t>(it->file_size(ec)), 0, 0, 0});
+	}
+	// When each arrived: the inode change time, which a copy, move or upload into the folder sets
+	// even when it keeps the file's modification time.
+	for (Emu::GameInfo& game : games)
+	{
+		struct stat st;
+		if (stat(game.path.c_str(), &st) == 0)
+			game.added = st.st_ctime;
 	}
 	std::lock_guard lock(s_games_mutex);
 	s_games = std::move(games);

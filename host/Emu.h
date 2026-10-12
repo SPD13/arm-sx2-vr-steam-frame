@@ -51,6 +51,7 @@ namespace Emu
 		std::string title;
 		std::string serial; // empty until the game list has read the file
 		uint64_t size = 0;
+		std::time_t added = 0; // when the file arrived in the games folder
 		std::time_t last_played = 0;
 		std::time_t played_seconds = 0;
 	};
