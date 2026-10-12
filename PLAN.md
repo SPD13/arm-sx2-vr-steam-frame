@@ -73,7 +73,7 @@ The project directory is currently empty. The plan rests on web and source resea
 - ARMSX2's Android build already wires this up for touch aiming (`platforms/android/app/src/main/cpp/native-lib.cpp`, around line 2673, `usbLightgunAim` / `usbLightgunButton`). That code is our template.
 - Limit: `MAX_POINTER_DEVICES = 1`, so two guns at once needs a small patch.
 - Feedback: the GunCon 2 has no recoil signal, so we synthesize haptics when the trigger is pulled.
-- Gun model: make an original "retro light gun" in glTF and avoid GunCon trademarks and trade dress. Use the CC0 Kenney Blaster Kit as a placeholder.
+- Gun model: `assets/lightgun.glb`, a low-poly model rebuilt from scans of the PS1 light gun shells, with the trademarks removed (no "namco" or PlayStation marks). The user chose on 2026-10-12 to match the real shape closely. Pipeline and node contract: `tools/lightgun/README.md`.
 
 ## Architecture
 
