@@ -227,7 +227,7 @@ const XrCompositionLayerBaseHeader* ScreenLayer::Layer()
 {
 	m_layer = {XR_TYPE_COMPOSITION_LAYER_QUAD};
 	m_layer.space = m_xr->LocalSpace();
-	m_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	m_layer.eyeVisibility = m_eyes;
 	m_layer.subImage.swapchain = m_swapchain;
 	m_layer.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(m_width_px), static_cast<int32_t>(m_height_px)}};
 	m_layer.pose = m_pose;

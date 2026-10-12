@@ -29,6 +29,8 @@ public:
 	// Screen placement in LOCAL space; the quad faces +Z of the pose.
 	void SetPose(const XrPosef& pose) { m_pose = pose; }
 	void SetWidth(float meters) { m_width = meters; }
+	// Which eyes see the layer (a stereo pair is two layers, one per eye).
+	void SetEyeVisibility(XrEyeVisibility eyes) { m_eyes = eyes; }
 
 	const XrCompositionLayerBaseHeader* Layer();
 
@@ -55,5 +57,6 @@ private:
 
 	XrPosef m_pose{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -2.0f}};
 	float m_width = 2.4f;
+	XrEyeVisibility m_eyes = XR_EYE_VISIBILITY_BOTH;
 	XrCompositionLayerQuad m_layer{XR_TYPE_COMPOSITION_LAYER_QUAD};
 };

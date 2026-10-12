@@ -6,8 +6,12 @@ find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 
 add_executable(ps2v
 	main.cpp
+	Profile.cpp
+	Profile.h
 	DepthView.cpp
 	DepthView.h
+	VolumetricWindow.cpp
+	VolumetricWindow.h
 	Emu.cpp
 	Emu.h
 	ScreenLayer.cpp
@@ -16,16 +20,21 @@ add_executable(ps2v
 	XrApp.h
 )
 
-# Compute shaders become SPIR-V arrays (<name>_comp) in generated headers.
+# Shaders become SPIR-V arrays in generated headers: shaders/name.stage -> name.stage.h, array name_stage.
 set(PS2V_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-foreach(shader depth_stats depth_view)
-	set(output "${PS2V_SHADER_DIR}/${shader}.comp.h")
+set(PS2V_SHADERS
+	depth_stats.comp depth_hist.comp depth_range.comp depth_normalize.comp depth_hud.comp depth_background.comp depth_view.comp
+	window.vert window.frag)
+file(GLOB PS2V_SHADER_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.glsl")
+foreach(shader ${PS2V_SHADERS})
+	string(REPLACE "." "_" array_name "${shader}")
+	set(output "${PS2V_SHADER_DIR}/${shader}.h")
 	add_custom_command(OUTPUT "${output}"
 		COMMAND ${CMAKE_COMMAND} -E make_directory "${PS2V_SHADER_DIR}"
-		COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.1 --vn ${shader}_comp
-			-I${CMAKE_CURRENT_SOURCE_DIR}/shaders -o "${output}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}.comp"
-		DEPENDS "shaders/${shader}.comp" "shaders/depth_common.glsl"
-		COMMENT "Compiling ${shader}.comp")
+		COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.1 --vn ${array_name}
+			-I${CMAKE_CURRENT_SOURCE_DIR}/shaders -o "${output}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}"
+		DEPENDS "shaders/${shader}" ${PS2V_SHADER_INCLUDES}
+		COMMENT "Compiling ${shader}")
 	target_sources(ps2v PRIVATE "${output}")
 endforeach()
 
@@ -42,5 +51,8 @@ target_link_libraries(ps2v PRIVATE
 	OpenXR::openxr_loader
 )
 
-# resources/ (GameDB, shaders, fonts) next to the binary, as for the other frontends.
+# resources/ (GameDB, shaders, fonts) next to the binary, as for the other frontends, and the game
+# profiles.
 pcsx2_copy_runtime_resources(ps2v)
+add_custom_command(TARGET ps2v POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/profiles" "$<TARGET_FILE_DIR:ps2v>/profiles")

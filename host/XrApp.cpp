@@ -378,6 +378,7 @@ bool XrApp::PollEvents()
 			case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED:
 			{
 				const auto& changed = reinterpret_cast<const XrEventDataSessionStateChanged&>(event);
+				m_focus_gained |= changed.state == XR_SESSION_STATE_FOCUSED;
 				m_session_state = changed.state;
 				Console.WriteLnFmt("XR: session state {}", static_cast<int>(m_session_state));
 				if (m_session_state == XR_SESSION_STATE_READY)
@@ -436,7 +437,12 @@ void XrApp::EndFrame(const Frame& frame, const XrCompositionLayerBaseHeader* con
 	info.layerCount = frame.should_render ? layer_count : 0;
 	info.layers = layers;
 	std::lock_guard lock(GraphicsQueueMutex());
-	xrEndFrame(m_session, &info);
+	if (const XrResult res = xrEndFrame(m_session, &info); XR_FAILED(res))
+	{
+		static int reported = 0;
+		if (reported++ < 10)
+			Console.ErrorFmt("XR: xrEndFrame failed ({}) with {} layers", static_cast<int>(res), info.layerCount);
+	}
 }
 
 bool XrApp::GetBool(XrAction action) const
@@ -531,6 +537,20 @@ XrApp::Input XrApp::ReadInput()
 	pad.select = menu && now - m_menu_down_since >= long_press;
 	pad.start = now < m_start_pulse_until;
 	return input;
+}
+
+bool XrApp::LocateEyes(XrTime time, XrView views[2]) const
+{
+	XrViewLocateInfo locate{XR_TYPE_VIEW_LOCATE_INFO};
+	locate.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+	locate.displayTime = time;
+	locate.space = m_local_space;
+	XrViewState state{XR_TYPE_VIEW_STATE};
+	views[0] = {XR_TYPE_VIEW};
+	views[1] = {XR_TYPE_VIEW};
+	uint32_t count = 0;
+	return XR_SUCCEEDED(xrLocateViews(m_session, &locate, &state, 2, &count, views)) && count == 2 &&
+	       (state.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT);
 }
 
 bool XrApp::LocateHead(XrTime time, XrPosef* pose) const

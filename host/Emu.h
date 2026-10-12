@@ -33,6 +33,9 @@ namespace Emu
 	void RequestShutdown();
 	bool ShutdownRequested();
 
+	// Serial of the running disc (e.g. SLUS-20219), empty before one has booted.
+	std::string GetSerial();
+
 	// Lets the CPU thread close the GS, which destroys the Vulkan device, then joins it and returns
 	// its exit code. Call once the XR side no longer uses the device.
 	int Join();

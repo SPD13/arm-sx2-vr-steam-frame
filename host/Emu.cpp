@@ -73,6 +73,9 @@ static std::condition_variable s_cpu_queue_cv;
 
 static std::thread s_gamelist_thread;
 
+static std::mutex s_serial_mutex;
+static std::string s_serial;
+
 // The GS presents into an offscreen ring (VKLibretro::Active); this size only seeds it.
 static constexpr u32 SURFACE_WIDTH = 1280;
 static constexpr u32 SURFACE_HEIGHT = 960;
@@ -348,6 +351,12 @@ void Emu::RequestShutdown()
 	s_cpu_queue_cv.notify_all();
 }
 
+std::string Emu::GetSerial()
+{
+	std::lock_guard lock(s_serial_mutex);
+	return s_serial;
+}
+
 bool Emu::ShutdownRequested()
 {
 	return s_shutdown_requested.load(std::memory_order_acquire);
@@ -549,6 +558,8 @@ void Host::OnGameChanged(const std::string& title, const std::string& elf_overri
 {
 	if (!title.empty())
 		INFO_LOG("Game changed: {} (serial {}, CRC {:08X})", title, disc_serial, current_crc);
+	std::lock_guard lock(s_serial_mutex);
+	s_serial = disc_serial;
 }
 
 void Host::OnPerformanceMetricsUpdated()

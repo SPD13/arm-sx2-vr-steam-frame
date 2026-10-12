@@ -36,7 +36,7 @@ void main()
 		atomicAdd(group_total, 1u);
 		if (IsHud(cell))
 			atomicAdd(group_hud, 1u);
-		if (z > 0.0)
+		if (IsSceneDepth(z))
 		{
 			atomicMin(group_min, floatBitsToUint(z));
 			atomicMax(group_max, floatBitsToUint(z));

@@ -50,6 +50,14 @@ public:
 	// Handles runtime events. Returns false once the app should exit.
 	bool PollEvents();
 	bool IsSessionRunning() const { return m_session_running; }
+	// Whether the session became FOCUSED since the last call: the headset was put on, or the
+	// system dashboard closed.
+	bool TakeFocusGained()
+	{
+		const bool gained = m_focus_gained;
+		m_focus_gained = false;
+		return gained;
+	}
 
 	struct Frame
 	{
@@ -68,8 +76,11 @@ public:
 
 	// Head pose in the LOCAL space at the given time, if tracked.
 	bool LocateHead(XrTime time, XrPosef* pose) const;
+	// Both eyes' views in the LOCAL space at the given time, if tracked.
+	bool LocateEyes(XrTime time, XrView views[2]) const;
 
 	XrInstance Instance() const { return m_instance; }
+	XrSystemId System() const { return m_system; }
 	XrSession Session() const { return m_session; }
 	XrSpace LocalSpace() const { return m_local_space; }
 
@@ -88,6 +99,7 @@ private:
 	XrSpace m_view_space = XR_NULL_HANDLE;
 	XrSessionState m_session_state = XR_SESSION_STATE_UNKNOWN;
 	bool m_session_running = false;
+	bool m_focus_gained = false;
 	bool m_exit_requested = false;
 	bool m_has_frame_controller_ext = false;
 	bool m_profile_has_dpad = false;

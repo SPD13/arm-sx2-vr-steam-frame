@@ -1,0 +1,55 @@
+// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// The 2nd..98th percentile of the scene depth becomes the 0..1 range. The range widens quickly when
+// something nearer or farther appears but narrows only over tens of seconds, so things keep their
+// depth when the view changes (stepping out of cover takes the near wall out of the picture). It
+// starts over after a stretch without depth (DepthView resets it).
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+layout(local_size_x = 1) in;
+
+#include "depth_common.glsl"
+
+const float WIDEN = 0.2; // share of a wider range taken per frame
+const float NARROW = 0.0005; // share of a narrower range taken per frame (~30 s at 60 fps)
+
+void main()
+{
+	if (stats.valid == 0u)
+		return;
+
+	const float zmin = uintBitsToFloat(stats.zmin);
+	const float zmax = uintBitsToFloat(stats.zmax);
+	const uint lo_target = stats.valid / 50u;
+	const uint hi_target = stats.valid - stats.valid / 50u;
+	uint acc = 0u;
+	int lo_bin = -1, hi_bin = 255;
+	for (int b = 0; b < 256; b++)
+	{
+		acc += histogram.bins[b];
+		if (lo_bin < 0 && acc > lo_target)
+			lo_bin = b;
+		if (acc >= hi_target)
+		{
+			hi_bin = b;
+			break;
+		}
+	}
+	const float lo = zmin + (zmax - zmin) * (float(max(lo_bin, 0)) / 256.0);
+	const float hi = zmin + (zmax - zmin) * (float(hi_bin + 1) / 256.0);
+
+	if (range.initialized == 0u)
+	{
+		range.lo = lo;
+		range.hi = hi;
+		range.initialized = 1u;
+	}
+	else
+	{
+		range.lo = mix(range.lo, lo, lo < range.lo ? WIDEN : NARROW);
+		range.hi = mix(range.hi, hi, hi > range.hi ? WIDEN : NARROW);
+	}
+}

@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// Debug view of the depth: the valid range stretched over a colour ramp (near = warm, far =
-// cool), cells without depth in a dark checker so holes stand out, and HUD cells whitened.
+// Debug view of the normalised depth: a colour ramp (near = warm, far = cool), cells without depth
+// in a dark checker so holes stand out, and HUD cells (pinned to the screen plane) in white.
 
 #version 450
 #extension GL_GOOGLE_include_directive : require
@@ -34,20 +34,16 @@ void main()
 	if (any(greaterThanEqual(cell, params.out_size)))
 		return;
 
-	const float z = SampleDepth(cell);
+	// The normalised depth the window uses, so the panel shows what the 3D view gets.
 	vec3 colour;
-	if (z > 0.0 && stats.valid > 0u)
-	{
-		const float zmin = uintBitsToFloat(stats.zmin);
-		const float zmax = uintBitsToFloat(stats.zmax);
-		colour = Turbo((z - zmin) / max(zmax - zmin, 1e-7));
-	}
+	if (IsHud(cell))
+		colour = vec3(1.0);
+	else if (SampleDepth(cell) > 0.0 && range.initialized != 0u)
+		colour = Turbo(NormalizedDepth(cell));
 	else
 	{
 		const bool odd = (((cell.x >> 3) ^ (cell.y >> 3)) & 1) != 0;
 		colour = odd ? vec3(0.12, 0.02, 0.16) : vec3(0.06, 0.0, 0.08);
 	}
-	if (IsHud(cell))
-		colour = mix(colour, vec3(1.0), 0.75);
 	imageStore(out_image, cell, vec4(colour, 1.0));
 }

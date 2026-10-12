@@ -5,6 +5,11 @@
 
 #include <cstdint>
 
+#include "depth_background.comp.h"
+#include "depth_hist.comp.h"
+#include "depth_hud.comp.h"
+#include "depth_normalize.comp.h"
+#include "depth_range.comp.h"
 #include "depth_stats.comp.h"
 #include "depth_view.comp.h"
 
@@ -26,19 +31,27 @@ namespace
 		int32_t colour_size[2];
 		float depth_scale;
 		float hud_threshold;
+		int32_t live_depth;
 	};
 
-	// The stats block of depth_common.glsl.
+	// The stats and range blocks of depth_common.glsl.
 	struct StatsBlock
 	{
 		uint32_t zmin, zmax, valid, total, hud;
 	};
+	struct RangeBlock
+	{
+		float lo, hi;
+		uint32_t initialized, pad;
+	};
+	constexpr VkDeviceSize HISTOGRAM_SIZE = 256 * sizeof(uint32_t);
 
 	// The presented canvas is a filtered resample of the frame the pre-HUD copy comes from, so
 	// small differences are expected everywhere; a HUD changes colours a lot.
 	constexpr float HUD_THRESHOLD = 0.15f;
 
-	constexpr uint32_t MAX_VIEW_SIZE = 960;
+	// Grid resolution on the long side: the window mesh has a vertex per cell.
+	constexpr uint32_t MAX_VIEW_SIZE = 384;
 
 	VkImageMemoryBarrier ImageBarrier(VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags src, VkAccessFlags dst)
 	{
@@ -150,6 +163,13 @@ bool DepthView::Create(VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uin
 		{2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
 		{3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
 		{4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+		{11, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
 	};
 	VkDescriptorSetLayoutCreateInfo set_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
 	set_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
@@ -168,8 +188,14 @@ bool DepthView::Create(VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uin
 		return false;
 
 	m_stats_pipeline = CreatePipeline(depth_stats_comp, sizeof(depth_stats_comp));
+	m_hist_pipeline = CreatePipeline(depth_hist_comp, sizeof(depth_hist_comp));
+	m_range_pipeline = CreatePipeline(depth_range_comp, sizeof(depth_range_comp));
+	m_normalize_pipeline = CreatePipeline(depth_normalize_comp, sizeof(depth_normalize_comp));
+	m_background_pipeline = CreatePipeline(depth_background_comp, sizeof(depth_background_comp));
+	m_hud_pipeline = CreatePipeline(depth_hud_comp, sizeof(depth_hud_comp));
 	m_view_pipeline = CreatePipeline(depth_view_comp, sizeof(depth_view_comp));
-	if (!m_stats_pipeline || !m_view_pipeline)
+	if (!m_stats_pipeline || !m_hist_pipeline || !m_range_pipeline || !m_normalize_pipeline || !m_background_pipeline ||
+		!m_hud_pipeline || !m_view_pipeline)
 	{
 		Console.Error("Depth view: could not create the compute pipelines.");
 		return false;
@@ -192,9 +218,14 @@ bool DepthView::Create(VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uin
 	{
 		if (vkCreateFence(device, &fence_info, nullptr, &m_fences[i]) != VK_SUCCESS ||
 			!CreateBuffer(sizeof(StatsBlock), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-				&m_stats[i]))
+				&m_stats[i]) ||
+			!CreateBuffer(HISTOGRAM_SIZE, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+				&m_histogram[i]))
 			return false;
 	}
+	if (!CreateBuffer(sizeof(RangeBlock), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &m_range))
+		return false;
+	std::memset(m_range.mapped, 0, sizeof(RangeBlock));
 	return true;
 }
 
@@ -213,6 +244,15 @@ void DepthView::Destroy()
 			vkDestroyFence(m_device, m_fences[i], nullptr);
 		m_fences[i] = VK_NULL_HANDLE;
 		DestroyBuffer(&m_stats[i]);
+		DestroyBuffer(&m_histogram[i]);
+	}
+	DestroyBuffer(&m_range);
+	for (VkPipeline* pipeline :
+		{&m_hist_pipeline, &m_range_pipeline, &m_normalize_pipeline, &m_background_pipeline, &m_hud_pipeline})
+	{
+		if (*pipeline)
+			vkDestroyPipeline(m_device, *pipeline, nullptr);
+		*pipeline = VK_NULL_HANDLE;
 	}
 	if (m_pool)
 		vkDestroyCommandPool(m_device, m_pool, nullptr);
@@ -276,9 +316,58 @@ bool DepthView::EnsureOutput(uint32_t width, uint32_t height)
 	if (vkCreateImageView(m_device, &view, nullptr, &m_output_view) != VK_SUCCESS)
 		return false;
 
+	// The normalised grid, same size.
+	info.format = VK_FORMAT_R32_SFLOAT;
+	info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	if (vkCreateImage(m_device, &info, nullptr, &m_normalized) != VK_SUCCESS)
+		return false;
+	vkGetImageMemoryRequirements(m_device, m_normalized, &req);
+	alloc.allocationSize = req.size;
+	alloc.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	if (alloc.memoryTypeIndex == UINT32_MAX ||
+		vkAllocateMemory(m_device, &alloc, nullptr, &m_normalized_memory) != VK_SUCCESS)
+		return false;
+	vkBindImageMemory(m_device, m_normalized, m_normalized_memory, 0);
+	view.image = m_normalized;
+	view.format = info.format;
+	if (vkCreateImageView(m_device, &view, nullptr, &m_normalized_view) != VK_SUCCESS)
+		return false;
+
+	info.format = VK_FORMAT_R32G32B32A32_SFLOAT; // depth + offset to the far cell
+	if (vkCreateImage(m_device, &info, nullptr, &m_background) != VK_SUCCESS)
+		return false;
+	vkGetImageMemoryRequirements(m_device, m_background, &req);
+	alloc.allocationSize = req.size;
+	alloc.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	if (alloc.memoryTypeIndex == UINT32_MAX ||
+		vkAllocateMemory(m_device, &alloc, nullptr, &m_background_memory) != VK_SUCCESS)
+		return false;
+	vkBindImageMemory(m_device, m_background, m_background_memory, 0);
+	view.image = m_background;
+	view.format = info.format;
+	if (vkCreateImageView(m_device, &view, nullptr, &m_background_view) != VK_SUCCESS)
+		return false;
+
+	info.format = VK_FORMAT_R32_SFLOAT;
+	info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	if (vkCreateImage(m_device, &info, nullptr, &m_hud_history) != VK_SUCCESS)
+		return false;
+	vkGetImageMemoryRequirements(m_device, m_hud_history, &req);
+	alloc.allocationSize = req.size;
+	alloc.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	if (alloc.memoryTypeIndex == UINT32_MAX ||
+		vkAllocateMemory(m_device, &alloc, nullptr, &m_hud_history_memory) != VK_SUCCESS)
+		return false;
+	vkBindImageMemory(m_device, m_hud_history, m_hud_history_memory, 0);
+	view.image = m_hud_history;
+	view.format = info.format;
+	if (vkCreateImageView(m_device, &view, nullptr, &m_hud_history_view) != VK_SUCCESS)
+		return false;
+
 	m_output_width = width;
 	m_output_height = height;
 	m_output_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	m_normalized_initialized = false;
 	return true;
 }
 
@@ -293,13 +382,50 @@ void DepthView::DestroyOutput()
 	m_output_view = VK_NULL_HANDLE;
 	m_output = VK_NULL_HANDLE;
 	m_output_memory = VK_NULL_HANDLE;
+	if (m_normalized_view)
+		vkDestroyImageView(m_device, m_normalized_view, nullptr);
+	if (m_normalized)
+		vkDestroyImage(m_device, m_normalized, nullptr);
+	if (m_normalized_memory)
+		vkFreeMemory(m_device, m_normalized_memory, nullptr);
+	m_normalized_view = VK_NULL_HANDLE;
+	m_normalized = VK_NULL_HANDLE;
+	m_normalized_memory = VK_NULL_HANDLE;
+	if (m_background_view)
+		vkDestroyImageView(m_device, m_background_view, nullptr);
+	if (m_background)
+		vkDestroyImage(m_device, m_background, nullptr);
+	if (m_background_memory)
+		vkFreeMemory(m_device, m_background_memory, nullptr);
+	m_background_view = VK_NULL_HANDLE;
+	m_background = VK_NULL_HANDLE;
+	m_background_memory = VK_NULL_HANDLE;
+	if (m_hud_history_view)
+		vkDestroyImageView(m_device, m_hud_history_view, nullptr);
+	if (m_hud_history)
+		vkDestroyImage(m_device, m_hud_history, nullptr);
+	if (m_hud_history_memory)
+		vkFreeMemory(m_device, m_hud_history_memory, nullptr);
+	m_hud_history_view = VK_NULL_HANDLE;
+	m_hud_history = VK_NULL_HANDLE;
+	m_hud_history_memory = VK_NULL_HANDLE;
 	m_output_width = m_output_height = 0;
 }
 
 bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 {
 	if (!frame.depth_image || !frame.depth_view || !frame.depth_width || !frame.depth_height)
+	{
+		// The GPU may still be easing the range: wait before resetting it.
+		if (++m_frames_without_depth == 30 && m_range.mapped)
+		{
+			std::lock_guard lock(GraphicsQueueMutex());
+			vkQueueWaitIdle(m_queue);
+			std::memset(m_range.mapped, 0, sizeof(RangeBlock));
+		}
 		return false;
+	}
+	m_frames_without_depth = 0;
 
 	// The view has the presented region's aspect, at most MAX_VIEW_SIZE on its long side.
 	const float draw_w = frame.depth_draw_rect[2] - frame.depth_draw_rect[0];
@@ -327,6 +453,9 @@ bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 			std::memcpy(&stats.zmin, &s->zmin, sizeof(float));
 			std::memcpy(&stats.zmax, &s->zmax, sizeof(float));
 		}
+		const RangeBlock* r = static_cast<const RangeBlock*>(m_range.mapped);
+		stats.lo = r->lo;
+		stats.hi = r->hi;
 		m_last_stats = stats;
 	}
 
@@ -355,15 +484,40 @@ bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 	const VkBuffer stats_buffer = m_stats[slot].buffer;
 	vkCmdFillBuffer(cmd, stats_buffer, 0, 4, 0xFFFFFFFFu);
 	vkCmdFillBuffer(cmd, stats_buffer, 4, sizeof(StatsBlock) - 4, 0u);
+	vkCmdFillBuffer(cmd, m_histogram[slot].buffer, 0, HISTOGRAM_SIZE, 0u);
 
 	// The GS rendered the depth canvas earlier on this queue; the last panel copy read the output.
 	VkMemoryBarrier global{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
 	global.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
 	global.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-	VkImageMemoryBarrier to_general = ImageBarrier(m_output, m_output_layout, VK_IMAGE_LAYOUT_GENERAL,
-		VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+	// The window's last draw sampled the normalised grid; it stays in GENERAL after the first frame.
+	const VkImageLayout grid_layout = m_normalized_initialized ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+	if (!m_normalized_initialized)
+	{
+		// The HUD history starts empty.
+		VkImageMemoryBarrier to_dst = ImageBarrier(m_hud_history, VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT);
+		vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+			nullptr, 1, &to_dst);
+		const VkClearColorValue zero{};
+		const VkImageSubresourceRange range_all{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+		vkCmdClearColorImage(cmd, m_hud_history, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range_all);
+	}
+	VkImageMemoryBarrier to_general[4] = {
+		ImageBarrier(m_output, m_output_layout, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_READ_BIT,
+			VK_ACCESS_SHADER_WRITE_BIT),
+		ImageBarrier(m_normalized, grid_layout, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT,
+			VK_ACCESS_SHADER_WRITE_BIT),
+		ImageBarrier(m_background, grid_layout, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT,
+			VK_ACCESS_SHADER_WRITE_BIT),
+		ImageBarrier(m_hud_history,
+			m_normalized_initialized ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+	};
 	vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &global, 0,
-		nullptr, 1, &to_general);
+		nullptr, 4, to_general);
+	m_normalized_initialized = true;
 
 	const VkDescriptorImageInfo depth_info{m_sampler, frame.depth_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	const VkDescriptorBufferInfo stats_info{stats_buffer, 0, sizeof(StatsBlock)};
@@ -372,7 +526,16 @@ bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 	const VkDescriptorImageInfo colour_info{m_linear_sampler, frame.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	const VkDescriptorImageInfo prehud_info{
 		m_linear_sampler, frame.prehud_view ? frame.prehud_view : frame.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-	VkWriteDescriptorSet writes[5] = {};
+	const VkDescriptorBufferInfo histogram_info{m_histogram[slot].buffer, 0, HISTOGRAM_SIZE};
+	const VkDescriptorBufferInfo range_info{m_range.buffer, 0, sizeof(RangeBlock)};
+	const VkDescriptorImageInfo normalized_info{VK_NULL_HANDLE, m_normalized_view, VK_IMAGE_LAYOUT_GENERAL};
+	const VkDescriptorImageInfo normalized_read_info{m_sampler, m_normalized_view, VK_IMAGE_LAYOUT_GENERAL};
+	const VkDescriptorImageInfo background_info{VK_NULL_HANDLE, m_background_view, VK_IMAGE_LAYOUT_GENERAL};
+	// Without a live depth, the depth image stands in (the shaders do not read it then).
+	const VkDescriptorImageInfo live_info{m_sampler, frame.live_depth_view ? frame.live_depth_view : frame.depth_view,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+	const VkDescriptorImageInfo history_info{VK_NULL_HANDLE, m_hud_history_view, VK_IMAGE_LAYOUT_GENERAL};
+	VkWriteDescriptorSet writes[12] = {};
 	for (VkWriteDescriptorSet& w : writes)
 	{
 		w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -393,6 +556,27 @@ bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 	writes[4].dstBinding = 4;
 	writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	writes[4].pImageInfo = &prehud_info;
+	writes[5].dstBinding = 5;
+	writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	writes[5].pBufferInfo = &histogram_info;
+	writes[6].dstBinding = 6;
+	writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	writes[6].pBufferInfo = &range_info;
+	writes[7].dstBinding = 7;
+	writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	writes[7].pImageInfo = &normalized_info;
+	writes[8].dstBinding = 8;
+	writes[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	writes[8].pImageInfo = &normalized_read_info;
+	writes[9].dstBinding = 9;
+	writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	writes[9].pImageInfo = &background_info;
+	writes[10].dstBinding = 10;
+	writes[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	writes[10].pImageInfo = &live_info;
+	writes[11].dstBinding = 11;
+	writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	writes[11].pImageInfo = &history_info;
 
 	Params params{};
 	std::memcpy(params.src_uv, frame.depth_src_uv, sizeof(params.src_uv));
@@ -400,6 +584,7 @@ bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 	params.colour_size[0] = static_cast<int32_t>(frame.width);
 	params.colour_size[1] = static_cast<int32_t>(frame.height);
 	params.hud_threshold = frame.prehud_view ? HUD_THRESHOLD : 0.0f;
+	params.live_depth = frame.live_depth_view ? 1 : 0;
 	params.canvas_size[0] = static_cast<int32_t>(frame.depth_width);
 	params.canvas_size[1] = static_cast<int32_t>(frame.depth_height);
 	params.out_size[0] = static_cast<int32_t>(out_w);
@@ -407,21 +592,33 @@ bool DepthView::Process(const VKLibretro::Frame& frame, VKLibretro::Frame* view)
 	params.depth_scale = frame.depth_scale;
 	const uint32_t groups_x = (out_w + 15) / 16, groups_y = (out_h + 15) / 16;
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_stats_pipeline);
-	vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline_layout, 0, 5, writes);
-	vkCmdPushConstants(cmd, m_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
-	vkCmdDispatch(cmd, groups_x, groups_y, 1);
+	// stats -> histogram -> range -> normalised grid and debug view, each reading the previous.
+	VkMemoryBarrier pass_done{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+	pass_done.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	pass_done.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+	const auto run = [&](VkPipeline pipeline, uint32_t gx, uint32_t gy, bool barrier_after) {
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+		vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline_layout, 0, 12, writes);
+		vkCmdPushConstants(cmd, m_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
+		vkCmdDispatch(cmd, gx, gy, 1);
+		if (barrier_after)
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+				&pass_done, 0, nullptr, 0, nullptr);
+	};
+	run(m_stats_pipeline, groups_x, groups_y, true);
+	run(m_hist_pipeline, groups_x, groups_y, true);
+	run(m_range_pipeline, 1, 1, true);
+	run(m_hud_pipeline, groups_x, groups_y, true);
+	run(m_normalize_pipeline, groups_x, groups_y, true);
+	run(m_background_pipeline, groups_x, groups_y, false);
+	run(m_view_pipeline, groups_x, groups_y, false);
 
-	VkMemoryBarrier stats_ready{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-	stats_ready.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-	stats_ready.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-		&stats_ready, 0, nullptr, 0, nullptr);
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_view_pipeline);
-	vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline_layout, 0, 5, writes);
-	vkCmdPushConstants(cmd, m_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
-	vkCmdDispatch(cmd, groups_x, groups_y, 1);
+	// The window's vertex shader samples the grid next.
+	VkMemoryBarrier grid_ready{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+	grid_ready.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	grid_ready.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1,
+		&grid_ready, 0, nullptr, 0, nullptr);
 
 	VkMemoryBarrier host_read{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
 	host_read.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;

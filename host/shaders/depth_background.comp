@@ -1,0 +1,39 @@
+// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// Background grid: the normalised depth eroded toward far over a neighbourhood, so around every
+// foreground edge it lies behind the foreground, together with where that far depth came from so
+// it can show the colours that were next to the foreground rather than the foreground itself.
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+#include "depth_common.glsl"
+
+const int RADIUS = 3;
+
+void main()
+{
+	const ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(cell, params.out_size)))
+		return;
+	// Start from the cell itself so flat areas keep their own colour.
+	float n = texelFetch(normalized_tex, cell, 0).r;
+	ivec2 offset = ivec2(0);
+	for (int dy = -RADIUS; dy <= RADIUS; dy++)
+	{
+		for (int dx = -RADIUS; dx <= RADIUS; dx++)
+		{
+			const ivec2 c = clamp(cell + ivec2(dx, dy), ivec2(0), params.out_size - 1);
+			const float v = texelFetch(normalized_tex, c, 0).r;
+			if (v < n)
+			{
+				n = v;
+				offset = c - cell;
+			}
+		}
+	}
+	imageStore(background_image, cell, vec4(n, vec2(offset), imageLoad(hud_history, cell).r));
+}
