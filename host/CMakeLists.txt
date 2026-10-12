@@ -16,6 +16,8 @@ add_executable(ps2v
 	Emu.h
 	ScreenLayer.cpp
 	ScreenLayer.h
+	Settings.cpp
+	Settings.h
 	XrApp.cpp
 	XrApp.h
 )
