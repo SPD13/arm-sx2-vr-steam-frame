@@ -171,7 +171,9 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
 - **M5, polish and ship.**
   - In-headset settings menu: started (gear button, Display / 3D / Graphics / Audio / Game / Controls pages, Exit).
   - Wi-Fi transfer: started (web page served by the headset for the BIOS and roms folders, switched on in the menu).
-  - Still to do in the menu: game list (from the roms folder), BIOS onboarding (the user supplies their own BIOS dump).
+  - Game list: started (games button under the gear; All / Recent / Most played / Favorites; switching games asks
+    first). The app can start without a game and opens the list.
+  - Still to do in the menu: BIOS onboarding (the user supplies their own BIOS dump), cover art.
   - Foveation (`XR_META_foveation_eye_tracked`).
   - Steam packaging with a GPL source offer.
 

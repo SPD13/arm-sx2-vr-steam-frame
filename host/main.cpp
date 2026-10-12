@@ -66,7 +66,8 @@ using SettingOverrides = std::vector<std::pair<std::string, std::string>>;
 static void PrintUsage(const char* argv0)
 {
 	std::fprintf(stderr,
-		"Usage: %s [options] <disc image>\n"
+		"Usage: %s [options] [disc image]\n"
+		"  Without a disc image, the game list opens (games are in the data folder's roms/).\n"
 		"  --bios-only            Boot the BIOS without a disc\n"
 		"  --no-fast-boot         Run the BIOS intro before the game\n"
 		"  --upscale N            Internal resolution multiplier (1-8)\n"
@@ -153,11 +154,6 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 		}
 		else
 			emu->boot_path = arg;
-	}
-	if (emu->boot_path.empty() && !emu->bios_only)
-	{
-		std::fprintf(stderr, "No disc image given (use --bios-only to boot the BIOS).\n");
-		return false;
 	}
 	if (emu->upscale && (*emu->upscale < 1 || *emu->upscale > 8))
 	{
@@ -270,10 +266,8 @@ int main(int argc, char* argv[])
 	WebServer web;
 	web.SetFolders({
 		{"bios", EmuFolders::Bios, {".bin", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm"}},
-		{"roms", Path::Combine(EmuFolders::DataRoot, "roms"),
-			{".iso", ".chd", ".cso", ".zso", ".gz", ".bin", ".cue", ".img", ".mdf", ".mds", ".nrg", ".elf"}},
+		{"roms", Emu::GetGamesFolder(), Emu::GetGameExtensions()},
 	});
-	web.SetProtectedFile(emu_options.boot_path);
 
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
 	// The mode is fixed for the run. The stereo prototype shows the GS's own per-eye frames on a
@@ -406,6 +400,8 @@ int main(int argc, char* argv[])
 	std::array<Clock::time_point, 2> last_eye_frame{};
 	float screen_aspect = 4.0f / 3.0f;
 	bool menu_recenter = false; // the menu's Recenter, done the next frame
+	// Started without a game: the game list opens once the screen is in place.
+	bool show_game_list = emu_options.boot_path.empty() && !emu_options.bios_only;
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
 	{
 		if (!xr.IsSessionRunning())
@@ -435,6 +431,7 @@ int main(int argc, char* argv[])
 		if (const std::string serial = Emu::GetSerial(); serial != profile_serial)
 		{
 			profile_serial = serial;
+			web.SetProtectedFile(Emu::GetRunningGamePath());
 			const GameProfile profile = LoadGameProfile(serial);
 			window_settings.hud_rects = profile.hud_rects;
 			window_settings.hud_rect_flat = profile.hud_rect_flat;
@@ -464,6 +461,8 @@ int main(int argc, char* argv[])
 		Emu::PadState pad = input.pad;
 		if (screen_placed)
 		{
+			if (std::exchange(show_game_list, false))
+				menu.OpenGameList();
 			const VrMenu::Result ui =
 				menu.Update(frame.display_time, input, screen_pose_now, vr.screen_width, vr.screen_width / screen_aspect);
 			menu_recenter = ui.recenter;

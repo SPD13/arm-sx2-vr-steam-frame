@@ -13,6 +13,7 @@ void Gui::Begin(Canvas* canvas, const GuiInput& input, bool draw)
 	m_input = input;
 	m_draw = draw;
 	m_blocked = m_disabled = false;
+	SetClip(std::nullopt);
 	if (!draw)
 	{
 		m_changed = false;
@@ -39,11 +40,23 @@ bool Gui::Hovered(const Rect& rect) const
 	return m_input.pointer && rect.Contains(m_input.x, m_input.y);
 }
 
+void Gui::SetClip(std::optional<Rect> clip)
+{
+	m_clip = clip;
+	if (m_canvas && m_draw)
+	{
+		if (clip)
+			m_canvas->SetClip(*clip);
+		else
+			m_canvas->ResetClip();
+	}
+}
+
 bool Gui::Interact(uint32_t id, const Rect& rect)
 {
 	if (m_draw)
 		return m_hot == id;
-	const bool hovered = !m_blocked && !m_disabled && Hovered(rect);
+	const bool hovered = !m_blocked && !m_disabled && Hovered(rect) && (!m_clip || Hovered(*m_clip));
 	if (hovered)
 	{
 		m_next_hot = id;
@@ -101,6 +114,63 @@ bool Gui::IconButton(uint32_t id, const Rect& rect, uint32_t icon, float icon_si
 		m_canvas->DrawIcon(m_icons, icon_size, rect, icon, hovered ? Theme::text : Theme::text_muted);
 	}
 	return Clicked(id, hovered);
+}
+
+bool Gui::IconButton(uint32_t id, const Rect& rect, uint32_t icon, float icon_size, Color ink, Color ink_hover)
+{
+	const bool hovered = Interact(id, rect);
+	if (m_draw)
+	{
+		if (hovered)
+			m_canvas->FillRect(rect, Theme::control_hover, 0.5f * std::min(rect.w, rect.h));
+		m_canvas->DrawIcon(m_icons, icon_size, rect, icon, hovered ? ink_hover : ink);
+	}
+	return Clicked(id, hovered);
+}
+
+bool Gui::Clickable(uint32_t id, const Rect& rect, bool* hovered)
+{
+	*hovered = Interact(id, rect);
+	return Clicked(id, *hovered);
+}
+
+bool Gui::ScrollBar(uint32_t id, const Rect& track, float* offset, float content, float view)
+{
+	const float max_offset = std::max(content - view, 0.0f);
+	if (max_offset <= 0.0f)
+	{
+		*offset = 0.0f;
+		return false;
+	}
+	const float thumb_h = std::max(track.h * view / content, 48.0f);
+	const float travel = track.h - thumb_h;
+	const auto thumb_rect = [&](float o) { return Rect{track.x, track.y + travel * o / max_offset, track.w, thumb_h}; };
+	const bool was_active = m_active == id;
+	const bool hovered = Interact(id, track);
+	bool changed = false;
+	if (!m_draw && m_active == id && m_input.pointer)
+	{
+		if (!was_active)
+		{
+			// Grabbing the thumb keeps the grip; pressing the track centres the thumb on the pointer.
+			const Rect thumb = thumb_rect(*offset);
+			m_drag_from = thumb.Contains(m_input.x, m_input.y) ? m_input.y - thumb.y : 0.5f * thumb_h;
+		}
+		const float t = travel > 0.0f ? std::clamp((m_input.y - m_drag_from - track.y) / travel, 0.0f, 1.0f) : 0.0f;
+		const float o = t * max_offset;
+		if (std::abs(o - *offset) > 0.5f)
+		{
+			*offset = o;
+			changed = m_changed = true;
+		}
+	}
+	if (m_draw)
+	{
+		m_canvas->FillRect(track, Theme::nav, 0.5f * track.w);
+		m_canvas->FillRect(thumb_rect(*offset).Inset(2.0f, 2.0f),
+			hovered || m_active == id ? Theme::text_muted : Theme::control_hover, 0.5f * track.w - 2.0f);
+	}
+	return changed;
 }
 
 bool Gui::NavItem(uint32_t id, const Rect& rect, uint32_t icon, std::string_view label, bool selected, Style style)
@@ -231,6 +301,26 @@ void Gui::TextCentered(const Rect& rect, std::string_view text, float size, Colo
 	const float w = m_text.Measure(text, size);
 	m_canvas->DrawText(m_text, size, std::round(rect.x + 0.5f * (rect.w - w)),
 		std::round(rect.y + 0.5f * (rect.h - m_text.LineHeight(size))), text, color);
+}
+
+std::string Gui::Elide(std::string_view text, float size, float width)
+{
+	if (m_text.Measure(text, size) <= width)
+		return std::string(text);
+	constexpr std::string_view dots = "\xe2\x80\xa6"; // ellipsis
+	const float room = width - m_text.Measure(dots, size);
+	std::string out;
+	for (size_t pos = 0; pos < text.size();)
+	{
+		const size_t start = pos;
+		NextCodepoint(text, &pos);
+		if (m_text.Measure(std::string_view(text.data(), pos), size) > room)
+			break;
+		out.append(text.substr(start, pos - start));
+	}
+	while (!out.empty() && out.back() == ' ')
+		out.pop_back();
+	return out + std::string(dots);
 }
 
 float Gui::TextWrapped(float x, float y, float width, std::string_view text, float size, Color color)

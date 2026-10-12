@@ -25,6 +25,8 @@ add_executable(ps2v
 	ui/Canvas.h
 	ui/Font.cpp
 	ui/Font.h
+	ui/GameListMenu.cpp
+	ui/GameListMenu.h
 	ui/Gui.cpp
 	ui/Gui.h
 	ui/OverlayLayer.cpp

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <ctime>
 #include <optional>
 #include <string>
@@ -15,7 +16,7 @@ namespace Emu
 {
 	struct Options
 	{
-		std::string boot_path; // disc image or ELF; empty with bios_only
+		std::string boot_path; // disc image or ELF; empty: start without a game (the game list opens)
 		bool bios_only = false;
 		bool fast_boot = true;
 		std::optional<int> upscale; // internal resolution multiplier, unset keeps the ini value
@@ -37,6 +38,31 @@ namespace Emu
 
 	// Serial of the running disc (e.g. SLUS-20219), empty before one has booted.
 	std::string GetSerial();
+	// The running game's file, empty when none runs.
+	std::string GetRunningGamePath();
+
+	// The folder games are listed from (and Wi-Fi transfer uploads to), and the files it lists.
+	std::string GetGamesFolder();
+	const std::vector<std::string>& GetGameExtensions();
+
+	struct GameInfo
+	{
+		std::string path;
+		std::string title;
+		std::string serial; // empty until the game list has read the file
+		uint64_t size = 0;
+		std::time_t last_played = 0;
+		std::time_t played_seconds = 0;
+	};
+	// Lists the games folder again, in the background; GetGames has the result.
+	void RefreshGames();
+	bool IsRefreshingGames();
+	std::vector<GameInfo> GetGames();
+	unsigned GetGamesVersion(); // changes with every new list
+	// Stops the running game, if any, and starts this one.
+	void BootGame(const std::string& path);
+	// Whether a game failed to start since the last call (TakeNotice says why).
+	bool TakeBootFailure();
 
 	// Lets the CPU thread close the GS, which destroys the Vulkan device, then joins it and returns
 	// its exit code. Call once the XR side no longer uses the device.

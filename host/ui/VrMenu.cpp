@@ -8,6 +8,7 @@
 
 #include "common/Console.h"
 #include "common/FileSystem.h"
+#include "common/Path.h"
 
 #include "fmt/format.h"
 
@@ -18,17 +19,23 @@
 
 namespace
 {
-	constexpr float GEAR_SIZE = 0.12f; // meters
-	constexpr float GEAR_INSET = 0.05f; // from the screen's corner
-	constexpr float GEAR_ZONE = 3.0f; // the pointer shows within this many gear sizes around it
+	constexpr float BUTTON_SIZE = 0.12f; // meters
+	constexpr float BUTTON_GAP = 0.03f; // between the two buttons
+	constexpr float BUTTON_INSET = 0.05f; // from the screen's corner
+	constexpr float BUTTON_ZONE = 3.0f; // the pointer shows within this many button sizes around them
 	constexpr float PANEL_LIFT = 0.03f; // the panel stands this far in front of the screen
 	constexpr float CURSOR_SIZE = 0.035f;
 	constexpr float BEAM_WIDTH = 0.006f;
-	constexpr int GEAR_PX = 128;
+	constexpr int BUTTON_PX = 128;
 	constexpr int CURSOR_PX = 64;
 	constexpr int BEAM_W_PX = 256, BEAM_H_PX = 16;
 	constexpr uint32_t GEAR_ICON = 0xf013;
+	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
+	constexpr float SCROLL_SPEED = 22.0f; // pixels per frame with a thumbstick pushed all the way
 } // namespace
+
+static_assert(SettingsMenu::WIDTH == GameListMenu::WIDTH && SettingsMenu::HEIGHT == GameListMenu::HEIGHT,
+	"the menus share one panel layer");
 
 VrMenu::VrMenu(VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat)
 	: m_settings(settings)
@@ -61,14 +68,16 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	if (!LoadFont(&m_text, "Roboto-Regular.ttf") || !LoadFont(&m_icons, "fa-solid-900.ttf"))
 		return false;
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
-		!m_gear.Create(xr, device, gpu, queue, queue_family_index, GEAR_PX, GEAR_PX) ||
+		!m_gear.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, BUTTON_PX) ||
+		!m_games.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, BUTTON_PX) ||
 		!m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
 		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX))
 	{
 		Destroy();
 		return false;
 	}
-	m_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_running_stereo, m_running_flat, m_text, m_icons);
+	m_settings_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_running_stereo, m_running_flat, m_text, m_icons);
+	m_game_list = std::make_unique<GameListMenu>(Path::Combine(EmuFolders::Settings, "favorites.txt"), m_text, m_icons);
 
 	// The pointer's dot: white with a dark rim, so it shows on light and dark pictures alike.
 	Canvas canvas;
@@ -88,8 +97,13 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	}
 	m_beam.Upload(canvas);
 
-	m_gear_canvas.Resize(GEAR_PX, GEAR_PX);
-	DrawGear();
+	for (Button* button : {&m_gear, &m_games})
+	{
+		button->icon = button == &m_gear ? GEAR_ICON : GAMES_ICON;
+		button->canvas.Resize(BUTTON_PX, BUTTON_PX);
+		button->layer.SetSize(BUTTON_SIZE, BUTTON_SIZE);
+		DrawButton(*button);
+	}
 	m_created = true;
 	return true;
 }
@@ -99,27 +113,30 @@ void VrMenu::Destroy()
 	m_created = false;
 	m_beam.Destroy();
 	m_cursor.Destroy();
-	m_gear.Destroy();
+	m_games.layer.Destroy();
+	m_gear.layer.Destroy();
 	m_panel.Destroy();
-	m_menu.reset();
+	m_game_list.reset();
+	m_settings_menu.reset();
 }
 
-void VrMenu::DrawGear()
+void VrMenu::DrawButton(Button& button)
 {
-	Canvas& c = m_gear_canvas;
+	Canvas& c = button.canvas;
 	c.Clear();
-	const float mid = 0.5f * GEAR_PX;
-	if (m_gear_hovered)
+	const float mid = 0.5f * BUTTON_PX;
+	const Rect all{0, 0, BUTTON_PX, BUTTON_PX};
+	if (button.hovered)
 	{
 		c.FillCircle(mid, mid, mid - 2.0f, Theme::accent);
-		c.DrawIcon(m_icons, 64.0f, {0, 0, GEAR_PX, GEAR_PX}, GEAR_ICON, Theme::text);
+		c.DrawIcon(m_icons, 64.0f, all, button.icon, Theme::text);
 	}
 	else
 	{
 		c.FillCircle(mid, mid, mid - 2.0f, Theme::panel.WithAlpha(0.6f));
-		c.DrawIcon(m_icons, 60.0f, {0, 0, GEAR_PX, GEAR_PX}, GEAR_ICON, Theme::text.WithAlpha(0.8f));
+		c.DrawIcon(m_icons, 60.0f, all, button.icon, Theme::text.WithAlpha(0.8f));
 	}
-	m_gear.Upload(c);
+	button.layer.Upload(c);
 }
 
 VrMenu::Hit VrMenu::HitQuad(const XrPosef& quad, float width, float height, const XrPosef& aim)
@@ -157,29 +174,41 @@ void VrMenu::AnchorPanel()
 	m_panel.SetSize(width, width * static_cast<float>(SettingsMenu::HEIGHT) / static_cast<float>(SettingsMenu::WIDTH));
 }
 
-void VrMenu::Open()
+void VrMenu::Open(Panel panel)
 {
-	m_open = true;
-	m_menu->SetFrameControllers(m_xr->HasFrameControllers());
-	m_menu->Refresh();
+	if (m_open == Panel::None)
+		Emu::SetPaused(true);
+	m_open = panel;
+	if (panel == Panel::Settings)
+	{
+		m_settings_menu->SetFrameControllers(m_xr->HasFrameControllers());
+		m_settings_menu->Refresh();
+	}
+	else
+		m_game_list->Refresh();
 	AnchorPanel();
-	Emu::SetPaused(true);
-	Console.WriteLn("Menu: open");
+	Console.WriteLnFmt("Menu: {} open", panel == Panel::Settings ? "settings" : "game list");
+}
+
+void VrMenu::OpenGameList()
+{
+	if (m_created && m_open != Panel::Games)
+		Open(Panel::Games);
 }
 
 void VrMenu::Close()
 {
-	m_open = false;
+	m_open = Panel::None;
 	Emu::SetPaused(false);
 	Console.WriteLn("Menu: closed");
 }
 
-void VrMenu::PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit)
+void VrMenu::PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit, const XrQuaternionf& facing)
 {
 	m_show_pointer = true;
 	XrPosef cursor;
 	cursor.position = hit.point + hit.normal * 0.004f;
-	cursor.orientation = (m_open ? m_panel : m_gear).Pose().orientation;
+	cursor.orientation = facing;
 	m_cursor.SetPose(cursor);
 
 	// A thin quad from the controller to the dot, turned about its length to face the head.
@@ -206,6 +235,10 @@ VrMenu::Result VrMenu::Update(
 	m_screen = screen;
 	m_screen_width = screen_width;
 
+	// A game from the list that would not start: back to the list, which says why.
+	if (Emu::TakeBootFailure())
+		OpenGameList();
+
 	// Triggers as buttons, with some hysteresis.
 	bool pressed[2], released[2];
 	for (int h = 0; h < 2; h++)
@@ -218,26 +251,33 @@ VrMenu::Result VrMenu::Update(
 			m_swallow[h] = false;
 	}
 
-	XrPosef gear_pose = screen;
-	gear_pose.position = Transform(screen, {0.5f * screen_width - GEAR_INSET - 0.5f * GEAR_SIZE,
-											   0.5f * screen_height - GEAR_INSET - 0.5f * GEAR_SIZE, 0.01f});
-	m_gear.SetPose(gear_pose);
-	m_gear.SetSize(GEAR_SIZE, GEAR_SIZE);
-	if (m_open && m_reanchor)
+	// The buttons, one above the other in the top right corner, and the area around them where
+	// the pointer shows.
+	const float spacing = BUTTON_SIZE + BUTTON_GAP;
+	const XrVector3f corner{0.5f * screen_width - BUTTON_INSET - 0.5f * BUTTON_SIZE,
+		0.5f * screen_height - BUTTON_INSET - 0.5f * BUTTON_SIZE, 0.01f};
+	XrPosef gear_pose = screen, games_pose = screen, zone_pose = screen;
+	gear_pose.position = Transform(screen, corner);
+	games_pose.position = Transform(screen, {corner.x, corner.y - spacing, corner.z});
+	zone_pose.position = Transform(screen, {corner.x, corner.y - 0.5f * spacing, corner.z});
+	m_gear.layer.SetPose(gear_pose);
+	m_games.layer.SetPose(games_pose);
+	const float zone_w = BUTTON_ZONE * BUTTON_SIZE, zone_h = BUTTON_ZONE * BUTTON_SIZE + spacing;
+	if (m_open != Panel::None && m_reanchor)
 		AnchorPanel();
 	m_reanchor = false;
 
-	// Where each controller points: the panel when open, else the area around the gear.
+	// Where each controller points: the open panel, else the area around the buttons.
 	XrPosef aim[2];
 	Hit hits[2];
 	for (int h = 0; h < 2; h++)
 	{
 		if (!m_xr->LocateAim(h, time, &aim[h]))
 			continue;
-		if (m_open)
+		if (m_open != Panel::None)
 			hits[h] = HitQuad(m_panel.Pose(), m_panel.Size().width, m_panel.Size().height, aim[h]);
 		else
-			hits[h] = HitQuad(gear_pose, GEAR_ZONE * GEAR_SIZE, GEAR_ZONE * GEAR_SIZE, aim[h]);
+			hits[h] = HitQuad(zone_pose, zone_w, zone_h, aim[h]);
 	}
 	// The hand that clicks is the pointer; otherwise the one that points at something.
 	for (int h = 0; h < 2; h++)
@@ -248,31 +288,42 @@ VrMenu::Result VrMenu::Update(
 	if (!hits[m_hand].hit && hits[1 - m_hand].hit && !m_trigger_down[m_hand])
 		m_hand = 1 - m_hand;
 	const int hand = m_hand;
-	const Hit& hit = hits[hand];
 
 	bool just_opened = false;
-	if (!m_open)
+	if (m_open == Panel::None)
 	{
-		const bool on_gear = hit.hit && std::hypot(hit.x, hit.y) < 0.5f * GEAR_SIZE;
-		if (on_gear != m_gear_hovered)
+		// Which button a hit in the zone is on (zone coordinates: the gear above, the games below).
+		const auto on = [&](const Hit& hit, float centre_y) {
+			return hit.hit && std::hypot(hit.x, hit.y - centre_y) < 0.5f * BUTTON_SIZE;
+		};
+		const Hit& hit = hits[hand];
+		const bool on_gear = on(hit, 0.5f * spacing), on_games = on(hit, -0.5f * spacing);
+		for (Button* button : {&m_gear, &m_games})
 		{
-			m_gear_hovered = on_gear;
-			DrawGear();
+			const bool hovered = button == &m_gear ? on_gear : on_games;
+			if (hovered != button->hovered)
+			{
+				button->hovered = hovered;
+				DrawButton(*button);
+			}
 		}
-		// Only on the gear itself: aiming near the corner in a game still shoots.
+		// Only on the buttons themselves: aiming near the corner in a game still shoots.
 		for (int h = 0; h < 2; h++)
-			result.block_trigger[h] = hits[h].hit && std::hypot(hits[h].x, hits[h].y) < 0.5f * GEAR_SIZE;
-		if (on_gear && pressed[hand])
+			result.block_trigger[h] = on(hits[h], 0.5f * spacing) || on(hits[h], -0.5f * spacing);
+		if ((on_gear || on_games) && pressed[hand])
 		{
-			Open();
+			Open(on_gear ? Panel::Settings : Panel::Games);
+			m_gear.hovered = m_games.hovered = false;
+			DrawButton(m_gear);
+			DrawButton(m_games);
 			just_opened = true;
 			hits[hand] = HitQuad(m_panel.Pose(), m_panel.Size().width, m_panel.Size().height, aim[hand]);
 		}
 		else if (hit.hit)
-			PlacePointer(time, aim[hand], hit);
+			PlacePointer(time, aim[hand], hit, zone_pose.orientation);
 	}
 
-	if (m_open)
+	if (m_open != Panel::None)
 	{
 		result.open = true;
 		const Hit& panel_hit = hits[hand];
@@ -284,19 +335,34 @@ VrMenu::Result VrMenu::Update(
 		gui.down = usable && m_trigger_down[hand];
 		gui.pressed = usable && pressed[hand];
 		gui.released = released[hand];
-		if (m_menu->Update(gui))
-			m_panel.Upload(m_menu->GetCanvas());
 
-		if (m_menu->TakeRecenterRequest())
+		bool close = false;
+		if (m_open == Panel::Settings)
 		{
-			result.recenter = true;
-			m_reanchor = true;
+			if (m_settings_menu->Update(gui) || just_opened)
+				m_panel.Upload(m_settings_menu->GetCanvas());
+			if (m_settings_menu->TakeRecenterRequest())
+			{
+				result.recenter = true;
+				m_reanchor = true;
+			}
+			close = m_settings_menu->TakeCloseRequest();
 		}
-		if (m_menu->TakeCloseRequest() || (usable && pressed[hand] && !panel_hit.hit))
+		else
+		{
+			// Either thumbstick scrolls the list.
+			const float stick = std::abs(input.pad.ly) > std::abs(input.pad.ry) ? input.pad.ly : input.pad.ry;
+			if (std::abs(stick) > 0.2f)
+				m_game_list->Scroll(-stick * SCROLL_SPEED);
+			if (m_game_list->Update(gui) || just_opened)
+				m_panel.Upload(m_game_list->GetCanvas());
+			close = m_game_list->TakeCloseRequest();
+		}
+		if (close || (usable && pressed[hand] && !panel_hit.hit))
 			Close();
 		else if (panel_hit.hit)
-			PlacePointer(time, aim[hand], panel_hit);
-		if (just_opened || !m_open)
+			PlacePointer(time, aim[hand], panel_hit, m_panel.Pose().orientation);
+		if (just_opened || m_open == Panel::None)
 		{
 			// The trigger that opened or closed the menu stays the menu's until it is let go.
 			for (int h = 0; h < 2; h++)
@@ -313,13 +379,19 @@ void VrMenu::AddLayers(const XrCompositionLayerBaseHeader** layers, uint32_t* co
 {
 	if (!m_created)
 		return;
-	if (m_open)
+	if (m_open != Panel::None)
 	{
 		if (m_panel.HasImage())
 			layers[(*count)++] = m_panel.Layer();
 	}
-	else if (m_gear.HasImage())
-		layers[(*count)++] = m_gear.Layer();
+	else
+	{
+		for (Button* button : {&m_gear, &m_games})
+		{
+			if (button->layer.HasImage())
+				layers[(*count)++] = button->layer.Layer();
+		}
+	}
 	if (m_show_pointer)
 	{
 		layers[(*count)++] = m_beam.Layer();

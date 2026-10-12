@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The settings menu in the headset. A gear button sits in the screen's top right corner; pointing
-// a controller at it and pulling the trigger opens the SettingsMenu panel in front of the screen
-// and pauses the game. The controller that clicked last is the pointer, drawn as a beam and a dot;
-// its trigger clicks. A click away from the panel, its close button, or Load / Restart close it.
+// The menus in the headset. Two round buttons sit in the screen's top right corner: a gear for the
+// SettingsMenu and, below it, a gamepad for the GameListMenu. Pointing a controller at one and
+// pulling the trigger opens its panel in front of the screen and pauses the game. The controller
+// that clicked last is the pointer, drawn as a beam and a dot; its trigger clicks, and the
+// thumbsticks scroll the game list. A click away from the panel, its close button, or starting a
+// game close it.
 
 #pragma once
 
@@ -12,6 +14,7 @@
 #include "XrApp.h"
 #include "ui/Canvas.h"
 #include "ui/Font.h"
+#include "ui/GameListMenu.h"
 #include "ui/OverlayLayer.h"
 #include "ui/SettingsMenu.h"
 
@@ -24,23 +27,33 @@ public:
 	VrMenu(VrSettingsStore& settings, WebServer& web, bool running_stereo, bool running_flat);
 	~VrMenu();
 
-	// Loads the fonts and creates the layers. On failure the menu stays off.
+	// Loads the fonts and creates the layers. On failure the menus stay off.
 	bool Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uint32_t queue_family_index);
 	void Destroy();
 
 	struct Result
 	{
-		bool open = false; // the menu has the controllers: the game gets no input
+		bool open = false; // a menu has the controllers: the game gets no input
 		bool block_trigger[2] = {}; // left, right: the menu uses this trigger, keep it from the game
 		bool recenter = false; // place the screen in front of the head again
 	};
 	// screen: the game screen's centre pose and size in meters.
 	Result Update(XrTime time, const XrApp::Input& input, const XrPosef& screen, float screen_width, float screen_height);
 
-	// Appends the visible layers (at most 3).
+	// Opens the game list (at start, when no game was given).
+	void OpenGameList();
+
+	// Appends the visible layers (at most 4).
 	void AddLayers(const XrCompositionLayerBaseHeader** layers, uint32_t* count);
 
 private:
+	enum class Panel
+	{
+		None,
+		Settings,
+		Games,
+	};
+
 	struct Hit
 	{
 		bool hit = false;
@@ -51,11 +64,20 @@ private:
 	};
 	static Hit HitQuad(const XrPosef& quad, float width, float height, const XrPosef& aim);
 
-	void Open();
+	// A round button beside the screen.
+	struct Button
+	{
+		OverlayLayer layer;
+		Canvas canvas;
+		uint32_t icon = 0;
+		bool hovered = false;
+	};
+	void DrawButton(Button& button);
+
+	void Open(Panel panel);
 	void Close();
 	void AnchorPanel();
-	void DrawGear();
-	void PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit);
+	void PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit, const XrQuaternionf& facing);
 
 	VrSettingsStore& m_settings;
 	WebServer& m_web;
@@ -66,15 +88,15 @@ private:
 
 	Font m_text;
 	Font m_icons;
-	std::unique_ptr<SettingsMenu> m_menu;
-	OverlayLayer m_panel;
-	OverlayLayer m_gear;
+	std::unique_ptr<SettingsMenu> m_settings_menu;
+	std::unique_ptr<GameListMenu> m_game_list;
+	OverlayLayer m_panel; // whichever menu is open
+	Button m_gear;
+	Button m_games;
 	OverlayLayer m_cursor;
 	OverlayLayer m_beam;
-	Canvas m_gear_canvas;
 
-	bool m_open = false;
-	bool m_gear_hovered = false;
+	Panel m_open = Panel::None;
 	bool m_reanchor = false;
 	bool m_show_pointer = false;
 	int m_hand = 1; // the pointer: 0 left, 1 right
