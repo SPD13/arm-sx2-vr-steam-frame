@@ -19,6 +19,13 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <utility>
+
+#include <algorithm>
+#include <filesystem>
+#include <map>
+
+#include <sys/stat.h>
 
 #include "common/Console.h"
 #include "common/CrashHandler.h"
@@ -76,6 +83,26 @@ static std::thread s_gamelist_thread;
 
 static std::mutex s_serial_mutex;
 static std::string s_serial;
+
+// The VR menu's view of the save slots and its notices.
+static std::mutex s_menu_mutex;
+static std::vector<Emu::SaveSlot> s_save_slots(Emu::NUM_SAVE_SLOTS);
+static std::string s_notice;
+static std::atomic<bool> s_apply_pending{false};
+
+// Game switching: the game the list asked for (CPU thread only), and how to boot it.
+static std::optional<std::string> s_boot_request;
+static bool s_fast_boot = true;
+static std::atomic<bool> s_boot_failed{false};
+
+// The game list as the menu sees it.
+static std::mutex s_games_mutex;
+static std::vector<Emu::GameInfo> s_games;
+static std::atomic<unsigned> s_games_version{0};
+static std::atomic<bool> s_games_busy{false};
+static std::atomic<bool> s_games_again{false};
+
+static void SetNotice(std::string notice);
 
 // The GS presents into an offscreen ring (VKLibretro::Active); this size only seeds it.
 static constexpr u32 SURFACE_WIDTH = 1280;
@@ -216,6 +243,9 @@ bool Emu::InitializeConfig(const Options& options)
 		}
 		if (options.upscale)
 			s_base_settings->SetFloatValue("EmuCore/GS", "upscale_multiplier", static_cast<float>(*options.upscale));
+		// The game list scans the games folder.
+		FileSystem::EnsureDirectoryExists(GetGamesFolder().c_str(), false);
+		s_base_settings->AddToStringList("GameList", "RecursivePaths", GetGamesFolder().c_str());
 	}
 
 	Error save_error;
@@ -246,7 +276,57 @@ bool Emu::InitializeConfig(const Options& options)
 	return true;
 }
 
-static void CPUThreadMain(VMBootParameters params)
+// Fills the game list from the games folder. The scan needs the CDVD lock, which a running game
+// holds, so files added meanwhile only show by file name until no game runs.
+static void ListGames()
+{
+	GameList::Refresh(false, false, nullptr);
+
+	std::vector<Emu::GameInfo> games;
+	std::map<std::string, size_t> by_path;
+	{
+		auto lock = GameList::GetLock();
+		for (u32 i = 0; i < GameList::GetEntryCount(); i++)
+		{
+			const GameList::Entry* entry = GameList::GetEntryByIndex(i);
+			// PS1 discs show up too, but this emulator cannot run them.
+			if (!entry || (entry->type != GameList::EntryType::PS2Disc && entry->type != GameList::EntryType::ELF))
+				continue;
+			by_path[entry->path] = games.size();
+			games.push_back({entry->path, entry->GetTitle(), entry->serial, entry->total_size, 0, entry->last_played_time,
+				entry->total_played_time});
+		}
+	}
+	std::error_code ec;
+	for (auto it = std::filesystem::recursive_directory_iterator(Emu::GetGamesFolder(), ec);
+		 !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
+	{
+		const std::filesystem::path& path = it->path();
+		std::string ext = path.extension().string();
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+		const auto& exts = Emu::GetGameExtensions();
+		if (!it->is_regular_file(ec) || path.filename().string().starts_with(".") ||
+			std::find(exts.begin(), exts.end(), ext) == exts.end() || by_path.count(path.string()))
+			continue;
+		// The data half of a cue sheet or an MDS image is not a game of its own.
+		if ((ext == ".bin" && std::filesystem::exists(std::filesystem::path(path).replace_extension(".cue"), ec)) ||
+			(ext == ".mdf" && std::filesystem::exists(std::filesystem::path(path).replace_extension(".mds"), ec)))
+			continue;
+		games.push_back({path.string(), path.stem().string(), {}, static_cast<uint64_t>(it->file_size(ec)), 0, 0, 0});
+	}
+	// When each arrived: the inode change time, which a copy, move or upload into the folder sets
+	// even when it keeps the file's modification time.
+	for (Emu::GameInfo& game : games)
+	{
+		struct stat st;
+		if (stat(game.path.c_str(), &st) == 0)
+			game.added = st.st_ctime;
+	}
+	std::lock_guard lock(s_games_mutex);
+	s_games = std::move(games);
+}
+
+static void CPUThreadMain(std::optional<VMBootParameters> params)
 {
 	s_cpu_thread_ret.store(EXIT_FAILURE);
 	s_cpu_thread_id.store(std::this_thread::get_id(), std::memory_order_release);
@@ -276,8 +356,13 @@ static void CPUThreadMain(VMBootParameters params)
 	MTGS::SetRunIdle(true);
 	SetGSState(1);
 
+	// Once before booting: while a game runs, the game list cannot scan.
+	ListGames();
+	s_games_version++;
+
 	std::optional<VMBootParameters> pending_boot = std::move(params);
 	bool clean_shutdown = true;
+	bool boot_from_list = false;
 
 	while (!s_shutdown_requested.load(std::memory_order_acquire))
 	{
@@ -304,14 +389,34 @@ static void CPUThreadMain(VMBootParameters params)
 			case VMState::Paused:
 			case VMState::Shutdown:
 			{
+				// A game picked in the game list, once the previous one has shut down.
+				if (!pending_boot && s_boot_request && VMManager::GetState() == VMState::Shutdown)
+				{
+					pending_boot.emplace();
+					pending_boot->filename = std::move(*s_boot_request);
+					pending_boot->fast_boot = s_fast_boot;
+					pending_boot->fullscreen = true;
+					s_boot_request.reset();
+					boot_from_list = true;
+				}
 				if (pending_boot)
 				{
 					VMBootParameters bp = std::move(*pending_boot);
 					pending_boot.reset();
+					// A game list scan holds the CDVD lock the boot needs.
+					while (s_games_busy.load())
+						std::this_thread::sleep_for(std::chrono::milliseconds(10));
 					const VMBootResult br = VMManager::Initialize(bp);
 					if (br != VMBootResult::StartupSuccess)
 					{
 						Console.ErrorFmt("VMManager::Initialize failed (result {}).", static_cast<int>(br));
+						if (boot_from_list)
+						{
+							// Back to the list, which says what went wrong.
+							SetNotice(fmt::format("Could not start {}", Path::GetFileName(bp.filename)));
+							s_boot_failed = true;
+							continue;
+						}
 						clean_shutdown = false;
 						s_shutdown_requested.store(true, std::memory_order_release);
 						break;
@@ -319,13 +424,7 @@ static void CPUThreadMain(VMBootParameters params)
 					VMManager::SetState(VMState::Running);
 					continue;
 				}
-
-				// The game ended and there is no game picker yet: quit.
-				if (VMManager::GetState() == VMState::Shutdown)
-				{
-					s_shutdown_requested.store(true, std::memory_order_release);
-					break;
-				}
+				// No game: wait for one from the game list.
 
 				VMManager::IdlePollUpdate();
 				std::unique_lock lock(s_cpu_queue_lock);
@@ -360,13 +459,18 @@ static void CPUThreadMain(VMBootParameters params)
 
 void Emu::Start(const Options& options)
 {
-	VMBootParameters params;
-	params.filename = options.boot_path;
-	if (options.bios_only)
-		params.source_type = CDVD_SourceType::NoDisc;
-	params.fast_boot = options.fast_boot;
-	params.save_state = options.load_state;
-	params.fullscreen = true;
+	s_fast_boot = options.fast_boot;
+	std::optional<VMBootParameters> params;
+	if (!options.boot_path.empty() || options.bios_only)
+	{
+		params.emplace();
+		params->filename = options.boot_path;
+		if (options.bios_only)
+			params->source_type = CDVD_SourceType::NoDisc;
+		params->fast_boot = options.fast_boot;
+		params->save_state = options.load_state;
+		params->fullscreen = true;
+	}
 
 	std::signal(SIGTERM, &HandleSignal);
 	std::signal(SIGINT, &HandleSignal);
@@ -414,6 +518,200 @@ int Emu::Join()
 	if (s_cpu_thread.joinable())
 		s_cpu_thread.join();
 	return s_cpu_thread_ret.load();
+}
+
+void Emu::SetPaused(bool paused)
+{
+	Host::RunOnCPUThread([paused]() {
+		// Resuming would cancel a game switch (or the app quitting) under way.
+		if (VMManager::HasValidVM() && VMManager::GetState() != VMState::Stopping)
+			VMManager::SetPaused(paused);
+	});
+}
+
+Emu::CoreSettings Emu::GetCoreSettings()
+{
+	CoreSettings settings;
+	auto lock = Host::GetSettingsLock();
+	if (!s_base_settings)
+		return settings;
+	settings.upscale = static_cast<int>(s_base_settings->GetFloatValue("EmuCore/GS", "upscale_multiplier", 1.0f));
+	settings.texture_filtering = s_base_settings->GetIntValue("EmuCore/GS", "filter", static_cast<int>(BiFiltering::PS2));
+	settings.volume = static_cast<int>(s_base_settings->GetUIntValue("SPU2/Output", "StandardVolume", 100));
+	settings.muted = s_base_settings->GetBoolValue("SPU2/Output", "OutputMuted", false);
+	return settings;
+}
+
+void Emu::SetCoreSettings(const CoreSettings& settings)
+{
+	{
+		auto lock = Host::GetSettingsLock();
+		if (!s_base_settings)
+			return;
+		s_base_settings->SetFloatValue("EmuCore/GS", "upscale_multiplier", static_cast<float>(settings.upscale));
+		s_base_settings->SetIntValue("EmuCore/GS", "filter", settings.texture_filtering);
+		s_base_settings->SetUIntValue("SPU2/Output", "StandardVolume", static_cast<u32>(settings.volume));
+		s_base_settings->SetBoolValue("SPU2/Output", "OutputMuted", settings.muted);
+		Host::CommitBaseSettingChanges();
+	}
+	// A slider sends a change per frame: queue one apply at a time, which reads the latest values.
+	if (!s_apply_pending.exchange(true))
+	{
+		Host::RunOnCPUThread([]() {
+			s_apply_pending.store(false);
+			if (VMManager::HasValidVM())
+				VMManager::ApplySettings();
+		});
+	}
+}
+
+static void SetNotice(std::string notice)
+{
+	std::lock_guard lock(s_menu_mutex);
+	s_notice = std::move(notice);
+}
+
+// On the CPU thread.
+static void ReadSaveSlots()
+{
+	std::vector<Emu::SaveSlot> slots(Emu::NUM_SAVE_SLOTS);
+	const std::string serial = VMManager::GetDiscSerial();
+	const u32 crc = VMManager::GetDiscCRC();
+	if (VMManager::HasValidVM() && (!serial.empty() || crc))
+	{
+		for (int slot = 1; slot <= Emu::NUM_SAVE_SLOTS; slot++)
+		{
+			FILESYSTEM_STAT_DATA sd;
+			const std::string path = VMManager::GetSaveStateFileName(serial.c_str(), crc, slot);
+			if (!path.empty() && FileSystem::StatFile(path.c_str(), &sd))
+				slots[slot - 1] = {true, sd.ModificationTime};
+		}
+	}
+	std::lock_guard lock(s_menu_mutex);
+	s_save_slots = std::move(slots);
+}
+
+void Emu::RefreshSaveSlots()
+{
+	Host::RunOnCPUThread(&ReadSaveSlots);
+}
+
+std::vector<Emu::SaveSlot> Emu::GetSaveSlots()
+{
+	std::lock_guard lock(s_menu_mutex);
+	return s_save_slots;
+}
+
+void Emu::SaveState(int slot)
+{
+	Host::RunOnCPUThread([slot]() {
+		if (!VMManager::HasValidVM())
+			return;
+		bool failed = false;
+		// Written before this returns, so the slot list below sees it.
+		VMManager::SaveStateToSlot(slot, false, [&failed](const std::string& error) {
+			failed = true;
+			SetNotice(fmt::format("Could not save: {}", error));
+		});
+		if (!failed)
+			SetNotice(fmt::format("Saved to slot {}", slot));
+		ReadSaveSlots();
+	});
+}
+
+void Emu::LoadState(int slot)
+{
+	Host::RunOnCPUThread([slot]() {
+		if (!VMManager::HasValidVM())
+			return;
+		Error error;
+		if (VMManager::LoadStateFromSlot(slot, false, &error))
+			SetNotice(fmt::format("Loaded slot {}", slot));
+		else
+			SetNotice(fmt::format("Could not load slot {}: {}", slot, error.GetDescription()));
+	});
+}
+
+void Emu::ResetGame()
+{
+	Host::RunOnCPUThread([]() {
+		if (VMManager::HasValidVM())
+			VMManager::Reset();
+	});
+}
+
+std::string Emu::GetRunningGamePath()
+{
+	return VMManager::HasValidVM() ? VMManager::GetDiscPath() : std::string();
+}
+
+std::string Emu::GetGamesFolder()
+{
+	return Path::Combine(EmuFolders::DataRoot, "roms");
+}
+
+const std::vector<std::string>& Emu::GetGameExtensions()
+{
+	static const std::vector<std::string> extensions = {
+		".iso", ".chd", ".cso", ".zso", ".gz", ".bin", ".cue", ".img", ".mdf", ".mds", ".nrg", ".elf"};
+	return extensions;
+}
+
+void Emu::RefreshGames()
+{
+	if (s_games_busy.exchange(true))
+	{
+		s_games_again = true;
+		return;
+	}
+	if (s_gamelist_thread.joinable())
+		s_gamelist_thread.join(); // finished
+	s_gamelist_thread = std::thread([]() {
+		Threading::SetNameOfCurrentThread("Game List");
+		do
+		{
+			s_games_again = false;
+			ListGames();
+			s_games_version++;
+		} while (s_games_again.load());
+		s_games_busy = false;
+	});
+}
+
+bool Emu::IsRefreshingGames()
+{
+	return s_games_busy.load();
+}
+
+std::vector<Emu::GameInfo> Emu::GetGames()
+{
+	std::lock_guard lock(s_games_mutex);
+	return s_games;
+}
+
+unsigned Emu::GetGamesVersion()
+{
+	return s_games_version.load();
+}
+
+void Emu::BootGame(const std::string& path)
+{
+	Host::RunOnCPUThread([path]() {
+		s_boot_request = path;
+		if (VMManager::HasValidVM())
+			VMManager::SetState(VMState::Stopping);
+	});
+}
+
+bool Emu::TakeBootFailure()
+{
+	return s_boot_failed.exchange(false);
+}
+
+std::string Emu::TakeNotice()
+{
+	std::lock_guard lock(s_menu_mutex);
+	return std::exchange(s_notice, {});
 }
 
 void Emu::SetPad(const PadState& s)
