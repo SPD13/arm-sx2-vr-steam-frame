@@ -7,16 +7,16 @@
 
 #include <algorithm>
 #include <cmath>
-#include <vector>
 
 namespace
 {
 	constexpr float DEG = 3.14159265f / 180.0f;
 	constexpr float MAX_OFF_AXIS = 75.0f * DEG; // points farther from the axis are pulled in (the quad has to end)
-	constexpr float MARGIN = 10.0f * DEG; // room left around what is shown, when fitting
-	constexpr float EDGE = 2.0f * DEG; // fitted again when something comes this near an edge ...
+	constexpr float MARGIN = 15.0f * DEG; // room left around what is shown, when fitting
+	constexpr float EDGE = 5.0f * DEG; // fitted again when something comes this near an edge ...
 	constexpr float SHRINK = 0.45f; // ... or when what is shown spans less than this share of the view
 	constexpr float MAX_SPAN = 150.0f * DEG; // on each axis
+	constexpr float MIN_EYE_DISTANCE = 0.15f; // meters; an eye nearer the quad (leaning in) fits it again
 
 	// A direction's offset from the view axis, in tangent space; directions too far off are pulled in.
 	void Tangent(const XrVector3f& local, float* x, float* y)
@@ -34,35 +34,13 @@ namespace
 	}
 } // namespace
 
-bool GunView::Fit(const XrVector3f& eye, std::span<const XrVector3f> points)
+bool GunView::Fit(const XrVector3f& eye, std::span<const XrVector3f> points, float distance, float pixels_per_degree,
+	uint32_t max_pixels)
 {
 	if (points.empty())
 		return false;
-	m_eye = eye;
 
-	// Do the points still fit the last view well?
-	if (m_valid)
-	{
-		const XrQuaternionf to_view = Conjugate(m_orientation);
-		float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
-		bool fits = true;
-		for (const XrVector3f& p : points)
-		{
-			const XrVector3f local = Rotate(to_view, p - eye);
-			float x, y;
-			Tangent(local, &x, &y);
-			const float ax = std::atan(x), ay = std::atan(y);
-			fits = fits && local.z < 0.0f && ax > std::atan(m_left) + EDGE && ax < std::atan(m_right) - EDGE &&
-			       ay > std::atan(m_bottom) + EDGE && ay < std::atan(m_top) - EDGE;
-			x0 = std::min(x0, ax), x1 = std::max(x1, ax), y0 = std::min(y0, ay), y1 = std::max(y1, ay);
-		}
-		const float span_x = std::atan(m_right) - std::atan(m_left), span_y = std::atan(m_top) - std::atan(m_bottom);
-		const bool too_big = (x1 - x0) + 2.0f * MARGIN < SHRINK * span_x && (y1 - y0) + 2.0f * MARGIN < SHRINK * span_y;
-		if (fits && !too_big)
-			return true;
-	}
-
-	// Fit again: look toward the points, upright, and take them in with a margin.
+	// Look toward the points, upright, and take them in with a margin.
 	XrVector3f axis{};
 	for (const XrVector3f& p : points)
 		axis = axis + Normalize(p - eye);
@@ -86,36 +64,63 @@ bool GunView::Fit(const XrVector3f& eye, std::span<const XrVector3f> points)
 		y0 = std::min(y0, std::atan(ty)), y1 = std::max(y1, std::atan(ty));
 	}
 	const float limit = 0.5f * MAX_SPAN;
-	m_left = std::tan(std::max(x0 - MARGIN, -limit));
-	m_right = std::tan(std::min(x1 + MARGIN, limit));
-	m_bottom = std::tan(std::max(y0 - MARGIN, -limit));
-	m_top = std::tan(std::min(y1 + MARGIN, limit));
+	const float left = std::max(x0 - MARGIN, -limit), right = std::min(x1 + MARGIN, limit);
+	const float bottom = std::max(y0 - MARGIN, -limit), top = std::min(y1 + MARGIN, limit);
+	m_at_limit[0] = left <= -limit, m_at_limit[1] = right >= limit;
+	m_at_limit[2] = bottom <= -limit, m_at_limit[3] = top >= limit;
+
+	const float tl = std::tan(left), tr = std::tan(right), tb = std::tan(bottom), tt = std::tan(top);
+	m_center = Transform({m_orientation, eye}, {0.5f * (tl + tr) * distance, 0.5f * (tb + tt) * distance, -distance});
+	m_half_width = 0.5f * (tr - tl) * distance;
+	m_half_height = 0.5f * (tt - tb) * distance;
+
+	const float w = (right - left) / DEG * pixels_per_degree;
+	const float h = (top - bottom) / DEG * pixels_per_degree;
+	const float scale = std::min(1.0f, static_cast<float>(max_pixels) / std::max(w, h));
+	m_width = std::max(16u, static_cast<uint32_t>(w * scale));
+	m_height = std::max(16u, static_cast<uint32_t>(h * scale));
 	m_valid = true;
-	m_refits++;
 	return true;
 }
 
-XrFovf GunView::Fov() const
+bool GunView::Fits(const XrVector3f& eye, std::span<const XrVector3f> points) const
 {
-	return {std::atan(m_left), std::atan(m_right), std::atan(m_top), std::atan(m_bottom)};
+	if (!m_valid || points.empty())
+		return false;
+	const XrVector3f e = EyeInQuad(eye);
+	if (e.z < MIN_EYE_DISTANCE)
+		return false;
+	// The quad's edges as angles from where the eye is now.
+	const float left = std::atan((-m_half_width - e.x) / e.z), right = std::atan((m_half_width - e.x) / e.z);
+	const float bottom = std::atan((-m_half_height - e.y) / e.z), top = std::atan((m_half_height - e.y) / e.z);
+
+	const XrQuaternionf to_view = Conjugate(m_orientation);
+	float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+	for (const XrVector3f& p : points)
+	{
+		float tx, ty;
+		Tangent(Rotate(to_view, p - eye), &tx, &ty);
+		const float ax = std::atan(tx), ay = std::atan(ty);
+		// A side at the widest view can't do better: what goes past it is cut.
+		if ((!m_at_limit[0] && ax < left + EDGE) || (!m_at_limit[1] && ax > right - EDGE) ||
+			(!m_at_limit[2] && ay < bottom + EDGE) || (!m_at_limit[3] && ay > top - EDGE))
+			return false;
+		x0 = std::min(x0, ax), x1 = std::max(x1, ax), y0 = std::min(y0, ay), y1 = std::max(y1, ay);
+	}
+	const bool too_big = (x1 - x0) + 2.0f * MARGIN < SHRINK * (right - left) &&
+	                     (y1 - y0) + 2.0f * MARGIN < SHRINK * (top - bottom);
+	return !too_big;
 }
 
-XrPosef GunView::QuadPose(float distance) const
+XrFovf GunView::Fov(const XrVector3f& eye) const
 {
-	return {m_orientation,
-		Transform(Camera(), {0.5f * (m_left + m_right) * distance, 0.5f * (m_bottom + m_top) * distance, -distance})};
+	const XrVector3f e = EyeInQuad(eye);
+	const float z = std::max(e.z, 0.01f);
+	return {std::atan((-m_half_width - e.x) / z), std::atan((m_half_width - e.x) / z),
+		std::atan((m_half_height - e.y) / z), std::atan((-m_half_height - e.y) / z)};
 }
 
-XrExtent2Df GunView::QuadSize(float distance) const
+XrVector3f GunView::EyeInQuad(const XrVector3f& eye) const
 {
-	return {(m_right - m_left) * distance, (m_top - m_bottom) * distance};
-}
-
-void GunView::PixelSize(float pixels_per_degree, uint32_t max_pixels, uint32_t* width, uint32_t* height) const
-{
-	const float w = (std::atan(m_right) - std::atan(m_left)) / DEG * pixels_per_degree;
-	const float h = (std::atan(m_top) - std::atan(m_bottom)) / DEG * pixels_per_degree;
-	const float scale = std::min(1.0f, static_cast<float>(max_pixels) / std::max(w, h));
-	*width = std::max(16u, static_cast<uint32_t>(w * scale));
-	*height = std::max(16u, static_cast<uint32_t>(h * scale));
+	return Rotate(Conjugate(m_orientation), eye - m_center);
 }

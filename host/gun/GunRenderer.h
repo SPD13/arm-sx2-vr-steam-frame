@@ -3,9 +3,14 @@
 
 // The light guns in the headset: the model in each gun hand, with its trigger and side buttons
 // moving as they are pressed, the beam from its muzzle and the dot where it lands. Drawn per eye,
-// from the eye through a quad that covers the guns and beams (GunView), shown as one alpha-blended
-// quad layer per eye. Quad layers, not a projection layer: SteamVR puts quad layers (the screen, the
-// menus) over projection layers whatever their order, and the guns must be over everything.
+// from the eye through a quad that covers the guns and beams (GunView), shown as alpha-blended quad
+// layers. Quad layers, not a projection layer: SteamVR puts quad layers (the screen, the menus) over
+// projection layers whatever their order, and the guns must be over everything.
+//
+// Each eye has two quads (panes). The one showing the guns never moves; when the guns near its edges,
+// the other pane is fitted while it is still empty, and shows the guns from the next frame on. A pane
+// is moved only after a frame empty at the same place. So SteamVR, which applies a quad's new pose a
+// frame late, never shows a picture on a quad still at its old place.
 
 #pragma once
 
@@ -42,18 +47,20 @@ public:
 		XrVector3f beam_end{};
 		uint32_t beam_color = 0xFF3030; // sRGB
 	};
-	// Its two layers (one per eye) for xrEndFrame, in slots[0] and slots[1]; null when no gun is visible.
+	static constexpr int NUM_LAYERS = 4;
+	// Its layers (two per eye) for xrEndFrame, in slots[0] to slots[NUM_LAYERS - 1]; null when not in use.
 	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** slots);
 
 	// The muzzle's pose, LOCAL space, for a gun at `pose`.
 	XrPosef MuzzlePose(const XrPosef& pose) const;
 
 private:
-	struct Eye
+	struct Pane
 	{
 		XrSwapchain swapchain = XR_NULL_HANDLE;
 		uint32_t width = 0, height = 0; // the swapchain's; each frame draws in its top-left part
 		GunView view;
+		int64_t shown = -2; // the last frame it showed the guns
 		std::vector<VkImageView> views;
 		std::vector<VkFramebuffer> framebuffers;
 		VkImage depth = VK_NULL_HANDLE;
@@ -61,8 +68,9 @@ private:
 		VkImageView depth_view = VK_NULL_HANDLE;
 	};
 
-	bool CreateEye(Eye& eye, const XrViewConfigurationView& config);
-	void DestroyEye(Eye& eye);
+	bool CreatePane(Pane& pane, const XrViewConfigurationView& config);
+	void DestroyPane(Pane& pane);
+	void ResetPanes();
 	bool CreatePipelines();
 	bool CreateMeshBuffer();
 	uint32_t FindMemoryType(uint32_t type_bits, VkMemoryPropertyFlags properties) const;
@@ -76,7 +84,15 @@ private:
 	static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 
 	GunModel m_model;
-	std::array<Eye, 2> m_eyes;
+	// Pane eye + 2 * k is eye's k-th, in the layer list in this order.
+	std::array<Pane, NUM_LAYERS> m_panes;
+	std::array<int, 2> m_showing{-1, -1}; // each eye's pane with the guns
+	std::array<int, 2> m_fitted{-1, -1}; // each eye's pane fitted this frame, to show them from the next
+	int64_t m_frame = 0;
+	// For the log: panes fitted, and frames a pane was wanted but the other was not free yet.
+	uint32_t m_fits = 0, m_waits = 0;
+	int64_t m_next_log = 0;
+	uint32_t m_logs = 0;
 	VkRenderPass m_render_pass = VK_NULL_HANDLE;
 	VkPipelineLayout m_mesh_layout = VK_NULL_HANDLE;
 	VkPipelineLayout m_beam_layout = VK_NULL_HANDLE;
@@ -95,5 +111,5 @@ private:
 	std::array<VkFence, NUM_SLOTS> m_fences{};
 	size_t m_slot = 0;
 
-	std::array<XrCompositionLayerQuad, 2> m_layers{};
+	std::array<XrCompositionLayerQuad, NUM_LAYERS> m_layers{};
 };

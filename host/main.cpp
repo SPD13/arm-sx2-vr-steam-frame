@@ -452,7 +452,7 @@ int main(int argc, char* argv[])
 		layer_pad.SetSize(0.001f, 0.001f);
 		layer_pad.SetPose({{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, -50.0f, 0.0f}});
 	}
-	std::array<XrCompositionLayerQuad, 16> pads{}; // one per layer slot (see below)
+	std::array<XrCompositionLayerQuad, 24> pads{}; // one per layer slot (see below)
 	if (stereo)
 	{
 		screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
@@ -1026,8 +1026,8 @@ int main(int argc, char* argv[])
 			SLOT_EYE_PANEL_0,
 			SLOT_EYE_PANEL_1,
 			SLOT_MENU, // VrMenu::NUM_LAYER_SLOTS of them
-			SLOT_GUNS = SLOT_MENU + VrMenu::NUM_LAYER_SLOTS, // two, last: over everything
-			NUM_SLOTS = SLOT_GUNS + 2
+			SLOT_GUNS = SLOT_MENU + VrMenu::NUM_LAYER_SLOTS, // GunRenderer::NUM_LAYERS of them, last: over everything
+			NUM_SLOTS = SLOT_GUNS + GunRenderer::NUM_LAYERS
 		};
 		static_assert(NUM_SLOTS <= std::tuple_size_v<decltype(pads)>, "a pad per slot");
 		std::array<const XrCompositionLayerBaseHeader*, NUM_SLOTS> slots{};

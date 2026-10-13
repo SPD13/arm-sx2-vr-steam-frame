@@ -14,9 +14,11 @@
 
 #include "common/Console.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <utility>
 
 namespace
 {
@@ -160,9 +162,9 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 	if (vkCreateRenderPass(device, &rp_info, nullptr, &m_render_pass) != VK_SUCCESS)
 		return false;
 
-	for (int i = 0; i < 2; i++)
+	for (size_t i = 0; i < m_panes.size(); i++)
 	{
-		if (!CreateEye(m_eyes[i], configs[i]))
+		if (!CreatePane(m_panes[i], configs[i % 2]))
 			return false;
 	}
 	if (!CreatePipelines() || !CreateMeshBuffer())
@@ -186,65 +188,65 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 		if (vkCreateFence(device, &fence_info, nullptr, &fence) != VK_SUCCESS)
 			return false;
 	}
-	Console.WriteLnFmt("Light gun: layer {}x{} per eye", m_eyes[0].width, m_eyes[0].height);
+	Console.WriteLnFmt("Light gun: two {}x{} layers per eye", m_panes[0].width, m_panes[0].height);
 	m_created = true;
 	return true;
 }
 
-bool GunRenderer::CreateEye(Eye& eye, const XrViewConfigurationView& config)
+bool GunRenderer::CreatePane(Pane& pane, const XrViewConfigurationView& config)
 {
-	eye.width = std::min(MAX_PIXELS, config.maxImageRectWidth ? config.maxImageRectWidth : MAX_PIXELS);
-	eye.height = std::min(MAX_PIXELS, config.maxImageRectHeight ? config.maxImageRectHeight : MAX_PIXELS);
+	pane.width = std::min(MAX_PIXELS, config.maxImageRectWidth ? config.maxImageRectWidth : MAX_PIXELS);
+	pane.height = std::min(MAX_PIXELS, config.maxImageRectHeight ? config.maxImageRectHeight : MAX_PIXELS);
 	XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
 	info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
 	info.format = m_format;
 	info.sampleCount = 1;
-	info.width = eye.width;
-	info.height = eye.height;
+	info.width = pane.width;
+	info.height = pane.height;
 	info.faceCount = 1;
 	info.arraySize = 1;
 	info.mipCount = 1;
 	{
 		std::lock_guard lock(GraphicsQueueMutex());
-		if (XR_FAILED(xrCreateSwapchain(m_xr->Session(), &info, &eye.swapchain)))
+		if (XR_FAILED(xrCreateSwapchain(m_xr->Session(), &info, &pane.swapchain)))
 		{
-			Console.ErrorFmt("Light gun: xrCreateSwapchain {}x{} failed", eye.width, eye.height);
-			eye.swapchain = XR_NULL_HANDLE;
+			Console.ErrorFmt("Light gun: xrCreateSwapchain {}x{} failed", pane.width, pane.height);
+			pane.swapchain = XR_NULL_HANDLE;
 			return false;
 		}
 	}
 	uint32_t count = 0;
-	xrEnumerateSwapchainImages(eye.swapchain, 0, &count, nullptr);
+	xrEnumerateSwapchainImages(pane.swapchain, 0, &count, nullptr);
 	std::vector<XrSwapchainImageVulkanKHR> images(count, {XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR});
-	xrEnumerateSwapchainImages(eye.swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data()));
+	xrEnumerateSwapchainImages(pane.swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data()));
 
 	// The depth buffer.
 	VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 	image_info.imageType = VK_IMAGE_TYPE_2D;
 	image_info.format = DEPTH_FORMAT;
-	image_info.extent = {eye.width, eye.height, 1};
+	image_info.extent = {pane.width, pane.height, 1};
 	image_info.mipLevels = 1;
 	image_info.arrayLayers = 1;
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	if (vkCreateImage(m_device, &image_info, nullptr, &eye.depth) != VK_SUCCESS)
+	if (vkCreateImage(m_device, &image_info, nullptr, &pane.depth) != VK_SUCCESS)
 		return false;
 	VkMemoryRequirements req;
-	vkGetImageMemoryRequirements(m_device, eye.depth, &req);
+	vkGetImageMemoryRequirements(m_device, pane.depth, &req);
 	VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
 	alloc.allocationSize = req.size;
 	alloc.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	if (alloc.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(m_device, &alloc, nullptr, &eye.depth_memory) != VK_SUCCESS)
+	if (alloc.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(m_device, &alloc, nullptr, &pane.depth_memory) != VK_SUCCESS)
 		return false;
-	vkBindImageMemory(m_device, eye.depth, eye.depth_memory, 0);
+	vkBindImageMemory(m_device, pane.depth, pane.depth_memory, 0);
 	VkImageViewCreateInfo depth_view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-	depth_view.image = eye.depth;
+	depth_view.image = pane.depth;
 	depth_view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	depth_view.format = DEPTH_FORMAT;
 	depth_view.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-	if (vkCreateImageView(m_device, &depth_view, nullptr, &eye.depth_view) != VK_SUCCESS)
+	if (vkCreateImageView(m_device, &depth_view, nullptr, &pane.depth_view) != VK_SUCCESS)
 		return false;
 
 	for (const XrSwapchainImageVulkanKHR& image : images)
@@ -257,38 +259,38 @@ bool GunRenderer::CreateEye(Eye& eye, const XrViewConfigurationView& config)
 		VkImageView view = VK_NULL_HANDLE;
 		if (vkCreateImageView(m_device, &view_info, nullptr, &view) != VK_SUCCESS)
 			return false;
-		eye.views.push_back(view);
-		const VkImageView fb_attachments[2] = {view, eye.depth_view};
+		pane.views.push_back(view);
+		const VkImageView fb_attachments[2] = {view, pane.depth_view};
 		VkFramebufferCreateInfo fb_info{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
 		fb_info.renderPass = m_render_pass;
 		fb_info.attachmentCount = 2;
 		fb_info.pAttachments = fb_attachments;
-		fb_info.width = eye.width;
-		fb_info.height = eye.height;
+		fb_info.width = pane.width;
+		fb_info.height = pane.height;
 		fb_info.layers = 1;
 		VkFramebuffer framebuffer = VK_NULL_HANDLE;
 		if (vkCreateFramebuffer(m_device, &fb_info, nullptr, &framebuffer) != VK_SUCCESS)
 			return false;
-		eye.framebuffers.push_back(framebuffer);
+		pane.framebuffers.push_back(framebuffer);
 	}
 	return true;
 }
 
-void GunRenderer::DestroyEye(Eye& eye)
+void GunRenderer::DestroyPane(Pane& pane)
 {
-	for (VkFramebuffer fb : eye.framebuffers)
+	for (VkFramebuffer fb : pane.framebuffers)
 		vkDestroyFramebuffer(m_device, fb, nullptr);
-	for (VkImageView view : eye.views)
+	for (VkImageView view : pane.views)
 		vkDestroyImageView(m_device, view, nullptr);
-	if (eye.depth_view)
-		vkDestroyImageView(m_device, eye.depth_view, nullptr);
-	if (eye.depth)
-		vkDestroyImage(m_device, eye.depth, nullptr);
-	if (eye.depth_memory)
-		vkFreeMemory(m_device, eye.depth_memory, nullptr);
-	if (eye.swapchain)
-		xrDestroySwapchain(eye.swapchain);
-	eye = {};
+	if (pane.depth_view)
+		vkDestroyImageView(m_device, pane.depth_view, nullptr);
+	if (pane.depth)
+		vkDestroyImage(m_device, pane.depth, nullptr);
+	if (pane.depth_memory)
+		vkFreeMemory(m_device, pane.depth_memory, nullptr);
+	if (pane.swapchain)
+		xrDestroySwapchain(pane.swapchain);
+	pane = {};
 }
 
 bool GunRenderer::CreatePipelines()
@@ -445,8 +447,8 @@ void GunRenderer::Destroy()
 	{
 		std::lock_guard lock(GraphicsQueueMutex());
 		vkQueueWaitIdle(m_queue);
-		for (Eye& eye : m_eyes)
-			DestroyEye(eye);
+		for (Pane& pane : m_panes)
+			DestroyPane(pane);
 	}
 	for (VkFence& fence : m_fences)
 	{
@@ -486,11 +488,25 @@ XrPosef GunRenderer::MuzzlePose(const XrPosef& pose) const
 	return Compose(pose, m_model.Muzzle());
 }
 
+void GunRenderer::ResetPanes()
+{
+	for (Pane& pane : m_panes)
+		pane.view.Reset();
+	m_showing = {-1, -1};
+	m_fitted = {-1, -1};
+}
+
 void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** slots)
 {
-	slots[0] = slots[1] = nullptr;
-	if (!m_created || (!guns[0].visible && !guns[1].visible))
+	std::fill(slots, slots + NUM_LAYERS, nullptr);
+	if (!m_created)
 		return;
+	// Hidden: a frame of empty panes where the guns were, then no layers at all.
+	if (!guns[0].visible && !guns[1].visible && m_showing[0] < 0 && m_showing[1] < 0)
+	{
+		ResetPanes();
+		return;
+	}
 
 	XrViewLocateInfo locate{XR_TYPE_VIEW_LOCATE_INFO};
 	locate.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -502,35 +518,94 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 	if (XR_FAILED(xrLocateViews(m_xr->Session(), &locate, &view_state, 2, &view_count, views)) || view_count != 2 ||
 		!(view_state.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) ||
 		!(view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
+	{
+		ResetPanes();
 		return;
+	}
+
+	// What each eye's view has to take in: every gun, the end of its beam and its dot.
+	std::vector<XrVector3f> points;
+	for (const Gun& gun : guns)
+	{
+		if (!gun.visible)
+			continue;
+		for (const XrVector3f& corner : m_model.BoundsCorners())
+			points.push_back(Transform(gun.pose, corner));
+		if (gun.beam || gun.dot)
+			points.push_back(gun.beam_end);
+	}
+
+	// Each eye's panes: the one fitted last frame shows the guns from now on; when they near its
+	// edges, the other is fitted (and stays empty this frame), once it has been empty for a frame.
+	m_frame++;
+	for (int i = 0; i < 2; i++)
+	{
+		if (m_fitted[i] >= 0)
+			m_showing[i] = std::exchange(m_fitted[i], -1);
+		if (points.empty())
+		{
+			m_showing[i] = -1;
+			continue;
+		}
+		const XrVector3f& eye = views[i].pose.position;
+		const int showing = m_showing[i];
+		if (showing >= 0 && m_panes[showing].view.Fits(eye, points))
+			continue;
+		const int other = showing >= 0 ? showing ^ 2 : i;
+		Pane& pane = m_panes[other];
+		if (pane.shown < m_frame - 1 &&
+			pane.view.Fit(eye, points, QUAD_DISTANCE, PIXELS_PER_DEGREE, std::min(pane.width, pane.height)))
+		{
+			m_fitted[i] = other;
+			m_fits++;
+		}
+		else
+			m_waits++;
+	}
+	if (display_time >= m_next_log)
+	{
+		if ((m_fits || m_waits) && m_logs < 100)
+		{
+			m_logs++;
+			Console.WriteLnFmt("Light gun: {} quad fits, {} eye frames waiting for a free quad in 5 s", m_fits, m_waits);
+		}
+		m_fits = m_waits = 0;
+		m_next_log = display_time + 5000000000LL;
+	}
 
 	const size_t slot = m_slot;
 	m_slot = (m_slot + 1) % NUM_SLOTS;
 	vkWaitForFences(m_device, 1, &m_fences[slot], VK_TRUE, UINT64_MAX);
 	vkResetFences(m_device, 1, &m_fences[slot]);
 
-	uint32_t image_index[2] = {};
-	for (int i = 0; i < 2; i++)
+	// Every fitted pane gets a picture: the guns, or nothing.
+	std::array<uint32_t, NUM_LAYERS> image_index{};
+	for (int p = 0; p < NUM_LAYERS; p++)
 	{
+		if (!m_panes[p].view.IsValid())
+			continue;
 		XrResult res;
 		{
 			std::lock_guard lock(GraphicsQueueMutex());
-			res = xrAcquireSwapchainImage(m_eyes[i].swapchain, nullptr, &image_index[i]);
+			res = xrAcquireSwapchainImage(m_panes[p].swapchain, nullptr, &image_index[p]);
 		}
 		XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
 		wait.timeout = XR_INFINITE_DURATION;
 		if (XR_SUCCEEDED(res))
-			res = xrWaitSwapchainImage(m_eyes[i].swapchain, &wait);
+			res = xrWaitSwapchainImage(m_panes[p].swapchain, &wait);
 		if (XR_FAILED(res))
 		{
-			Console.ErrorFmt("Light gun: swapchain image for eye {} failed ({})", i, static_cast<int>(res));
+			Console.ErrorFmt("Light gun: swapchain image for layer {} failed ({})", p, static_cast<int>(res));
 			std::lock_guard lock(GraphicsQueueMutex());
 			XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-			for (int j = 0; j < i; j++)
-				xrReleaseSwapchainImage(m_eyes[j].swapchain, &release);
+			for (int q = 0; q < p; q++)
+			{
+				if (m_panes[q].view.IsValid())
+					xrReleaseSwapchainImage(m_panes[q].swapchain, &release);
+			}
 			// Nothing was submitted with the fence: signal it again with an empty submit.
-			std::lock_guard queue_lock(GraphicsQueueMutex());
 			vkQueueSubmit(m_queue, 0, nullptr, m_fences[slot]);
+			ResetPanes();
 			return;
 		}
 	}
@@ -594,115 +669,101 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	vkBeginCommandBuffer(cmd, &begin);
 
-	// What each eye's view has to take in: every gun, the end of its beam and its dot.
-	std::vector<XrVector3f> points;
-	for (const Gun& gun : guns)
+	for (int p = 0; p < NUM_LAYERS; p++)
 	{
-		if (!gun.visible)
+		Pane& pane = m_panes[p];
+		if (!pane.view.IsValid())
 			continue;
-		for (const XrVector3f& corner : m_model.BoundsCorners())
-			points.push_back(Transform(gun.pose, corner));
-		if (gun.beam || gun.dot)
-			points.push_back(gun.beam_end);
-	}
-	uint32_t pixels[2][2] = {};
-	for (int i = 0; i < 2; i++)
-	{
-		Eye& eye = m_eyes[i];
-		eye.view.Fit(views[i].pose.position, points);
-		eye.view.PixelSize(PIXELS_PER_DEGREE, std::min(eye.width, eye.height), &pixels[i][0], &pixels[i][1]);
-		pixels[i][0] = std::min(pixels[i][0], eye.width);
-		pixels[i][1] = std::min(pixels[i][1], eye.height);
-	}
-
-	for (int i = 0; i < 2; i++)
-	{
-		const Eye& eye = m_eyes[i];
-		const XrPosef camera = eye.view.Camera();
-		const Mat4 view = ViewFromPose(camera);
-		const Mat4 vp = Multiply(Projection(eye.view.Fov(), NEAR_Z, FAR_Z), view);
-		const XrQuaternionf to_view = Conjugate(camera.orientation);
-		const uint32_t width = pixels[i][0], height = pixels[i][1];
+		const int i = p % 2;
+		const uint32_t width = std::min(pane.view.Width(), pane.width), height = std::min(pane.view.Height(), pane.height);
 
 		VkClearValue clears[2] = {};
 		clears[1].depthStencil = {1.0f, 0};
 		VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 		rp.renderPass = m_render_pass;
-		rp.framebuffer = eye.framebuffers[image_index[i]];
+		rp.framebuffer = pane.framebuffers[image_index[p]];
 		rp.renderArea = {{0, 0}, {width, height}};
 		rp.clearValueCount = 2;
 		rp.pClearValues = clears;
 		vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-		const VkViewport viewport{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f};
-		const VkRect2D scissor{{0, 0}, {width, height}};
-		vkCmdSetViewport(cmd, 0, 1, &viewport);
-		vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-		// The guns.
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipeline);
-		const VkDeviceSize vertex_offset = 0;
-		vkCmdBindVertexBuffers(cmd, 0, 1, &m_mesh, &vertex_offset);
-		vkCmdBindIndexBuffer(cmd, m_mesh, m_index_offset, VK_INDEX_TYPE_UINT32);
-		for (const PartDraw& d : parts)
+		if (m_showing[i] == p)
 		{
-			MeshConstants c{};
-			const Mat4 mvp = Multiply(vp, MatrixFromPose(d.pose));
-			std::memcpy(c.mvp, mvp.m, sizeof(c.mvp));
-			const Mat4 normal = MatrixFromPose({to_view * d.pose.orientation, {0.0f, 0.0f, 0.0f}});
-			for (int col = 0; col < 3; col++)
-				std::memcpy(c.normal_to_view[col], &normal.m[col * 4], 3 * sizeof(float));
-			std::memcpy(c.colour, d.colour, sizeof(c.colour));
-			vkCmdPushConstants(cmd, m_mesh_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(c), &c);
-			vkCmdDrawIndexed(cmd, d.draw->index_count, 1, d.draw->first_index, 0, 0);
-		}
+			pane.shown = m_frame;
+			const XrPosef camera = pane.view.Camera(views[i].pose.position);
+			const Mat4 view = ViewFromPose(camera);
+			const Mat4 vp = Multiply(Projection(pane.view.Fov(camera.position), NEAR_Z, FAR_Z), view);
+			const XrQuaternionf to_view = Conjugate(camera.orientation);
+			const VkViewport viewport{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f};
+			const VkRect2D scissor{{0, 0}, {width, height}};
+			vkCmdSetViewport(cmd, 0, 1, &viewport);
+			vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-		// The beams, then the dots on top.
-		const XrVector3f eye_pos = camera.position;
-		for (int pass = 0; pass < 2; pass++)
-		{
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pass == 0 ? m_beam_pipeline : m_dot_pipeline);
-			for (const Gun& gun : guns)
+			// The guns.
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipeline);
+			const VkDeviceSize vertex_offset = 0;
+			vkCmdBindVertexBuffers(cmd, 0, 1, &m_mesh, &vertex_offset);
+			vkCmdBindIndexBuffer(cmd, m_mesh, m_index_offset, VK_INDEX_TYPE_UINT32);
+			for (const PartDraw& d : parts)
 			{
-				if (!gun.visible || !(pass == 0 ? gun.beam : gun.dot))
-					continue;
-				QuadConstants q{};
-				LinearColor(gun.beam_color, q.colour);
-				XrVector3f corners[4];
-				if (pass == 0)
+				MeshConstants c{};
+				const Mat4 mvp = Multiply(vp, MatrixFromPose(d.pose));
+				std::memcpy(c.mvp, mvp.m, sizeof(c.mvp));
+				const Mat4 normal = MatrixFromPose({to_view * d.pose.orientation, {0.0f, 0.0f, 0.0f}});
+				for (int col = 0; col < 3; col++)
+					std::memcpy(c.normal_to_view[col], &normal.m[col * 4], 3 * sizeof(float));
+				std::memcpy(c.colour, d.colour, sizeof(c.colour));
+				vkCmdPushConstants(cmd, m_mesh_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(c), &c);
+				vkCmdDrawIndexed(cmd, d.draw->index_count, 1, d.draw->first_index, 0, 0);
+			}
+
+			// The beams, then the dots on top.
+			const XrVector3f eye_pos = camera.position;
+			for (int pass = 0; pass < 2; pass++)
+			{
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pass == 0 ? m_beam_pipeline : m_dot_pipeline);
+				for (const Gun& gun : guns)
 				{
-					// A strip from the muzzle to the end, turned about its length to face the eye.
-					const XrVector3f start = MuzzlePose(gun.pose).position;
-					const XrVector3f mid = (start + gun.beam_end) * 0.5f;
-					XrVector3f side = Normalize(Cross(gun.beam_end - start, eye_pos - mid));
-					side = side * (0.5f * BEAM_WIDTH);
-					corners[0] = start - side;
-					corners[1] = start + side;
-					corners[2] = gun.beam_end - side;
-					corners[3] = gun.beam_end + side;
-					q.colour[3] = 0.9f;
+					if (!gun.visible || !(pass == 0 ? gun.beam : gun.dot))
+						continue;
+					QuadConstants q{};
+					LinearColor(gun.beam_color, q.colour);
+					XrVector3f corners[4];
+					if (pass == 0)
+					{
+						// A strip from the muzzle to the end, turned about its length to face the eye.
+						const XrVector3f start = MuzzlePose(gun.pose).position;
+						const XrVector3f mid = (start + gun.beam_end) * 0.5f;
+						XrVector3f side = Normalize(Cross(gun.beam_end - start, eye_pos - mid));
+						side = side * (0.5f * BEAM_WIDTH);
+						corners[0] = start - side;
+						corners[1] = start + side;
+						corners[2] = gun.beam_end - side;
+						corners[3] = gun.beam_end + side;
+						q.colour[3] = 0.9f;
+					}
+					else
+					{
+						const XrVector3f to_eye = eye_pos - gun.beam_end;
+						const float distance = std::sqrt(Dot(to_eye, to_eye));
+						const XrVector3f forward = Normalize(to_eye);
+						XrVector3f right = Normalize(Cross({0.0f, 1.0f, 0.0f}, forward));
+						if (Dot(right, right) < 0.5f)
+							right = {1.0f, 0.0f, 0.0f};
+						const XrVector3f up = Cross(forward, right);
+						const float size = DOT_SIZE + DOT_GROWTH * distance;
+						const XrVector3f r = right * size, u = up * size;
+						corners[0] = gun.beam_end - r - u;
+						corners[1] = gun.beam_end - r + u;
+						corners[2] = gun.beam_end + r - u;
+						corners[3] = gun.beam_end + r + u;
+						q.colour[3] = 1.0f;
+						q.params[0] = 1.0f;
+					}
+					for (int c = 0; c < 4; c++)
+						ClipPoint(vp, corners[c], q.corners[c]);
+					vkCmdPushConstants(cmd, m_beam_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(q), &q);
+					vkCmdDraw(cmd, 4, 1, 0, 0);
 				}
-				else
-				{
-					const XrVector3f to_eye = eye_pos - gun.beam_end;
-					const float distance = std::sqrt(Dot(to_eye, to_eye));
-					const XrVector3f forward = Normalize(to_eye);
-					XrVector3f right = Normalize(Cross({0.0f, 1.0f, 0.0f}, forward));
-					if (Dot(right, right) < 0.5f)
-						right = {1.0f, 0.0f, 0.0f};
-					const XrVector3f up = Cross(forward, right);
-					const float size = DOT_SIZE + DOT_GROWTH * distance;
-					const XrVector3f r = right * size, u = up * size;
-					corners[0] = gun.beam_end - r - u;
-					corners[1] = gun.beam_end - r + u;
-					corners[2] = gun.beam_end + r - u;
-					corners[3] = gun.beam_end + r + u;
-					q.colour[3] = 1.0f;
-					q.params[0] = 1.0f;
-				}
-				for (int c = 0; c < 4; c++)
-					ClipPoint(vp, corners[c], q.corners[c]);
-				vkCmdPushConstants(cmd, m_beam_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(q), &q);
-				vkCmdDraw(cmd, 4, 1, 0, 0);
 			}
 		}
 		vkCmdEndRenderPass(cmd);
@@ -716,22 +777,29 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 		std::lock_guard lock(GraphicsQueueMutex());
 		vkQueueSubmit(m_queue, 1, &submit, m_fences[slot]);
 		XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-		for (Eye& eye : m_eyes)
-			xrReleaseSwapchainImage(eye.swapchain, &release);
+		for (const Pane& pane : m_panes)
+		{
+			if (pane.view.IsValid())
+				xrReleaseSwapchainImage(pane.swapchain, &release);
+		}
 	}
 
-	// Each eye's picture on its quad, where the view put it.
-	for (int i = 0; i < 2; i++)
+	// Each pane's picture on its quad, where it was fitted.
+	for (int p = 0; p < NUM_LAYERS; p++)
 	{
-		XrCompositionLayerQuad& q = m_layers[i];
+		const Pane& pane = m_panes[p];
+		if (!pane.view.IsValid())
+			continue;
+		XrCompositionLayerQuad& q = m_layers[p];
 		q = {XR_TYPE_COMPOSITION_LAYER_QUAD};
 		q.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
 		q.space = m_xr->LocalSpace();
-		q.eyeVisibility = i == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
-		q.subImage.swapchain = m_eyes[i].swapchain;
-		q.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(pixels[i][0]), static_cast<int32_t>(pixels[i][1])}};
-		q.pose = m_eyes[i].view.QuadPose(QUAD_DISTANCE);
-		q.size = m_eyes[i].view.QuadSize(QUAD_DISTANCE);
-		slots[i] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
+		q.eyeVisibility = p % 2 == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
+		q.subImage.swapchain = pane.swapchain;
+		q.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(std::min(pane.view.Width(), pane.width)),
+			static_cast<int32_t>(std::min(pane.view.Height(), pane.height))}};
+		q.pose = pane.view.QuadPose();
+		q.size = pane.view.QuadSize();
+		slots[p] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
 	}
 }
