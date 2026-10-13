@@ -371,6 +371,7 @@ int main(int argc, char* argv[])
 
 	using Clock = std::chrono::steady_clock;
 	Clock::time_point next_stats_log = Clock::now() + std::chrono::seconds(5);
+	Clock::time_point next_eye_log = next_stats_log; // apart: no game frames come while paused or on the game list
 	Clock::time_point next_dump = Clock::now() + std::chrono::seconds(10);
 	int dump_index = 0;
 	Clock::time_point next_eye_dump = Clock::now() + std::chrono::seconds(10);
@@ -500,6 +501,9 @@ int main(int argc, char* argv[])
 			XrView views[2];
 			if (xr.LocateEyes(frame.display_time, views))
 			{
+				const bool log_eyes = Clock::now() >= next_eye_log;
+				if (log_eyes)
+					next_eye_log = Clock::now() + std::chrono::milliseconds(debug_options.depth_log_ms);
 				const XrQuaternionf& q = screen_pose_now.orientation; // yaw only
 				const float yaw = 2.0f * std::atan2(q.y, q.w);
 				const float c = std::cos(yaw), s = std::sin(yaw);
@@ -517,7 +521,7 @@ int main(int argc, char* argv[])
 					// Far geometry follows the eye on the screen (NDC y points down).
 					GSVolumetric::SetEyeView(i, lx / half_w, -dy / half_h,
 						vr.stereo_depth / (distance + vr.stereo_depth));
-					if (Clock::now() >= next_stats_log)
+					if (log_eyes)
 						Console.WriteLnFmt("Stereo: eye {} at ({:.3f}, {:.3f}) m, {:.2f} m from the screen -> offset ({:.3f}, {:.3f}) NDC, depth factor {:.3f}",
 							i, lx, dy, distance, lx / half_w, -dy / half_h,
 							vr.stereo_depth / (distance + vr.stereo_depth));
