@@ -1,12 +1,14 @@
-# M3: multiview stereo, and the open wall-corruption bug (status 2026-10-12)
+# M3: multiview stereo, and the wall-corruption bug (status 2026-10-12)
 
-The geometric stereo prototype (`docs/m3-status.md`) drew alternate frames for each eye, so each eye only updated at 30 Hz. The multiview port draws **both eyes in every frame** at 60 Hz. It works and looks right in most of Time Crisis II (title, intro, demo and most scenes).
+The geometric stereo prototype (`docs/m3-status.md`) drew alternate frames for each eye, so each eye only updated at 30 Hz. The multiview port draws **both eyes in every frame** at 60 Hz.
 
-**One bug is still open.** It is intermittent and only happens with multiview. In the first shooting room, right after the player steps out of cover, the walls disappear and room objects are drawn several times side by side. This document covers:
+**The wall-corruption bug is found and fixed (section 6).** Inside a multiview render pass, the driver (Turnip, Adreno 750) does not reliably apply a new dynamic offset of the constant buffers to the following draws. Those draws keep an earlier draw's vertex transform. The fix restarts the open pass whenever the constants change; it costs nothing measurable.
+
+The rest of this document is the investigation record:
 
 - what was built;
 - how to see and reproduce the bug without a person in the headset;
-- everything tested so far, with results.
+- everything tested, with results.
 
 Repos: `SPD13/armsx2-steam-frame` branch `ps2v` (the GS changes) and `SPD13/ps2-volumetric` (host, tools, this document).
 
@@ -192,3 +194,39 @@ The broken frames look like draws using another draw's vertex transform (VS unif
 3. If it is a driver problem, reduce it to a small Vulkan repro and check newer Mesa.
 
 **Fallback:** while the bug is open, a game can use `--stereo-alternate` (30 Hz per eye, correct). Making that selectable per game in its profile is an easy follow-up.
+
+## 6. Root cause and fix (2026-10-12, later the same day)
+
+**Two harness bugs corrupted many earlier verdicts:**
+
+- a leftover virtual pad from the previous run hijacked every other run, which then stayed in cover;
+- the classifier counted cover views and the purple "time up" screen as broken.
+
+`tools/mv-debug/run.sh` and `capture.sh` now kill leftover pads first, and `classify.swift` recognises both views. Use only the first five dumps of a run, before the timer runs out. Several conclusions in section 4 came out of the flawed harness; the table below supersedes them.
+
+**Tests with the fixed harness:**
+
+| Change | Runs with broken frames |
+|---|---|
+| Baseline (multiview) | 5 of 8 |
+| gfxreconstruct capture running | 0 of 14 (the capture hides the bug) |
+| Cached-coherent stream rings (`PS2V_CACHED_RINGS`) | 4 of 8 |
+| GS thread slowed (`PS2V_GS_DELAY_US=30` / `=150`) | 2 of 8 / 7 of 8 |
+| No vertex-shader expansion (`PS2V_NO_VSEXPAND`) | 8 of 8 |
+| GPU wait after every draw (`PS2V_FLUSH_FILE` "0 99999") | **0 of 8** |
+| Wait after draws 0–70 only, or after 70 onwards only | **0 of 6** each |
+| One wait per frame ("0 1") | 2 of 8 |
+| **End the render pass after every draw, no wait** (`PS2V_MV_ENDPASS`) | **0 of 8** |
+| **End the pass only when the VS constants change** (`PS2V_MV_ENDPASS_CB`) | **0 of 8** |
+
+So the bug needs several draws with different constant-buffer offsets inside one multiview render pass. Rebinding the descriptor set with the new dynamic offset inside the pass (the `PS2V_MV_DIRTY` tests) does not help; starting a new pass does.
+
+**Fix** (`GSDeviceVK::RestartMultiviewPassForNewConstants`): in multiview, when the VS or PS constant buffer changes, end the open render pass and begin it again in place, with the same framebuffer and clears turned into loads.
+
+**Result:** 8 of 8 runs clean, 59.8 fps, GPU about 18% (unchanged), and no `CheckStereoRenderPass` reports.
+
+**Open follow-ups:**
+
+- confirm in the headset;
+- reduce the bug to a small Vulkan repro for Mesa (multiview pass, several draws, `vkCmdBindDescriptorSets` with new dynamic offsets between them);
+- once Mesa is fixed, the restart can be gated on the driver version.

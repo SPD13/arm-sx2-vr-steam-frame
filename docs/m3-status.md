@@ -42,7 +42,7 @@ Two approaches were built and tested in the headset on Time Crisis II. **Geometr
 - Z-driven mapping with the convergence set at the scene's nearest normalised Z (0.12) spreads the parallax over the whole scene.
 
 **Open items**
-- **Motion:** done with the multiview port (both eyes every frame, `--stereo`), see `docs/m3-multiview.md`. One open bug there: intermittent wall corruption in TC2's first shooting room, multiview only.
+- **Motion:** done with the multiview port (both eyes every frame, `--stereo`), see `docs/m3-multiview.md`. The wall corruption found there (a Turnip multiview constant-buffer issue) is fixed by restarting the pass when constants change.
 - **Enemy bullets:** they look off. They are probably 2D sprites (FST or at maximum depth) pinned to the glass. Trace how they're drawn and place them at the depth around them.
 - **Per-game parameters:** convergence and depth should come from the game profile.
 - **Light gun (M4):** aiming has to go through the same per-eye shift.
