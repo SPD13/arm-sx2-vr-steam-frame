@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build PS2 Volumetric on a Steam Frame (or any ARM64 Linux host) inside a rootless Podman
+# Build ARMSX2 VR on a Steam Frame (or any ARM64 Linux host) inside a rootless Podman
 # container running Valve's ARM64 Steam Runtime 4 SDK, the same runtime version as the headset.
 # Usage: tools/build-frame.sh [--clean]
 #   Static dependencies are built once into build/deps (ARMSX2's own script); delete that

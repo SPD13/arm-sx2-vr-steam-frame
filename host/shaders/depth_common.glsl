@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
 // Shared by the depth passes: the GS depth canvas (R32F, GS Z / 2^32, larger is nearer) sampled

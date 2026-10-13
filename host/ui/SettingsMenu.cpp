@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "SettingsMenu.h"
@@ -614,7 +614,7 @@ void SettingsMenu::RunDialog()
 		c.FillRect({0, 0, WIDTH, HEIGHT}, Rgb(0x000000, 140), RADIUS);
 		c.FillRect(box, Theme::nav, 24.0f);
 		c.StrokeRect(box, Theme::border, 24.0f, 2.0f);
-		m_gui.Text(box.x + 40.0f, box.y + 36.0f, exit ? "Quit PS2 Volumetric?" : "Restart the game?", Theme::title_size - 4.0f);
+		m_gui.Text(box.x + 40.0f, box.y + 36.0f, exit ? "Quit ARMSX2 VR?" : "Restart the game?", Theme::title_size - 4.0f);
 		m_gui.TextWrapped(box.x + 40.0f, box.y + 96.0f, box.w - 80.0f,
 			exit ? "The game stops. Progress since your last save is lost." :
 				   "The game starts over. Progress since your last save is lost.",

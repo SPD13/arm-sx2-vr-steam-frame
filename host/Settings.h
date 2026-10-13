@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
 // The user's VR settings, kept across runs in VR.ini in the settings folder (next to PCSX2.ini).

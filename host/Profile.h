@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
 // Per-game settings for the volumetric window, from profiles/<disc serial>.ini: the user's copy in

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
 // M3 volumetric window: the game rendered per eye into an OpenXR projection layer as a grid mesh

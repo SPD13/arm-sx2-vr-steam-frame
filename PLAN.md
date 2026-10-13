@@ -1,4 +1,4 @@
-# PS2 Volumetric: a standalone PS2 emulator for Steam Frame with a volumetric window and VR light guns
+# ARMSX2 VR: a standalone PS2 emulator for Steam Frame with a volumetric window and VR light guns
 
 ## Context
 We want a native, standalone PS2 emulator for Valve's Steam Frame. It has two VR-specific features:

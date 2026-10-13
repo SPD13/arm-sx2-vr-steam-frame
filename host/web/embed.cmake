@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+# SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 # SPDX-License-Identifier: GPL-3.0+
 
 # Turns web/index.html into a C++ header holding it as s_web_page.

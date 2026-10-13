@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the PS2 Volumetric build on the Steam Frame (on the headset, e.g. over ssh), inside the
+# Run the ARMSX2 VR build on the Steam Frame (on the headset, e.g. over ssh), inside the
 # Steam Linux Runtime 4 ARM64 container the build targets.
 # Usage: tools/run-frame.sh [ps2v arguments]   e.g. tools/run-frame.sh --upscale 3 game.iso
 # The log goes to stdout and to ~/.local/share/ps2v/logs/ps2v.log.

@@ -1,8 +1,8 @@
-# PS2 Volumetric
+# ARMSX2 VR
 
 A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app, shows the game on a virtual screen with real 3D depth, and is driven entirely from the headset: a settings menu, a game list, controller mapping and Wi-Fi transfer of games and BIOS files.
 
-> **Status.** The in-headset menu, Wi-Fi transfer, game list and controller mapping (branch `runtime-settings`) compile and were tested on a desktop (menu rendering, scripted clicks, the web server end to end). They have **not yet run on the Steam Frame**. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
+> **Status.** The in-headset menu, game list and controller pointer run on the Steam Frame (first headset tests on 2026-10-12); Wi-Fi transfer, every settings page and controller mapping still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
 
 ## Contents
 
@@ -297,7 +297,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 
 ## Known limitations
 
-- **Not yet run on the Steam Frame.** These features were built and tested on a desktop; the headset may show things the desktop could not, such as runtime binding quirks, layer placement or performance.
+- **Only partly tested in the headset.** The menu buttons, pointer and game list were checked on the Steam Frame; the other features were tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
 - If the runtime rejects the controllers' aim pose, the gamepad still works but menus cannot be pointed at. The log says "no aim pose …; the menu pointer is unavailable."
 - In Portal mode, both eyes may show the same picture while a menu has the game paused.
 - Changing the internal resolution or texture filtering mid-game uses PCSX2's normal settings path, but has not been tried with the stereo changes to the renderer.

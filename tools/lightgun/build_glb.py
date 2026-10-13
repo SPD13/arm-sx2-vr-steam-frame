@@ -147,7 +147,7 @@ nodes.append({'name': 'muzzle', 'translation': to_g(muzzle).tolist(), 'extras': 
 gz_ = -(Rg @ ax); gy_ = Rg @ np.array([ax[2], 0, -ax[0]]); gx_ = np.cross(gy_, gz_)
 nodes.append({'name': 'grip', 'translation': [0, 0, 0], 'rotation': quat_from(np.c_[gx_, gy_, gz_]),
               'extras': {'note': 'grip centre; local -Z runs up the raked grip axis, +Y points forward'}})
-gltf = {'asset': {'version': '2.0', 'generator': 'ps2-volumetric tools/lightgun'}, 'scene': 0, 'scenes': [{'name': 'lightgun', 'nodes': [0]}],
+gltf = {'asset': {'version': '2.0', 'generator': 'ARMSX2 VR tools/lightgun'}, 'scene': 0, 'scenes': [{'name': 'lightgun', 'nodes': [0]}],
         'nodes': nodes, 'meshes': meshes, 'materials': materials, 'accessors': accessors, 'bufferViews': views,
         'buffers': [{'byteLength': len(bin_)}]}
 js = json.dumps(gltf, separators=(',', ':')).encode(); js += b' ' * ((4 - len(js) % 4) % 4)

@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// PS2 Volumetric: ARMSX2 running inside a native OpenXR app on Steam Frame.
+// ARMSX2 VR: ARMSX2 running inside a native OpenXR app on Steam Frame.
 //
 // Startup order matters because the core and the XR runtime share one Vulkan device:
 //   1. load Vulkan and install VKLibretro's wraps, so GSDeviceVK's vkCreateDevice/vkQueueSubmit

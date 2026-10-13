@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "XrApp.h"
@@ -86,7 +86,7 @@ bool XrApp::CreateInstance()
 		extensions.push_back("XR_VALVE_frame_controller_interaction");
 
 	XrInstanceCreateInfo create_info{XR_TYPE_INSTANCE_CREATE_INFO};
-	std::strncpy(create_info.applicationInfo.applicationName, "PS2 Volumetric", XR_MAX_APPLICATION_NAME_SIZE - 1);
+	std::strncpy(create_info.applicationInfo.applicationName, "ARMSX2 VR", XR_MAX_APPLICATION_NAME_SIZE - 1);
 	create_info.applicationInfo.applicationVersion = 1;
 	std::strncpy(create_info.applicationInfo.engineName, "ARMSX2", XR_MAX_ENGINE_NAME_SIZE - 1);
 	create_info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
@@ -148,7 +148,7 @@ bool XrApp::CreateInstance()
 	const std::vector<const char*> instance_exts = SplitExtensionList(instance_ext_storage);
 
 	VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-	app_info.pApplicationName = "PS2 Volumetric";
+	app_info.pApplicationName = "ARMSX2 VR";
 	app_info.pEngineName = "ARMSX2";
 	app_info.apiVersion = VK_API_VERSION_1_1;
 	VkInstanceCreateInfo vk_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
