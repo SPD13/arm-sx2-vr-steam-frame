@@ -167,7 +167,10 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
   - The test matrix across the hard-case games is still open; it needs more game dumps.
 - **M3, volumetric window: IN PROGRESS.** Depth-map reprojection was built and hit its limits (smoke, disocclusions, HUD popping). The geometric stereo prototype works: the GS re-renders each frame from the tracked eye, giving stereo plus window parallax, and the world sits inside the portal. Details in `docs/m3-status.md`.
   - Next: full multiview port (both eyes every frame), then sprite/bullet placement and profile-driven parameters.
-- **M4, light gun.** Aim/button bridge, ray-heightfield hit, beam and dot, gun model, haptics, two-gun patch.
+- **M4, light gun: BUILT, NOT YET TESTED ON THE FRAME (2026-10-13).** Branch `lightgun` (worktree `../ps2-volumetric-lightgun`, fork branch `lightgun`).
+  - Core: `usb_lightgun::SetHostState` gives each USB port its own aim and buttons (two guns, no `MAX_POINTER_DEVICES` change); depth capture can be switched while running; frames carry the picture's draw rect.
+  - Host: the scanned gun model (`assets/lightgun.glb`) in each gun hand, coloured per settings, trigger and side buttons animated; muzzle beam and dot in a projection layer of their own; depth-aware aim in Portal Z mode (glass otherwise); recoil haptics; per-game light gun mode (`lightgun.ini`) with a crosshair button and a one/two guns button beside the screen; the gun as the menu pointer; GunCon tabs for gun 1 and 2 in Settings › Controls; a Light Gun settings page; `--gun-script` for headless tests.
+  - Checked on the Mac only: syntax of every host and patched core file, the aim math against analytic answers, the GLB loader, the gun control sets, page previews, a CPU render of the posed model.
 - **M5, polish and ship.**
   - In-headset settings menu: started (gear button, Display / 3D / Graphics / Audio / Game / Controls pages, Exit).
   - Wi-Fi transfer: started (web page served by the headset for the BIOS and roms folders, switched on in the menu).

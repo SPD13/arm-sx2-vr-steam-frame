@@ -19,6 +19,11 @@
 #include "Settings.h"
 #include "VolumetricWindow.h"
 #include "XrApp.h"
+#include "XrMath.h"
+#include "gun/GunAim.h"
+#include "gun/GunDepth.h"
+#include "gun/GunGames.h"
+#include "gun/GunRenderer.h"
 #include "ui/VrMenu.h"
 #include "web/WebServer.h"
 
@@ -40,12 +45,14 @@
 #define VK_NO_PROTOTYPES
 #include "libretro_vulkan.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -60,7 +67,40 @@ struct DebugOptions
 	bool depth_panel = false; // depth debug view beside the screen
 	std::string depth_dump_dir; // when set, dump depth + colour PNGs there every 10 s
 	int depth_log_ms = 5000; // interval of the "Depth:" log line
+	// --gun-script: shots gun 1 fires by itself, for testing without the headset.
+	struct GunShot
+	{
+		float time = 0.0f; // seconds after the game started
+		bool offscreen = false;
+		float u = 0.5f, v = 0.5f; // where in the game's picture (0..1, top left origin)
+	};
+	std::vector<GunShot> gun_script;
 };
+
+// "T:U:V" (a shot at U, V of the picture T seconds in) or "T:off" (a reload), comma separated.
+static bool ParseGunScript(const char* text, std::vector<DebugOptions::GunShot>* shots)
+{
+	std::string spec(text);
+	size_t start = 0;
+	while (start <= spec.size())
+	{
+		const size_t end = std::min(spec.find(',', start), spec.size());
+		const std::string item = spec.substr(start, end - start);
+		DebugOptions::GunShot shot;
+		char rest[16] = {};
+		if (std::sscanf(item.c_str(), "%f:%f:%f", &shot.time, &shot.u, &shot.v) == 3)
+			shots->push_back(shot);
+		else if (std::sscanf(item.c_str(), "%f:%15s", &shot.time, rest) == 2 && !std::strcmp(rest, "off"))
+		{
+			shot.offscreen = true;
+			shots->push_back(shot);
+		}
+		else
+			return false;
+		start = end + 1;
+	}
+	return !shots->empty();
+}
 
 // Command-line overrides of VrSettings for this run: (setting key, value).
 using SettingOverrides = std::vector<std::pair<std::string, std::string>>;
@@ -94,6 +134,8 @@ static void PrintUsage(const char* argv0)
 		"  --depth-trace          Log which colour/depth targets the 3D draws use\n"
 		"  --depth-log-ms N       Log the depth statistics every N ms (default 5000)\n"
 		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
+		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
+		"                         the game, T:off reloads; comma separated (testing without the headset)\n"
 		"The screen, window and stereo options are saved settings too (VR.ini in the settings folder,\n"
 		"read again when edited); on the command line they apply to this run only.\n"
 		"In the headset: both sticks clicked recenters the screen.\n",
@@ -155,6 +197,14 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 			set("stereo_z_mode", "true");
 		else if (!std::strcmp(arg, "--depth-dump") && has_value)
 			debug->depth_dump_dir = argv[++i];
+		else if (!std::strcmp(arg, "--gun-script") && has_value)
+		{
+			if (!ParseGunScript(argv[++i], &debug->gun_script))
+			{
+				std::fprintf(stderr, "Bad --gun-script: %s\n", argv[i]);
+				return false;
+			}
+		}
 		else if (arg[0] == '-')
 		{
 			std::fprintf(stderr, "Unknown argument: %s\n", arg);
@@ -282,6 +332,11 @@ int main(int argc, char* argv[])
 	ControlMap controls;
 	controls.Load(Path::Combine(EmuFolders::Settings, "Controls.ini"));
 
+	// Light gun mode per game: the guns are plugged in as a game starts, before it looks for them.
+	GunGames gun_games;
+	gun_games.Load(Path::Combine(EmuFolders::Settings, "lightgun.ini"));
+	Emu::SetGunsPolicy([&gun_games](const std::string& serial) { return gun_games.IsOn(serial); });
+
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
 	// The mode is fixed for the run. The stereo prototype shows the GS's own per-eye frames on a
 	// flat screen.
@@ -322,6 +377,8 @@ int main(int argc, char* argv[])
 	}
 
 	GSDeviceVK* gs = GSDeviceVK::GetInstance();
+	GunRenderer gun_renderer;
+	GunDepth gun_depth;
 	ScreenLayer screen;
 	ScreenLayer screen_right; // with --stereo, the right eye's frames; screen then shows the left eye's
 	ScreenLayer depth_panel;
@@ -356,6 +413,11 @@ int main(int argc, char* argv[])
 	}
 	if (!menu.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("The settings menu is unavailable.");
+	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
+			Path::Combine(EmuFolders::AppRoot, "assets" FS_OSPATH_SEPARATOR_STR "lightgun.glb")))
+		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
+	if (stereo && !gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
+		Console.Error("Light gun: no depth; shots land on the screen glass.");
 	if (stereo)
 	{
 		screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
@@ -418,6 +480,35 @@ int main(int argc, char* argv[])
 	bool pad_recenter = false; // both sticks clicked, done the next frame
 	// Started without a game: the game list opens once the screen is in place.
 	bool show_game_list = emu_options.boot_path.empty() && !emu_options.bios_only;
+
+	// Light gun mode for the running game (GunGames), and the guns' state between frames.
+	bool gun_mode = false;
+	bool gun_chosen = false;
+	std::array<float, 2> gun_press_left{}, gun_press_right{}; // eased button presses, per gun
+	std::array<bool, 2> gun_fired{}; // the trigger was down last frame, per gun (recoil on a new pull)
+	std::optional<SettingsMenu::GunAction> gun_action; // asked in the menu, done once it has closed
+	Clock::time_point gun_action_at{}, gun_action_until{};
+	Clock::time_point gun_script_start{}; // --gun-script: when the game started
+	size_t gun_script_next = 0;
+	int gun_script_logged = -1;
+	// The presented frame, as the light guns aim at it.
+	float frame_size[2] = {1280.0f, 960.0f};
+	float frame_draw_rect[4] = {0.0f, 0.0f, 1280.0f, 960.0f};
+	// Depth for the guns in stereo: only while light gun mode is on (it costs copies on the GS).
+	const auto apply_gun_depth = [&] {
+		if (stereo)
+			GSVolumetric::SetEnabled(gun_mode);
+	};
+	const auto set_gun_mode = [&](bool on) {
+		if (on == gun_mode)
+			return;
+		gun_mode = on;
+		Emu::SetGunsPlugged(on);
+		if (!on)
+			Emu::ReleaseGuns();
+		apply_gun_depth();
+		Console.WriteLnFmt("Light gun: mode {} for {}", on ? "on" : "off", profile_serial);
+	};
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
 	{
 		if (!xr.IsSessionRunning())
@@ -452,6 +543,17 @@ int main(int argc, char* argv[])
 			window_settings.hud_rects = profile.hud_rects;
 			window_settings.hud_rect_flat = profile.hud_rect_flat;
 			window.SetSettings(window_settings);
+			// The CPU thread plugged the guns in or out as the game started (Emu::SetGunsPolicy).
+			gun_mode = !serial.empty() && gun_games.IsOn(serial);
+			gun_chosen = gun_games.IsChosen(serial);
+			if (!gun_mode)
+				Emu::ReleaseGuns();
+			apply_gun_depth();
+			gun_script_start = serial.empty() ? Clock::time_point{} : Clock::now();
+			gun_script_next = 0;
+			gun_script_logged = -1;
+			if (!serial.empty())
+				Console.WriteLnFmt("Light gun: mode {} for {}{}", gun_mode ? "on" : "off", serial, gun_chosen ? " (chosen)" : "");
 		}
 
 		const XrApp::Frame frame = xr.BeginFrame();
@@ -473,15 +575,49 @@ int main(int argc, char* argv[])
 			screen_placed = true;
 		}
 
+		// The light guns: which hands hold one, and where the guns are. Gun 1 is in the gun hand,
+		// gun 2 (with two guns) in the other.
+		const int num_guns = gun_mode ? (vr.gun_players > 1.5f ? 2 : 1) : 0;
+		const int first_hand = vr.gun_left_hand ? 0 : 1;
+		std::array<int, 2> gun_of_hand = {-1, -1};
+		for (int g = 0; g < num_guns; g++)
+			gun_of_hand[g == 0 ? first_hand : 1 - first_hand] = g;
+		std::array<bool, 2> aim_valid{};
+		std::array<XrPosef, 2> aim_pose{}, gun_pose{}, muzzle_pose{};
+		for (int h = 0; h < 2; h++)
+		{
+			aim_valid[h] = xr.LocateAim(h, frame.display_time, &aim_pose[h]);
+			if (!aim_valid[h] || gun_of_hand[h] < 0)
+				continue;
+			// The barrel along the controller's pointing ray (tilted by the gun angle), held at the
+			// grip; without a grip pose, a little below and behind the ray's origin.
+			gun_pose[h].orientation = aim_pose[h].orientation *
+			                          QuatFromAxisAngle({1.0f, 0.0f, 0.0f}, vr.gun_pitch * 3.14159265f / 180.0f);
+			XrPosef grip;
+			gun_pose[h].position = xr.LocateGrip(h, frame.display_time, &grip) ?
+			                           grip.position :
+			                           Transform(aim_pose[h], {0.0f, -0.06f, 0.08f});
+			muzzle_pose[h] = Compose(gun_pose[h], gun_renderer.Model().Muzzle());
+		}
+
 		// The game's controls. A trigger is a menu click while a menu is open or the pointer is on a
-		// menu button; only otherwise does it count as the game button it is mapped to.
+		// menu button; only otherwise does it count as the game button it is mapped to. A hand with a
+		// gun points at the menus with the gun.
 		ControllerState controller = input.controller;
+		VrMenu::Result ui;
 		if (screen_placed)
 		{
 			if (std::exchange(show_game_list, false))
 				menu.OpenGameList();
-			const VrMenu::Result ui =
-				menu.Update(frame.display_time, input, screen_pose_now, vr.screen_width, vr.screen_width / screen_aspect);
+			std::array<VrMenu::Pointer, 2> pointers;
+			for (int h = 0; h < 2; h++)
+			{
+				const bool gun = gun_of_hand[h] >= 0 && gun_renderer.IsCreated();
+				pointers[h] = {aim_valid[h], gun ? muzzle_pose[h] : aim_pose[h], gun};
+			}
+			menu.SetGunState(!profile_serial.empty(), gun_mode, gun_chosen, vr.gun_players > 1.5f ? 2 : 1);
+			ui = menu.Update(frame.display_time, input, pointers, screen_pose_now, vr.screen_width,
+				vr.screen_width / screen_aspect);
 			menu_recenter = ui.recenter;
 			if (ui.open)
 				controller = {};
@@ -489,11 +625,174 @@ int main(int argc, char* argv[])
 				controller[ControlInput::LeftTrigger] = 0.0f;
 			if (ui.block_trigger[1])
 				controller[ControlInput::RightTrigger] = 0.0f;
+			// Light gun requests from the buttons beside the screen and the settings page.
+			if (ui.gun_mode && !profile_serial.empty())
+			{
+				if (*ui.gun_mode == SettingsMenu::GunModeRequest::Auto)
+					gun_games.Reset(profile_serial);
+				else
+					gun_games.Set(profile_serial, *ui.gun_mode == SettingsMenu::GunModeRequest::On);
+				gun_chosen = gun_games.IsChosen(profile_serial);
+				set_gun_mode(gun_games.IsOn(profile_serial));
+			}
+			if (ui.toggle_guns)
+			{
+				VrSettings changed = vr;
+				changed.gun_players = vr.gun_players > 1.5f ? 1.0f : 2.0f;
+				settings.Set(changed);
+			}
+			if (ui.gun_action)
+			{
+				gun_action = ui.gun_action;
+				gun_action_at = Clock::now() + std::chrono::milliseconds(400); // once the game runs again
+			}
 		}
-		const ControlMap::Output game = controls.Apply(controller);
-		pad_recenter = game.recenter;
-		if (!emu_options.sdl_pad) // with --sdl-pad, the SDL gamepad drives pad 1 alone
-			Emu::SetPad(game.pad);
+
+		if (!gun_mode)
+		{
+			const ControlMap::Output game = controls.Apply(controller);
+			pad_recenter = game.recenter;
+			if (!emu_options.sdl_pad) // with --sdl-pad, the SDL gamepad drives pad 1 alone
+				Emu::SetPad(game.pad);
+		}
+		std::array<GunRenderer::Gun, 2> guns_drawn;
+		if (gun_mode)
+		{
+			// The pedal presses the gun button the game takes cover with.
+			static constexpr uint32_t pedal_buttons[] = {Emu::GUN_A, Emu::GUN_B, Emu::GUN_C};
+			const ControlMap::GunsOutput out =
+				controls.ApplyGuns(controller, num_guns, pedal_buttons[std::clamp(static_cast<int>(vr.gun_pedal + 0.5f), 0, 2)]);
+			pad_recenter = out.recenter;
+			if (!emu_options.sdl_pad)
+				Emu::SetPad({}); // the guns are in the hands: the pad stays still
+
+			// Where the guns aim: the screen as shown, and in stereo the depth they shoot into.
+			GunScreen gun_screen;
+			gun_screen.pose = screen_pose_now;
+			gun_screen.width = vr.screen_width;
+			gun_screen.height = vr.screen_width / screen_aspect;
+			std::copy(std::begin(frame_draw_rect), std::end(frame_draw_rect), gun_screen.draw_rect);
+			if (flat)
+			{
+				gun_screen.view[2] = frame_size[0];
+				gun_screen.view[3] = frame_size[1];
+			}
+			else
+			{
+				// The volumetric window shows the picture only, at its own aspect.
+				std::copy(std::begin(frame_draw_rect), std::end(frame_draw_rect), gun_screen.view);
+				gun_screen.height = vr.screen_width * (frame_draw_rect[3] - frame_draw_rect[1]) /
+				                    std::max(frame_draw_rect[2] - frame_draw_rect[0], 1.0f);
+			}
+			GunStereo gun_stereo;
+			const GunDepthGrid* depth_grid = nullptr;
+			XrView eye_views[2];
+			if (stereo && vr.stereo_z_mode && xr.LocateEyes(frame.display_time, eye_views))
+			{
+				gun_stereo.z_mode = true;
+				gun_stereo.convergence = vr.stereo_convergence;
+				gun_stereo.depth = vr.stereo_depth;
+				gun_stereo.left_eye = eye_views[0].pose.position;
+				// A grid from a few frames back still fits; older (a menu, a movie), the glass will do.
+				depth_grid = gun_depth.Latest();
+				if (depth_grid && Clock::now() - depth_grid->time > std::chrono::milliseconds(300))
+					depth_grid = nullptr;
+			}
+
+			const Clock::time_point now = Clock::now();
+			if (gun_action && now >= gun_action_at && !ui.open)
+			{
+				gun_action_until = now + std::chrono::milliseconds(150);
+				gun_action_at = Clock::time_point::max();
+			}
+			const bool action_held = gun_action && now < gun_action_until;
+			if (gun_action && !action_held && gun_action_at == Clock::time_point::max())
+				gun_action.reset();
+
+			for (int g = 0; g < Emu::NUM_GUNS; g++)
+			{
+				Emu::GunState state;
+				if (g >= num_guns)
+				{
+					Emu::SetGun(g, state); // plugged in but idle: off the screen, nothing pressed
+					continue;
+				}
+				const int h = g == 0 ? first_hand : 1 - first_hand;
+				state.buttons = out.gun[g].buttons;
+				GunRenderer::Gun& drawn = guns_drawn[g];
+				if (aim_valid[h])
+				{
+					const GunAim aim = AimGun(muzzle_pose[h], gun_screen, gun_stereo.z_mode ? &gun_stereo : nullptr, depth_grid);
+					const bool on_ui = ui.on_ui[h] || ui.open;
+					state.aim_valid = aim.on_picture && !on_ui;
+					state.x = aim.window_x;
+					state.y = aim.window_y;
+
+					drawn.visible = gun_renderer.IsCreated();
+					drawn.pose = gun_pose[h];
+					drawn.body_color = vr.gun_color;
+					drawn.trigger = controls.GunTrigger(input.controller, g);
+					const float ease = 0.35f; // per frame, about 40 ms to settle at 90 Hz
+					gun_press_left[g] += ((state.buttons & Emu::GUN_A) ? 1.0f - gun_press_left[g] : -gun_press_left[g]) * ease;
+					gun_press_right[g] += ((state.buttons & Emu::GUN_B) ? 1.0f - gun_press_right[g] : -gun_press_right[g]) * ease;
+					drawn.press_left = gun_press_left[g];
+					drawn.press_right = gun_press_right[g];
+					drawn.beam_color = g == 0 ? 0xFF3A30 : 0x3A8CFF;
+					const int beam_mode = std::clamp(static_cast<int>(vr.gun_beam + 0.5f), 0, 2);
+					if (ui.on_ui[h])
+					{
+						// On a menu or a button: the beam is the menu's pointer, always with its dot.
+						drawn.beam_end = ui.ui_point[h];
+						drawn.beam = beam_mode == 0;
+						drawn.dot = true;
+					}
+					else if (aim.on_screen)
+					{
+						drawn.beam_end = aim.end;
+						drawn.beam = beam_mode == 0;
+						drawn.dot = beam_mode <= 1 && aim.on_picture;
+					}
+					else
+					{
+						// Pointing away from the screen: a short beam shows where.
+						drawn.beam_end = Transform(muzzle_pose[h], {0.0f, 0.0f, -1.0f});
+						drawn.beam = beam_mode == 0;
+					}
+				}
+				if (g == 0 && action_held)
+					state.buttons |= *gun_action == SettingsMenu::GunAction::Recalibrate ? Emu::GUN_RECALIBRATE :
+					                                                                       Emu::GUN_SHOOT_OFFSCREEN;
+
+				// --gun-script: gun 1 fires by itself, aimed in the picture, until its last shot.
+				const auto& shots = debug_options.gun_script;
+				const float t = std::chrono::duration<float>(now - gun_script_start).count();
+				while (gun_script_next < shots.size() && t >= shots[gun_script_next].time + 0.15f)
+					gun_script_next++;
+				if (g == 0 && gun_script_next < shots.size() && gun_script_start != Clock::time_point{})
+				{
+					const DebugOptions::GunShot& shot = shots[gun_script_next];
+					const bool firing = t >= shot.time;
+					const float* r = frame_draw_rect;
+					state.aim_valid = !shot.offscreen;
+					state.x = r[0] + shot.u * (r[2] - r[0]);
+					state.y = r[1] + shot.v * (r[3] - r[1]);
+					state.buttons = firing ? Emu::GUN_TRIGGER : 0;
+					if (firing && static_cast<int>(gun_script_next) != gun_script_logged)
+					{
+						gun_script_logged = static_cast<int>(gun_script_next);
+						Console.WriteLnFmt("Gun script: shot {} at {:.1f} s: {}", gun_script_next + 1, t,
+							shot.offscreen ? std::string("off screen") : fmt::format("({:.0f}, {:.0f})", state.x, state.y));
+					}
+				}
+
+				// Recoil on each new pull of the trigger.
+				const bool fired = (state.buttons & (Emu::GUN_TRIGGER | Emu::GUN_SHOOT_OFFSCREEN)) != 0;
+				if (fired && !gun_fired[g])
+					xr.Vibrate(h, 0.03f, vr.gun_haptics);
+				gun_fired[g] = fired;
+				Emu::SetGun(g, state);
+			}
+		}
 
 		// --stereo: where each eye is in front of the screen, for the GS's window parallax.
 		if (stereo && screen_placed)
@@ -533,7 +832,20 @@ int main(int argc, char* argv[])
 		if (VKLibretro::ConsumeFrame(&emu_frame))
 		{
 			if (emu_frame.width && emu_frame.height)
+			{
 				screen_aspect = static_cast<float>(emu_frame.width) / static_cast<float>(emu_frame.height);
+				frame_size[0] = static_cast<float>(emu_frame.width);
+				frame_size[1] = static_cast<float>(emu_frame.height);
+				const float* r = emu_frame.draw_rect;
+				const bool has_rect = r[2] > r[0] && r[3] > r[1];
+				frame_draw_rect[0] = has_rect ? r[0] : 0.0f;
+				frame_draw_rect[1] = has_rect ? r[1] : 0.0f;
+				frame_draw_rect[2] = has_rect ? r[2] : frame_size[0];
+				frame_draw_rect[3] = has_rect ? r[3] : frame_size[1];
+			}
+			// Stereo: the guns' depth (with multiview, a layer per eye).
+			if (stereo && gun_mode && emu_frame.depth_image)
+				gun_depth.Process(emu_frame, emu_frame.right_image != VK_NULL_HANDLE);
 			if (stereo && emu_frame.right_image)
 			{
 				// Multiview: both eyes in one frame.
@@ -557,7 +869,8 @@ int main(int argc, char* argv[])
 				next_dump = now + std::chrono::seconds(10);
 			}
 			VKLibretro::Frame depth_frame;
-			const bool has_depth = depth_view.Process(emu_frame, &depth_frame);
+			// In stereo the depth is only there for the light guns (and can have a layer per eye).
+			const bool has_depth = !stereo && depth_view.Process(emu_frame, &depth_frame);
 			if (has_depth && debug_options.depth_panel)
 				depth_panel.Update(depth_frame);
 			if (!flat)
@@ -576,7 +889,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		const XrCompositionLayerBaseHeader* layers[12];
+		const XrCompositionLayerBaseHeader* layers[16];
 		uint32_t layer_count = 0;
 		if (flat && stereo)
 		{
@@ -628,6 +941,12 @@ int main(int argc, char* argv[])
 		}
 		if (screen_placed)
 			menu.AddLayers(layers, &layer_count);
+		// The guns last: they are nearer than anything else.
+		if (frame.should_render)
+		{
+			if (const XrCompositionLayerBaseHeader* guns = gun_renderer.Render(frame.display_time, guns_drawn))
+				layers[layer_count++] = guns;
+		}
 		xr.EndFrame(frame, layers, layer_count);
 		if (static int frames_logged = 0; frame.should_render && frames_logged < 3)
 		{
@@ -640,6 +959,8 @@ int main(int argc, char* argv[])
 	settings.Update(true);
 	web.Stop();
 	Emu::RequestShutdown();
+	gun_depth.Destroy();
+	gun_renderer.Destroy();
 	menu.Destroy();
 	for (ScreenLayer& panel : eye_panels)
 		panel.Destroy();

@@ -34,6 +34,7 @@
 #include "common/Path.h"
 #include "common/ProgressCallback.h"
 #include "common/StringUtil.h"
+#include "common/SettingsWrapper.h"
 #include "common/Threading.h"
 
 #include "fmt/format.h"
@@ -55,6 +56,8 @@
 #include "pcsx2/Memory.h"
 #include "pcsx2/SIO/Pad/Pad.h"
 #include "pcsx2/SIO/Pad/PadDualshock2.h"
+#include "pcsx2/USB/USB.h"
+#include "pcsx2/USB/usb-lightgun/guncon2.h"
 #include "pcsx2/VMManager.h"
 #include "pcsx2/ps2/BiosTools.h"
 
@@ -744,6 +747,69 @@ void Emu::SetPad(const PadState& s)
 	axis(In::PAD_R_DOWN, In::PAD_R_UP, s.ry);
 }
 
+static_assert(static_cast<u32>(Emu::GUN_C) == usb_lightgun::HOST_C && static_cast<u32>(Emu::GUN_A) == usb_lightgun::HOST_A &&
+                  static_cast<u32>(Emu::GUN_DOWN) == usb_lightgun::HOST_DPAD_DOWN &&
+                  static_cast<u32>(Emu::GUN_TRIGGER) == usb_lightgun::HOST_TRIGGER &&
+                  static_cast<u32>(Emu::GUN_START) == usb_lightgun::HOST_START &&
+                  static_cast<u32>(Emu::GUN_SHOOT_OFFSCREEN) == usb_lightgun::HOST_SHOOT_OFFSCREEN &&
+                  static_cast<u32>(Emu::GUN_RECALIBRATE) == usb_lightgun::HOST_RECALIBRATE,
+	"Emu::GunButton follows usb_lightgun::HostButton");
+
+void Emu::SetGun(int port, const GunState& state)
+{
+	usb_lightgun::SetHostState(static_cast<u32>(port), true, state.aim_valid, state.x, state.y, state.buttons);
+}
+
+void Emu::ReleaseGuns()
+{
+	for (u32 port = 0; port < USB::NUM_PORTS; port++)
+		usb_lightgun::SetHostState(port, false, false, 0.0f, 0.0f, 0);
+}
+
+// The policy for each new game, and the serial it was last asked about (CPU thread only).
+static std::function<bool(const std::string&)> s_guns_policy;
+static std::string s_guns_policy_serial;
+
+// On the CPU thread: the USB ports as the ini has them, in the running game too.
+static void ApplyGunPorts(bool plugged)
+{
+	{
+		auto lock = Host::GetSettingsLock();
+		if (!s_base_settings)
+			return;
+		for (u32 port = 0; port < USB::NUM_PORTS; port++)
+			USB::SetConfigDevice(*s_base_settings, port, plugged ? "guncon2" : "None");
+		Host::CommitBaseSettingChanges();
+	}
+	if (!VMManager::HasValidVM())
+		return; // the next game's USB opens with them
+	const Pcsx2Config old_config(EmuConfig);
+	{
+		auto lock = Host::GetSettingsLock();
+		SettingsLoadWrapper wrap(*Host::GetSettingsInterface());
+		EmuConfig.USB.LoadSave(wrap);
+	}
+	if (EmuConfig.USB == old_config.USB)
+		return;
+	USB::CheckForConfigChanges(old_config);
+	Console.WriteLnFmt("Light gun: GunCon 2 {} both USB ports", plugged ? "plugged into" : "unplugged from");
+}
+
+void Emu::SetGunsPlugged(bool plugged)
+{
+	Host::RunOnCPUThread([plugged]() { ApplyGunPorts(plugged); });
+}
+
+void Emu::SetGunsPolicy(std::function<bool(const std::string& serial)> policy)
+{
+	Host::RunOnCPUThread([policy = std::move(policy)]() mutable { s_guns_policy = std::move(policy); });
+}
+
+bool Emu::IsLightgunGame(const std::string& serial)
+{
+	return usb_lightgun::IsKnownGame(serial);
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Host:: callbacks
 //////////////////////////////////////////////////////////////////////////
@@ -898,8 +964,19 @@ void Host::OnGameChanged(const std::string& title, const std::string& elf_overri
 {
 	if (!title.empty())
 		INFO_LOG("Game changed: {} (serial {}, CRC {:08X})", title, disc_serial, current_crc);
-	std::lock_guard lock(s_serial_mutex);
-	s_serial = disc_serial;
+	{
+		std::lock_guard lock(s_serial_mutex);
+		s_serial = disc_serial;
+	}
+	// A new game: plug the guns in or out for it, before it looks for them. Queued, so it runs once
+	// the VM is up (this can come in the middle of its start).
+	if (s_guns_policy && !disc_serial.empty() && disc_serial != s_guns_policy_serial)
+	{
+		s_guns_policy_serial = disc_serial;
+		Host::RunOnCPUThread([plugged = s_guns_policy(disc_serial)]() { ApplyGunPorts(plugged); });
+	}
+	else if (disc_serial.empty())
+		s_guns_policy_serial.clear();
 }
 
 void Host::OnPerformanceMetricsUpdated()

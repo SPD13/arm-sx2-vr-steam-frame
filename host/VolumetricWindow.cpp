@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "VolumetricWindow.h"
+#include "XrMath.h"
 
 #include <cstdint>
 
@@ -61,81 +62,6 @@ namespace
 	constexpr float NEAR_Z = 0.05f;
 	constexpr float FAR_Z = 100.0f;
 	constexpr float CLEAR_COLOUR[4] = {0.01f, 0.01f, 0.012f, 1.0f};
-
-	// Column-major 4x4 matrices, as GLSL reads them.
-	struct Mat4
-	{
-		float m[16] = {};
-	};
-
-	Mat4 Multiply(const Mat4& a, const Mat4& b)
-	{
-		Mat4 r;
-		for (int col = 0; col < 4; col++)
-		{
-			for (int row = 0; row < 4; row++)
-			{
-				float sum = 0.0f;
-				for (int k = 0; k < 4; k++)
-					sum += a.m[k * 4 + row] * b.m[col * 4 + k];
-				r.m[col * 4 + row] = sum;
-			}
-		}
-		return r;
-	}
-
-	// Asymmetric projection for Vulkan clip space (y down, depth 0..1), as xr_linear.h builds it.
-	Mat4 Projection(const XrFovf& fov)
-	{
-		const float tan_left = std::tan(fov.angleLeft), tan_right = std::tan(fov.angleRight);
-		const float tan_down = std::tan(fov.angleDown), tan_up = std::tan(fov.angleUp);
-		const float tan_width = tan_right - tan_left;
-		const float tan_height = tan_down - tan_up;
-		Mat4 p;
-		p.m[0] = 2.0f / tan_width;
-		p.m[8] = (tan_right + tan_left) / tan_width;
-		p.m[5] = 2.0f / tan_height;
-		p.m[9] = (tan_up + tan_down) / tan_height;
-		p.m[10] = -FAR_Z / (FAR_Z - NEAR_Z);
-		p.m[14] = -(FAR_Z * NEAR_Z) / (FAR_Z - NEAR_Z);
-		p.m[11] = -1.0f;
-		return p;
-	}
-
-	// Inverse of a rigid pose: the view matrix of an eye.
-	Mat4 ViewFromPose(const XrPosef& pose)
-	{
-		const XrQuaternionf& q = pose.orientation;
-		// Rotation matrix of q (column-major), then transposed for the inverse.
-		const float xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
-		const float xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
-		const float wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
-		const float r[3][3] = {
-			{1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy)}, // column 0
-			{2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx)}, // column 1
-			{2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy)}, // column 2
-		};
-		const float t[3] = {pose.position.x, pose.position.y, pose.position.z};
-		Mat4 v;
-		for (int row = 0; row < 3; row++)
-		{
-			for (int col = 0; col < 3; col++)
-				v.m[col * 4 + row] = r[row][col]; // transpose
-			v.m[12 + row] = -(r[row][0] * t[0] + r[row][1] * t[1] + r[row][2] * t[2]);
-		}
-		v.m[15] = 1.0f;
-		return v;
-	}
-
-	XrVector3f Rotate(const XrQuaternionf& q, const XrVector3f& v)
-	{
-		// v + 2 * cross(q.xyz, cross(q.xyz, v) + q.w * v)
-		const XrVector3f u{q.x, q.y, q.z};
-		const XrVector3f c1{u.y * v.z - u.z * v.y + q.w * v.x, u.z * v.x - u.x * v.z + q.w * v.y,
-			u.x * v.y - u.y * v.x + q.w * v.z};
-		const XrVector3f c2{u.y * c1.z - u.z * c1.y, u.z * c1.x - u.x * c1.z, u.x * c1.y - u.y * c1.x};
-		return {v.x + 2.0f * c2.x, v.y + 2.0f * c2.y, v.z + 2.0f * c2.z};
-	}
 
 	VkImageMemoryBarrier ImageBarrier(VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags src, VkAccessFlags dst)
 	{
@@ -738,7 +664,7 @@ const XrCompositionLayerBaseHeader* VolumetricWindow::Render(XrTime display_time
 	WindowUniforms& u = *static_cast<WindowUniforms*>(m_uniforms[slot].mapped);
 	for (int i = 0; i < 2; i++)
 	{
-		const Mat4 vp = Multiply(Projection(views[i].fov), ViewFromPose(views[i].pose));
+		const Mat4 vp = Multiply(Projection(views[i].fov, NEAR_Z, FAR_Z), ViewFromPose(views[i].pose));
 		std::memcpy(u.view_proj[i], vp.m, sizeof(vp.m));
 	}
 	const float half_w = 0.5f * m_settings.width;
@@ -924,7 +850,7 @@ const XrCompositionLayerBaseHeader* VolumetricWindow::Render(XrTime display_time
 			cam.position = {m_pose.position.x + normal.x * dist + side.x * offset,
 				m_pose.position.y + normal.y * dist + side.y * offset,
 				m_pose.position.z + normal.z * dist + side.z * offset};
-			const Mat4 vp = Multiply(Projection(fov), ViewFromPose(cam));
+			const Mat4 vp = Multiply(Projection(fov, NEAR_Z, FAR_Z), ViewFromPose(cam));
 			std::memcpy(iu.view_proj[i], vp.m, sizeof(vp.m));
 		}
 		VkDescriptorBufferInfo inspection_uniform{m_inspection_uniforms[slot].buffer, 0, sizeof(WindowUniforms)};

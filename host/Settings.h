@@ -11,8 +11,10 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -38,6 +40,14 @@ struct VrSettings
 	bool stereo_z_mode = false; // drive the parallax by Z instead of Q
 	// Wi-Fi transfer
 	bool web_require_code = true; // the page asks for a 6-digit code shown in the menu
+	// Light gun (whether it is on is per game, in lightgun.ini: see GunGames)
+	float gun_players = 1.0f; // 1 or 2 guns, one per hand
+	bool gun_left_hand = false; // the first gun is in the left hand
+	float gun_beam = 0.0f; // 0 beam and dot, 1 dot only, 2 neither
+	float gun_pedal = 0.0f; // the GunCon button the pedal input presses: 0 A, 1 B, 2 C
+	float gun_haptics = 0.6f; // strength of the recoil pulse, 0 off
+	float gun_pitch = 0.0f; // degrees the gun is tilted up in the hand
+	uint32_t gun_color = 0x8C8C91; // the gun's body, sRGB 0xRRGGBB
 };
 
 // One setting, for the code that handles them all alike (the ini, the command line, later the menu).
@@ -45,14 +55,18 @@ struct VrSettingInfo
 {
 	const char* section; // in the ini
 	const char* key; // in the ini, and the name Override takes
-	float VrSettings::*number; // exactly one of number and toggle is set
+	float VrSettings::*number; // exactly one of number, toggle and color is set
 	bool VrSettings::*toggle;
 	float min, max; // a number's range; the ini and Override are clamped to it
 	bool restart; // only takes effect when the app starts
+	uint32_t VrSettings::*color = nullptr; // 0xRRGGBB, "#rrggbb" in the ini
 };
 std::span<const VrSettingInfo> VrSettingList();
 const VrSettingInfo* FindVrSetting(std::string_view key);
 bool SameVrSetting(const VrSettingInfo& info, const VrSettings& a, const VrSettings& b);
+// "#rrggbb" (or "rrggbb") to 0xRRGGBB, and back.
+std::optional<uint32_t> ParseColor(std::string_view text);
+std::string FormatColor(uint32_t rgb);
 
 class VrSettingsStore
 {

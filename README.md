@@ -12,6 +12,7 @@ A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https:
 - [Game list](#game-list)
 - [Wi-Fi transfer](#wi-fi-transfer)
 - [Controller mapping](#controller-mapping)
+- [Light gun](#light-gun)
 - [Files and folders](#files-and-folders)
 - [VR.ini reference](#vrini-reference)
 - [Command line](#command-line)
@@ -50,12 +51,14 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ## In the headset
 
-Two round buttons sit just outside the screen, on its right side and level with its top, so they never cover the game:
+Round buttons sit just outside the screen, on its right side from level with its top down, so they never cover the game:
 
-| Button | Opens |
+| Button | Does |
 |---|---|
-| ⚙ Gear | The [settings menu](#settings-menu) |
-| 🎮 Gamepad (below the gear) | The [game list](#game-list) |
+| ⚙ Gear | Opens the [settings menu](#settings-menu) |
+| 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
+| ⌖ Crosshair (after a gap) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
+| 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
 
 - **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
 - **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the two buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
@@ -123,7 +126,21 @@ While it runs, the page shows the address to open (for example `http://192.168.1
 
 ### Controls
 
-The DualShock 2's 18 controls with the controller input each one has, and **Reset to defaults**. See [Controller mapping](#controller-mapping).
+Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 12 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown. See [Controller mapping](#controller-mapping).
+
+### Light Gun
+
+| Option | Values | Notes |
+|---|---|---|
+| Light gun mode | Auto · Off · On | For the running game, as the crosshair button. **Auto** is on for the games the emulator knows as GunCon 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
+| Guns | One gun · Two guns | Two: one in each hand, for two players. As the people button. |
+| Gun hand | Right · Left | The hand that holds gun 1. |
+| Gun colour | Gray, black, white, red, blue, green, orange, purple | The body; applies at once. The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. |
+| Beam | Beam and dot · Dot · Off | What shows where the gun points. On a menu or a button the dot always shows. |
+| Pedal button | A · B · C | The gun button the pedal input presses: the one the game takes cover with. |
+| Recoil | Off – 100 % | Strength of the controller's pulse on each shot. |
+| Gun angle | −30° – 30° | Tilts the gun in your hand, and its aim with it. |
+| Calibration | Calibrate · Reload | Done once the menu has closed: Time Crisis's calibration shot, or a shot off the screen. |
 
 ### Exit
 
@@ -212,6 +229,35 @@ Always, whatever the mapping:
 
 Grips and triggers are analog: mapped to L1, R1, L2 or R2 they keep their pressure; on other buttons they press past half way.
 
+## Light gun
+
+In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports), drawn in the hand in the colour you chose. Its trigger and side buttons move as you press them.
+
+- **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Portal mode with the *Depth buffer* source, it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it. Otherwise it stops on the screen glass.
+- **Shooting** off the picture is a reload, as with the real gun.
+- **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
+- **Recoil.** Each shot gives a short pulse in the controller.
+- **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2) with a blue beam, for two-player games. With one gun, the other hand's grip is the pedal.
+- **Calibration.** Games calibrate the gun in their own options. The emulator also knows the screen size of about 30 GunCon 2 games; for Time Crisis games, **Calibrate** on the Light Gun page fires the calibration shot.
+- **Turning it on and off.** The crosshair button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Both guns stay plugged in while it is on, so switching between one and two guns does not unplug anything.
+
+### GunCon controls
+
+**Settings › Controls › GunCon** maps each gun's controls like the DualShock 2's. Defaults:
+
+| GunCon 2 | Gun 1 (right hand) | Gun 2 (left hand) |
+|---|---|---|
+| Trigger | Right trigger | Left trigger |
+| A / B | A / B | Left grip / D-pad down |
+| C | Right grip | D-pad up |
+| D-pad | Left D-pad | — |
+| Start | View button, tap | Left stick click |
+| Select | View button, hold | — |
+| Reload | — (shoot off the screen) | — |
+| Pedal | Left grip | — |
+
+The Steam Frame's left controller has no face buttons, so gun 2 uses its grip, D-pad and stick click. An input both sets use shows a `*`: with two guns it works gun 2 only. **Gun hand: Left** swaps the hands.
+
 ## Files and folders
 
 Everything lives in the data folder, `$XDG_DATA_HOME/ps2v` (by default `~/.local/share/ps2v`):
@@ -220,7 +266,8 @@ Everything lives in the data folder, `$XDG_DATA_HOME/ps2v` (by default `~/.local
 |---|---|
 | `inis/PCSX2.ini` | Emulator settings (graphics, audio and the rest of PCSX2's options) |
 | `inis/VR.ini` | Screen, 3D and Wi-Fi transfer settings, see [VR.ini reference](#vrini-reference) |
-| `inis/Controls.ini` | Controller mapping, section `[Pad1]`: `cross = a`, `select = menu`, `left_stick = left_stick` … |
+| `inis/Controls.ini` | Controller mapping: `[Pad1]` for the DualShock 2 (`cross = a`, `select = menu`, `left_stick = left_stick` …), `[GunCon1]` and `[GunCon2]` for the guns (`trigger = right_trigger`, `pedal = left_grip` …) |
+| `inis/lightgun.ini` | Light gun mode per game, by serial, when you chose it: `[Games] SLUS-20219 = true` |
 | `inis/favorites.txt` | Favourite games, one path per line |
 | `inis/playtime.dat` | Play time per game (PCSX2's) |
 | `bios/` | PS2 BIOS dumps (Wi-Fi transfer's BIOS tab) |
@@ -249,6 +296,13 @@ Values are read in this order, each overriding the one before: built-in defaults
 | | `stereo_convergence` | 1.0 | 0.001 – 100 | `--stereo-conv` | live |
 | | `stereo_z_mode` | false | | `--stereo-z` | live |
 | `[Web]` | `web_require_code` | true | | | live |
+| `[LightGun]` | `gun_players` | 1 | 1 – 2 | | live |
+| | `gun_left_hand` | false | | | live |
+| | `gun_beam` | 0 | 0 beam and dot, 1 dot, 2 off | | live |
+| | `gun_pedal` | 0 | 0 A, 1 B, 2 C | | live |
+| | `gun_haptics` | 0.6 | 0 – 1 | | live |
+| | `gun_pitch` | 0 | −45 – 45° | | live |
+| | `gun_color` | `#8c8c91` | `#rrggbb` | | live |
 
 Numbers outside their range are clamped. `[Window]` settings belong to the depth-map window mode (`stereo = false`, `flat = false`); `[Stereo]` ones to the Portal mode (`stereo = true`, which always shows a flat screen per eye).
 
@@ -280,6 +334,7 @@ Debugging only:
 | `--stereo-alternate` | With `--stereo`, the frame-alternating prototype (each eye at 30 Hz) instead of multiview |
 | `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot |
 | `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws; how often to log depth statistics |
+| `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen; comma separated, e.g. `20:0.5:0.5,22:off` |
 
 ## How it works
 
@@ -293,6 +348,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 | Pages | `ui/SettingsMenu.{h,cpp}`, `ui/GameListMenu.{h,cpp}` | The settings categories, and the game list. |
 | Controllers | `XrApp.{h,cpp}`, `Controls.{h,cpp}` | `XrApp` reports the controllers as they are (one OpenXR action per button, grip, trigger and stick); `ControlMap` turns that into the DualShock 2 state. |
 | Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. |
+| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots into a projection layer of their own, on top of the others; `GunAim` finds where a beam lands (the glass, or in Portal Z mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
 | Emulator | `Emu.{h,cpp}` | The CPU thread, PCSX2's host callbacks, and what the menus need: pause, settings, save states, the game list, switching games. Switching runs on the CPU thread, and resuming from a menu is skipped while a switch is under way so it cannot cancel it. |
 
 ## Known limitations
@@ -304,7 +360,9 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 - The controller actions were renamed for mapping, so any SteamVR-side rebinding made for this app starts over.
 - Wi-Fi transfer is plain HTTP, and whether SteamOS lets port 8080 through has not been checked.
 - The game list cannot rescan while a game runs (see [Game list](#game-list)).
+- **The light gun is untested in the headset.** Things to check there: how the gun sits in the hand (Gun angle), whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), and the cost of the depth copies it turns on in Portal mode.
+- The beam only goes into the window with the *Depth buffer* source; with *Perspective*, and in the depth-map window mode, it stops on the glass.
 
 ## License
 
-GPL-3.0-or-later, as ARMSX2 and PCSX2 are. Fonts and icons come from PCSX2's resources (Roboto, Font Awesome).
+GPL-3.0-or-later, as ARMSX2 and PCSX2 are. Fonts and icons come from PCSX2's resources (Roboto, Font Awesome). The glTF loader is [cgltf](https://github.com/jkuhlmann/cgltf) 1.15 (MIT, `host/third_party/cgltf.h`). The light gun model is built by `tools/lightgun` from scans of the real shells, with the logos and markings removed.

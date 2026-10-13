@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The settings page the gear button opens: a navigation bar of categories on the left (Display,
-// 3D, Graphics, Audio, Game, Wi-Fi Transfer, Controls, and Exit last) and the selected category's settings on the
-// right. It draws on a Canvas and knows nothing of OpenXR; VrMenu shows it in the headset and
+// 3D, Graphics, Audio, Game, Wi-Fi Transfer, Controls, Light Gun, and Exit last) and the selected
+// category's settings on the right. It draws on a Canvas and knows nothing of OpenXR; VrMenu shows it in the headset and
 // feeds it the pointer.
 
 #pragma once
@@ -40,6 +40,20 @@ public:
 	void SetControllerState(const ControllerState& state) { m_controller = state; }
 	// While mapping a control, the triggers are inputs to map, not clicks: no click, no closing.
 	bool IsMappingControl() const { return m_mapping.has_value(); }
+	// Light gun mode for the running game, for the Light Gun page.
+	void SetGunMode(bool has_game, bool on, bool chosen);
+
+	enum class GunModeRequest
+	{
+		Off,
+		On,
+		Auto, // the automatic choice again
+	};
+	enum class GunAction
+	{
+		Recalibrate, // Time Crisis's calibration shot
+		Reload, // a shot off the screen
+	};
 
 	// One frame of input; redraws the canvas when something visible changed and returns whether it did.
 	bool Update(const GuiInput& input);
@@ -50,6 +64,9 @@ public:
 	bool TakeRecenterRequest() { return std::exchange(m_recenter_requested, false); }
 	// Whether a control was just mapped (the input that did it may still be held).
 	bool TakeMappingDone() { return std::exchange(m_mapping_done, false); }
+	std::optional<GunModeRequest> TakeGunModeRequest() { return std::exchange(m_gun_mode_request, std::nullopt); }
+	// Asked from the menu, done once it has closed (the game runs again).
+	std::optional<GunAction> TakeGunAction() { return std::exchange(m_gun_action, std::nullopt); }
 
 private:
 	enum class Page
@@ -61,6 +78,13 @@ private:
 		Game,
 		Transfer,
 		Controls,
+		LightGun,
+	};
+	// What the Controls page maps: a DualShock 2 control, or a control of gun 0 or 1.
+	struct MapTarget
+	{
+		int gun = -1; // -1: the DualShock 2
+		int control = 0; // Ps2Control or GunControl
 	};
 	enum class Dialog
 	{
@@ -79,15 +103,18 @@ private:
 	void RunGame();
 	void RunTransfer();
 	void RunControls();
+	void RunLightGun();
 	void RunMappingDialog();
-	// What a control's input is called on the Controls page.
-	std::string InputLabel(Ps2Control control) const;
+	// What a control is called, and what its input is called, on the Controls page.
+	std::string TargetName(const MapTarget& target) const;
+	std::string InputLabel(const MapTarget& target) const;
 	void UpdateMapping();
 	void RunDialog();
 
 	// Starts a settings row: label and help on the left; returns the control's rect on the right.
 	// with_note leaves room under the control for a Note.
 	Rect Row(std::string_view label, std::string_view help, float control_height = 52.0f, bool with_note = false);
+	float m_row_gap = 22.0f; // between rows; a page with many rows makes it smaller
 	void Section(std::string_view title);
 	// A line of text under the last row's control (a row made with_note).
 	void Note(std::string_view text, Color color);
@@ -118,11 +145,22 @@ private:
 
 	using Clock = std::chrono::steady_clock;
 	// Mapping a control: which, since when the controllers are all let go (armed), until when.
-	std::optional<Ps2Control> m_mapping;
+	std::optional<MapTarget> m_mapping;
 	bool m_mapping_armed = false;
 	bool m_mapping_done = false;
 	Clock::time_point m_mapping_until{};
 	ControllerState m_controller, m_controller_before;
+
+	// The Controls page's tab: the DualShock 2's controls, or a gun's (which one).
+	bool m_controls_guncon = false;
+	int m_controls_gun = 0;
+
+	// Light gun mode for the running game, and what the Light Gun page asked for.
+	bool m_has_game = false;
+	bool m_gun_on = false;
+	bool m_gun_chosen = false;
+	std::optional<GunModeRequest> m_gun_mode_request;
+	std::optional<GunAction> m_gun_action;
 
 	std::string m_toast;
 	Clock::time_point m_toast_until{};

@@ -80,6 +80,10 @@ public:
 	bool LocateEyes(XrTime time, XrView views[2]) const;
 	// A controller's aim pose (0 left, 1 right) in the LOCAL space: its ray points along -Z.
 	bool LocateAim(int hand, XrTime time, XrPosef* pose) const;
+	// A controller's grip pose (0 left, 1 right) in the LOCAL space: where the hand holds it.
+	bool LocateGrip(int hand, XrTime time, XrPosef* pose) const;
+	// A short vibration of a controller (0 left, 1 right); amplitude 0..1.
+	void Vibrate(int hand, float seconds, float amplitude);
 	// Whether the controllers are Steam Frame ones (otherwise the Touch layout fallback).
 	bool HasFrameControllers() const { return m_profile_has_dpad; }
 
@@ -91,6 +95,7 @@ public:
 private:
 	bool CreateActions();
 	bool SuggestBindings(const char* profile, const std::vector<std::pair<XrAction, const char*>>& bindings);
+	bool LocatePose(XrSpace space, XrTime time, XrPosef* pose) const;
 	void UpdateInteractionProfile();
 	bool GetBool(XrAction action) const;
 	float GetFloat(XrAction action) const;
@@ -117,5 +122,8 @@ private:
 	std::array<XrAction, static_cast<size_t>(ControlInput::Count)> m_inputs{}; // one per controller input
 	XrAction m_aim = XR_NULL_HANDLE; // per hand
 	XrSpace m_aim_spaces[2] = {};
+	XrAction m_grip = XR_NULL_HANDLE; // per hand
+	XrSpace m_grip_spaces[2] = {};
+	XrAction m_haptic = XR_NULL_HANDLE; // per hand
 
 };

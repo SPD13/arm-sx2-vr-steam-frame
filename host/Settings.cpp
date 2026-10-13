@@ -12,8 +12,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 
-static constexpr std::array<VrSettingInfo, 12> s_settings = {{
+static constexpr std::array<VrSettingInfo, 19> s_settings = {{
 	{"Screen", "screen_width", &VrSettings::screen_width, nullptr, 0.3f, 10.0f, false},
 	{"Screen", "screen_distance", &VrSettings::screen_distance, nullptr, 0.3f, 10.0f, false},
 	{"Mode", "flat", nullptr, &VrSettings::flat, 0.0f, 0.0f, true},
@@ -26,6 +27,13 @@ static constexpr std::array<VrSettingInfo, 12> s_settings = {{
 	{"Stereo", "stereo_convergence", &VrSettings::stereo_convergence, nullptr, 0.001f, 100.0f, false},
 	{"Stereo", "stereo_z_mode", nullptr, &VrSettings::stereo_z_mode, 0.0f, 0.0f, false},
 	{"Web", "web_require_code", nullptr, &VrSettings::web_require_code, 0.0f, 0.0f, false},
+	{"LightGun", "gun_players", &VrSettings::gun_players, nullptr, 1.0f, 2.0f, false},
+	{"LightGun", "gun_left_hand", nullptr, &VrSettings::gun_left_hand, 0.0f, 0.0f, false},
+	{"LightGun", "gun_beam", &VrSettings::gun_beam, nullptr, 0.0f, 2.0f, false},
+	{"LightGun", "gun_pedal", &VrSettings::gun_pedal, nullptr, 0.0f, 2.0f, false},
+	{"LightGun", "gun_haptics", &VrSettings::gun_haptics, nullptr, 0.0f, 1.0f, false},
+	{"LightGun", "gun_pitch", &VrSettings::gun_pitch, nullptr, -45.0f, 45.0f, false},
+	{"LightGun", "gun_color", nullptr, nullptr, 0.0f, 0.0f, false, &VrSettings::gun_color},
 }};
 
 std::span<const VrSettingInfo> VrSettingList()
@@ -45,7 +53,46 @@ const VrSettingInfo* FindVrSetting(std::string_view key)
 
 bool SameVrSetting(const VrSettingInfo& info, const VrSettings& a, const VrSettings& b)
 {
+	if (info.color)
+		return a.*info.color == b.*info.color;
 	return info.number ? a.*info.number == b.*info.number : a.*info.toggle == b.*info.toggle;
+}
+
+std::optional<uint32_t> ParseColor(std::string_view text)
+{
+	if (!text.empty() && text.front() == '#')
+		text.remove_prefix(1);
+	if (text.size() != 6)
+		return std::nullopt;
+	const std::optional<uint32_t> rgb = StringUtil::FromChars<uint32_t>(text, 16);
+	return rgb && *rgb <= 0xFFFFFFu ? rgb : std::nullopt;
+}
+
+std::string FormatColor(uint32_t rgb)
+{
+	char text[8];
+	std::snprintf(text, sizeof(text), "#%06x", rgb & 0xFFFFFFu);
+	return text;
+}
+
+// Copies one setting from `from` to `to`, and into the ini.
+static void StoreSetting(const VrSettingInfo& info, const VrSettings& from, VrSettings* to, INISettingsInterface* ini)
+{
+	if (info.color)
+	{
+		to->*info.color = from.*info.color;
+		ini->SetStringValue(info.section, info.key, FormatColor(to->*info.color).c_str());
+	}
+	else if (info.number)
+	{
+		to->*info.number = std::clamp(from.*info.number, info.min, info.max);
+		ini->SetFloatValue(info.section, info.key, to->*info.number);
+	}
+	else
+	{
+		to->*info.toggle = from.*info.toggle;
+		ini->SetBoolValue(info.section, info.key, to->*info.toggle);
+	}
 }
 
 VrSettingsStore::VrSettingsStore() = default;
@@ -56,7 +103,16 @@ void VrSettingsStore::ReadIni(const INISettingsInterface& ini, VrSettings* setti
 {
 	for (const VrSettingInfo& info : s_settings)
 	{
-		if (info.number)
+		if (info.color)
+		{
+			std::string value;
+			if (ini.GetStringValue(info.section, info.key, &value))
+			{
+				if (const std::optional<uint32_t> rgb = ParseColor(value))
+					settings->*info.color = *rgb;
+			}
+		}
+		else if (info.number)
 		{
 			float value;
 			if (ini.GetFloatValue(info.section, info.key, &value))
@@ -94,7 +150,14 @@ bool VrSettingsStore::Override(std::string_view key, std::string_view value)
 	const VrSettingInfo* info = FindVrSetting(key);
 	if (!info)
 		return false;
-	if (info->number)
+	if (info->color)
+	{
+		const std::optional<uint32_t> rgb = ParseColor(value);
+		if (!rgb)
+			return false;
+		m_current.*info->color = *rgb;
+	}
+	else if (info->number)
 	{
 		const std::optional<float> number = StringUtil::FromChars<float>(value);
 		if (!number)
@@ -119,16 +182,7 @@ void VrSettingsStore::Set(const VrSettings& settings)
 	{
 		if (SameVrSetting(info, settings, m_current))
 			continue;
-		if (info.number)
-		{
-			m_current.*info.number = std::clamp(settings.*info.number, info.min, info.max);
-			m_ini->SetFloatValue(info.section, info.key, m_current.*info.number);
-		}
-		else
-		{
-			m_current.*info.toggle = settings.*info.toggle;
-			m_ini->SetBoolValue(info.section, info.key, m_current.*info.toggle);
-		}
+		StoreSetting(info, settings, &m_current, m_ini.get());
 		changed = true;
 	}
 	if (!changed)
@@ -166,16 +220,7 @@ void VrSettingsStore::Update(bool force)
 					if (SameVrSetting(info, before, after))
 						continue;
 					Console.WriteLnFmt("VR settings: {} changed in {}", info.key, m_ini->GetFileName());
-					if (info.number)
-					{
-						m_current.*info.number = after.*info.number;
-						m_ini->SetFloatValue(info.section, info.key, after.*info.number);
-					}
-					else
-					{
-						m_current.*info.toggle = after.*info.toggle;
-						m_ini->SetBoolValue(info.section, info.key, after.*info.toggle);
-					}
+					StoreSetting(info, after, &m_current, m_ini.get());
 					changed = true;
 				}
 				if (changed)

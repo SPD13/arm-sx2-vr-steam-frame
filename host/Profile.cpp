@@ -42,6 +42,8 @@ static bool ParseProfile(const std::string& path, GameProfile* profile)
 			else
 				Console.WarningFmt("Profile {}:{}: hud_rect needs four numbers", path, number);
 		}
+		else if (key == "lightgun")
+			value >> profile->lightgun;
 		else
 			Console.WarningFmt("Profile {}:{}: unknown key '{}'", path, number, key);
 	}

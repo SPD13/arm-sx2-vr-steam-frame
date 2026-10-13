@@ -1,0 +1,10 @@
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// The light gun's depth grid from a depth image with a layer per eye (see gun_depth.glsl).
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#define LAYERED
+#include "gun_depth.glsl"

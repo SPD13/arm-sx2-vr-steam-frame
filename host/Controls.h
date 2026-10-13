@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// Which controller input drives which DualShock 2 control, set in Settings › Controls and kept in
-// Controls.ini in the settings folder.
+// Which controller input drives which DualShock 2 control, and which drives which button of the two
+// light guns (GunCon 2), set in Settings › Controls and kept in Controls.ini in the settings folder.
+// The DualShock 2 set is used while light gun mode is off, the gun sets while it is on.
 //
 // XrApp reports the controllers as they are (ControllerState: buttons, grips, triggers, sticks);
 // ControlMap turns that into the pad state for the game. The triggers can be mapped like any
@@ -74,6 +75,25 @@ enum class Ps2Control : uint8_t
 	Count
 };
 
+// A light gun's (GunCon 2's) controls, in the order the Controls page lists them. Pedal is no button
+// of the gun: it takes cover, by pressing the gun button the game uses for that (VrSettings::gun_pedal).
+enum class GunControl : uint8_t
+{
+	Trigger,
+	A,
+	B,
+	C,
+	Start,
+	Select,
+	Up,
+	Down,
+	Left,
+	Right,
+	Reload, // shoot off the screen
+	Pedal,
+	Count
+};
+
 struct ControllerState
 {
 	struct Stick
@@ -109,6 +129,16 @@ public:
 	// when another control still has that one.
 	void Set(Ps2Control control, ControlInput input);
 
+	// The light guns: gun 0 is the first (USB port 1), in the gun hand; gun 1 the second, in the other.
+	static constexpr int NUM_GUNS = 2;
+	static const char* Name(GunControl control);
+	ControlInput Get(int gun, GunControl control) const { return m_gun[gun][static_cast<size_t>(control)]; }
+	// As Set for the pad, within this gun's set.
+	void Set(int gun, GunControl control, ControlInput input);
+	void ResetGunToDefaults(int gun);
+	// Whether the two guns' sets share an input (the second gun's then wins with two guns).
+	bool GunsShare(ControlInput input) const;
+
 	struct Output
 	{
 		Emu::PadState pad;
@@ -116,6 +146,22 @@ public:
 	};
 	// The pad state for this frame's controller state (call every frame: taps and holds are timed).
 	Output Apply(const ControllerState& state);
+
+	struct GunOutput
+	{
+		uint32_t buttons = 0; // Emu::GunButton bits
+	};
+	struct GunsOutput
+	{
+		GunOutput gun[NUM_GUNS];
+		bool recenter = false; // both sticks were just clicked
+	};
+	// The guns' buttons for this frame (call every frame in light gun mode, instead of Apply).
+	// With one gun only the first set is read; with two, an input in the second set does not count
+	// for the first. pedal_button: the Emu::GunButton the pedal presses.
+	GunsOutput ApplyGuns(const ControllerState& state, int guns, uint32_t pedal_button);
+	// How far the gun's trigger input is pulled (0..1), for its model.
+	float GunTrigger(const ControllerState& state, int gun) const { return state[Get(gun, GunControl::Trigger)]; }
 
 	// For mapping: the input that went from released to pressed between before and now, sticks
 	// (pushed most of the way) or buttons; None when there is none.
@@ -126,13 +172,24 @@ public:
 private:
 	void Save();
 
+	using Clock = std::chrono::steady_clock;
+	// A Start / Select pair on one input: a tap is Start, a hold Select.
+	struct TapHold
+	{
+		bool down = false;
+		Clock::time_point down_since{};
+		Clock::time_point start_pulse_until{};
+		// pressed: the shared input is held; sets start and select.
+		void Update(bool pressed, bool* start, bool* select);
+	};
+	// Both stick clicks: recenter. Returns whether they are held; *now is set on the first frame.
+	bool UpdateRecenter(const ControllerState& state, bool* now);
+
 	std::array<ControlInput, static_cast<size_t>(Ps2Control::Count)> m_map;
+	std::array<std::array<ControlInput, static_cast<size_t>(GunControl::Count)>, NUM_GUNS> m_gun;
 	std::unique_ptr<INISettingsInterface> m_ini;
 
-	// A shared Start / Select input: tap or hold.
-	using Clock = std::chrono::steady_clock;
-	bool m_shared_down = false;
-	Clock::time_point m_shared_down_since{};
-	Clock::time_point m_start_pulse_until{};
+	TapHold m_pad_start_select;
+	TapHold m_gun_start_select[NUM_GUNS];
 	bool m_recenter_held = false;
 };

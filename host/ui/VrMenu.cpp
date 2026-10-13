@@ -30,8 +30,12 @@ namespace
 	constexpr int BUTTON_PX = 128;
 	constexpr int CURSOR_PX = 64;
 	constexpr int BEAM_W_PX = 256, BEAM_H_PX = 16;
+	constexpr float BUTTON_GROUP_GAP = 0.05f; // more between the menu buttons and the light gun's
 	constexpr uint32_t GEAR_ICON = 0xf013;
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
+	constexpr uint32_t GUN_MODE_ICON = 0xf05b; // crosshairs
+	constexpr uint32_t ONE_GUN_ICON = 0xf007; // user
+	constexpr uint32_t TWO_GUNS_ICON = 0xf0c0; // users
 	constexpr float SCROLL_SPEED = 22.0f; // pixels per frame with a thumbstick pushed all the way
 } // namespace
 
@@ -69,10 +73,11 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_xr = &xr;
 	if (!LoadFont(&m_text, "Roboto-Regular.ttf") || !LoadFont(&m_icons, "fa-solid-900.ttf"))
 		return false;
+	bool buttons_made = true;
+	for (Button& button : m_buttons)
+		buttons_made = buttons_made && button.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, BUTTON_PX);
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
-		!m_gear.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, BUTTON_PX) ||
-		!m_games.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, BUTTON_PX) ||
-		!m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
+		!buttons_made || !m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
 		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX))
 	{
 		Destroy();
@@ -99,12 +104,18 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	}
 	m_beam.Upload(canvas);
 
-	for (Button* button : {&m_gear, &m_games})
+	m_buttons[GEAR].icon = GEAR_ICON;
+	m_buttons[GAMES].icon = GAMES_ICON;
+	m_buttons[GUN_MODE].icon = GUN_MODE_ICON;
+	m_buttons[GUNS].icon = m_guns > 1 ? TWO_GUNS_ICON : ONE_GUN_ICON;
+	m_buttons[GUN_MODE].lit = m_gun_on;
+	m_buttons[GUN_MODE].disabled = !m_has_game;
+	m_buttons[GUNS].disabled = !m_gun_on;
+	for (Button& button : m_buttons)
 	{
-		button->icon = button == &m_gear ? GEAR_ICON : GAMES_ICON;
-		button->canvas.Resize(BUTTON_PX, BUTTON_PX);
-		button->layer.SetSize(BUTTON_SIZE, BUTTON_SIZE);
-		DrawButton(*button);
+		button.canvas.Resize(BUTTON_PX, BUTTON_PX);
+		button.layer.SetSize(BUTTON_SIZE, BUTTON_SIZE);
+		DrawButton(button);
 	}
 	m_created = true;
 	return true;
@@ -115,8 +126,8 @@ void VrMenu::Destroy()
 	m_created = false;
 	m_beam.Destroy();
 	m_cursor.Destroy();
-	m_games.layer.Destroy();
-	m_gear.layer.Destroy();
+	for (Button& button : m_buttons)
+		button.layer.Destroy();
 	m_panel.Destroy();
 	m_game_list.reset();
 	m_settings_menu.reset();
@@ -128,10 +139,20 @@ void VrMenu::DrawButton(Button& button)
 	c.Clear();
 	const float mid = 0.5f * BUTTON_PX;
 	const Rect all{0, 0, BUTTON_PX, BUTTON_PX};
-	if (button.hovered)
+	if (button.disabled)
 	{
-		c.FillCircle(mid, mid, mid - 2.0f, Theme::accent);
+		c.FillCircle(mid, mid, mid - 2.0f, Theme::panel.WithAlpha(0.35f));
+		c.DrawIcon(m_icons, 56.0f, all, button.icon, Theme::text.WithAlpha(0.3f));
+	}
+	else if (button.hovered)
+	{
+		c.FillCircle(mid, mid, mid - 2.0f, button.lit ? Theme::accent_hover : Theme::accent);
 		c.DrawIcon(m_icons, 64.0f, all, button.icon, Theme::text);
+	}
+	else if (button.lit)
+	{
+		c.FillCircle(mid, mid, mid - 2.0f, Theme::accent.WithAlpha(0.85f));
+		c.DrawIcon(m_icons, 60.0f, all, button.icon, Theme::text);
 	}
 	else
 	{
@@ -139,6 +160,26 @@ void VrMenu::DrawButton(Button& button)
 		c.DrawIcon(m_icons, 60.0f, all, button.icon, Theme::text.WithAlpha(0.8f));
 	}
 	button.layer.Upload(c);
+}
+
+void VrMenu::SetGunState(bool has_game, bool on, bool chosen, int guns)
+{
+	if (m_settings_menu)
+		m_settings_menu->SetGunMode(has_game, on, chosen);
+	if (has_game == m_has_game && on == m_gun_on && guns == m_guns)
+		return;
+	m_has_game = has_game;
+	m_gun_on = on;
+	m_guns = guns;
+	m_buttons[GUN_MODE].lit = on;
+	m_buttons[GUN_MODE].disabled = !has_game;
+	m_buttons[GUNS].disabled = !on;
+	m_buttons[GUNS].icon = guns > 1 ? TWO_GUNS_ICON : ONE_GUN_ICON;
+	if (m_created)
+	{
+		DrawButton(m_buttons[GUN_MODE]);
+		DrawButton(m_buttons[GUNS]);
+	}
 }
 
 VrMenu::Hit VrMenu::HitPlane(const XrPosef& quad, const XrPosef& aim)
@@ -202,8 +243,10 @@ void VrMenu::Close()
 	Console.WriteLn("Menu: closed");
 }
 
-void VrMenu::PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit, const XrQuaternionf& facing)
+void VrMenu::PlacePointer(XrTime time, int hand, const XrPosef& aim, const Hit& hit, const XrQuaternionf& facing)
 {
+	if (m_pointers[hand].gun)
+		return; // the gun draws its beam and dot
 	m_show_pointer = true;
 	m_show_cursor = hit.hit;
 	XrPosef cursor;
@@ -226,8 +269,8 @@ void VrMenu::PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit, const
 	m_beam.SetSize(length, BEAM_WIDTH);
 }
 
-VrMenu::Result VrMenu::Update(
-	XrTime time, const XrApp::Input& input, const XrPosef& screen, float screen_width, float screen_height)
+VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std::array<Pointer, 2>& pointers,
+	const XrPosef& screen, float screen_width, float screen_height)
 {
 	Result result;
 	m_show_pointer = false;
@@ -236,6 +279,7 @@ VrMenu::Result VrMenu::Update(
 		return result;
 	m_screen = screen;
 	m_screen_width = screen_width;
+	m_pointers = pointers;
 
 	// A game from the list that would not start: back to the list, which says why.
 	if (Emu::TakeBootFailure())
@@ -253,15 +297,19 @@ VrMenu::Result VrMenu::Update(
 			m_swallow[h] = false;
 	}
 
-	// The buttons, one above the other just outside the screen's right edge, level with its top.
+	// The buttons, one above the other just outside the screen's right edge, from level with its top.
 	const float spacing = BUTTON_SIZE + BUTTON_GAP;
 	const float button_x = 0.5f * screen_width + BUTTON_MARGIN + 0.5f * BUTTON_SIZE;
-	const float gear_y = 0.5f * screen_height - 0.5f * BUTTON_SIZE, games_y = gear_y - spacing;
-	XrPosef gear_pose = screen, games_pose = screen;
-	gear_pose.position = Transform(screen, {button_x, gear_y, 0.0f});
-	games_pose.position = Transform(screen, {button_x, games_y, 0.0f});
-	m_gear.layer.SetPose(gear_pose);
-	m_games.layer.SetPose(games_pose);
+	m_buttons[GEAR].y = 0.5f * screen_height - 0.5f * BUTTON_SIZE;
+	m_buttons[GAMES].y = m_buttons[GEAR].y - spacing;
+	m_buttons[GUN_MODE].y = m_buttons[GAMES].y - spacing - BUTTON_GROUP_GAP;
+	m_buttons[GUNS].y = m_buttons[GUN_MODE].y - spacing;
+	for (Button& button : m_buttons)
+	{
+		XrPosef pose = screen;
+		pose.position = Transform(screen, {button_x, button.y, 0.0f});
+		button.layer.SetPose(pose);
+	}
 	if (m_open != Panel::None && m_reanchor)
 		AnchorPanel();
 	m_reanchor = false;
@@ -271,15 +319,18 @@ VrMenu::Result VrMenu::Update(
 	XrPosef aim[2];
 	Hit hits[2];
 	bool pointing[2] = {}; // at the panel, or away from the game
+	const auto on_panel = [&](const Hit& hit) {
+		return hit.hit && std::abs(hit.x) <= 0.5f * m_panel.Size().width && std::abs(hit.y) <= 0.5f * m_panel.Size().height;
+	};
 	for (int h = 0; h < 2; h++)
 	{
-		if (!m_xr->LocateAim(h, time, &aim[h]))
+		if (!pointers[h].valid)
 			continue;
+		aim[h] = pointers[h].pose;
 		if (m_open != Panel::None)
 		{
 			hits[h] = HitPlane(m_panel.Pose(), aim[h]);
-			pointing[h] = hits[h].hit && std::abs(hits[h].x) <= 0.5f * m_panel.Size().width &&
-			              std::abs(hits[h].y) <= 0.5f * m_panel.Size().height;
+			pointing[h] = on_panel(hits[h]);
 		}
 		else
 		{
@@ -300,46 +351,85 @@ VrMenu::Result VrMenu::Update(
 	bool just_opened = false;
 	if (m_open == Panel::None)
 	{
-		const auto on = [&](const Hit& hit, float centre_y) {
-			return hit.hit && std::hypot(hit.x - button_x, hit.y - centre_y) < 0.5f * BUTTON_SIZE;
-		};
-		const Hit& hit = hits[hand];
-		const bool on_gear = on(hit, gear_y), on_games = on(hit, games_y);
-		for (Button* button : {&m_gear, &m_games})
-		{
-			const bool hovered = button == &m_gear ? on_gear : on_games;
-			if (hovered != button->hovered)
+		// The button a hand points at, if any.
+		const auto button_at = [&](int h) {
+			for (int b = 0; b < NUM_BUTTONS; b++)
 			{
-				button->hovered = hovered;
-				DrawButton(*button);
+				const Hit& hit = hits[h];
+				if (pointers[h].valid && hit.hit && std::hypot(hit.x - button_x, hit.y - m_buttons[b].y) < 0.5f * BUTTON_SIZE)
+					return b;
+			}
+			return -1;
+		};
+		const int hovered = button_at(hand);
+		for (int b = 0; b < NUM_BUTTONS; b++)
+		{
+			Button& button = m_buttons[b];
+			const bool now = b == hovered && !button.disabled;
+			if (now != button.hovered)
+			{
+				button.hovered = now;
+				DrawButton(button);
 			}
 		}
 		// Only on the buttons themselves: a trigger aimed off the screen still reaches the game (light
 		// gun games reload that way).
 		for (int h = 0; h < 2; h++)
-			result.block_trigger[h] = on(hits[h], gear_y) || on(hits[h], games_y);
-		if ((on_gear || on_games) && pressed[hand])
 		{
-			Open(on_gear ? Panel::Settings : Panel::Games);
-			m_gear.hovered = m_games.hovered = false;
-			DrawButton(m_gear);
-			DrawButton(m_games);
-			just_opened = true;
-			hits[hand] = HitPlane(m_panel.Pose(), aim[hand]);
-			pointing[hand] = hits[hand].hit && std::abs(hits[hand].x) <= 0.5f * m_panel.Size().width &&
-			                 std::abs(hits[hand].y) <= 0.5f * m_panel.Size().height;
+			if (button_at(h) >= 0)
+			{
+				result.block_trigger[h] = true;
+				result.on_ui[h] = true;
+				result.ui_point[h] = hits[h].point;
+			}
 		}
-		else if (pointing[hand])
-			PlacePointer(time, aim[hand], hit, screen.orientation);
+		if (hovered >= 0 && pressed[hand] && !m_swallow[hand] && !m_buttons[hovered].disabled)
+		{
+			if (hovered == GUN_MODE)
+			{
+				result.gun_mode = m_gun_on ? SettingsMenu::GunModeRequest::Off : SettingsMenu::GunModeRequest::On;
+				m_swallow[hand] = true; // the click is not a shot when the gun comes on
+			}
+			else if (hovered == GUNS)
+			{
+				result.toggle_guns = true;
+				m_swallow[hand] = true;
+			}
+			else
+			{
+				Open(hovered == GEAR ? Panel::Settings : Panel::Games);
+				for (Button& button : m_buttons)
+				{
+					if (button.hovered)
+					{
+						button.hovered = false;
+						DrawButton(button);
+					}
+				}
+				just_opened = true;
+				hits[hand] = HitPlane(m_panel.Pose(), aim[hand]);
+				pointing[hand] = on_panel(hits[hand]);
+			}
+		}
+		else if (pointing[hand] && pointers[hand].valid)
+			PlacePointer(time, hand, aim[hand], hits[hand], screen.orientation);
 	}
 
 	if (m_open != Panel::None)
 	{
 		result.open = true;
-		const bool on_panel = pointing[hand];
+		const bool hand_on_panel = pointing[hand];
 		const Hit& panel_hit = hits[hand];
+		for (int h = 0; h < 2; h++)
+		{
+			if (pointing[h])
+			{
+				result.on_ui[h] = true;
+				result.ui_point[h] = hits[h].point;
+			}
+		}
 		GuiInput gui;
-		gui.pointer = on_panel;
+		gui.pointer = hand_on_panel;
 		gui.x = (panel_hit.x / m_panel.Size().width + 0.5f) * static_cast<float>(SettingsMenu::WIDTH);
 		gui.y = (0.5f - panel_hit.y / m_panel.Size().height) * static_cast<float>(SettingsMenu::HEIGHT);
 		// While a control is being mapped, a trigger press is the input to map: neither a click nor
@@ -361,6 +451,8 @@ VrMenu::Result VrMenu::Update(
 				result.recenter = true;
 				m_reanchor = true;
 			}
+			result.gun_mode = m_settings_menu->TakeGunModeRequest();
+			result.gun_action = m_settings_menu->TakeGunAction();
 			close = m_settings_menu->TakeCloseRequest();
 			// The trigger that was just mapped is still held: not a click until let go.
 			if (m_settings_menu->TakeMappingDone())
@@ -380,10 +472,10 @@ VrMenu::Result VrMenu::Update(
 				m_panel.Upload(m_game_list->GetCanvas());
 			close = m_game_list->TakeCloseRequest();
 		}
-		if (close || (usable && pressed[hand] && !on_panel))
+		if (close || (usable && pressed[hand] && !hand_on_panel))
 			Close();
 		else
-			PlacePointer(time, aim[hand], panel_hit, m_panel.Pose().orientation);
+			PlacePointer(time, hand, aim[hand], panel_hit, m_panel.Pose().orientation);
 		if (just_opened || m_open == Panel::None)
 		{
 			// The trigger that opened or closed the menu stays the menu's until it is let go.
@@ -408,10 +500,10 @@ void VrMenu::AddLayers(const XrCompositionLayerBaseHeader** layers, uint32_t* co
 	}
 	else
 	{
-		for (Button* button : {&m_gear, &m_games})
+		for (Button& button : m_buttons)
 		{
-			if (button->layer.HasImage())
-				layers[(*count)++] = button->layer.Layer();
+			if (button.layer.HasImage())
+				layers[(*count)++] = button.layer.Layer();
 		}
 	}
 	if (m_show_pointer)

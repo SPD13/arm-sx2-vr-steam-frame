@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <ctime>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -112,4 +113,40 @@ namespace Emu
 		float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f; // -1..1, +y is up
 	};
 	void SetPad(const PadState& state);
+
+	// Light guns: a GunCon 2 on each USB port, aimed and fired from the XR thread.
+	enum GunButton : uint32_t // as usb_lightgun::HostButton
+	{
+		GUN_C = 1u << 1,
+		GUN_B = 1u << 2,
+		GUN_A = 1u << 3,
+		GUN_UP = 1u << 4,
+		GUN_RIGHT = 1u << 5,
+		GUN_DOWN = 1u << 6,
+		GUN_LEFT = 1u << 7,
+		GUN_TRIGGER = 1u << 13,
+		GUN_SELECT = 1u << 14,
+		GUN_START = 1u << 15,
+		GUN_SHOOT_OFFSCREEN = 1u << 16, // the trigger, aimed off the screen: a reload
+		GUN_RECALIBRATE = 1u << 17, // Time Crisis's calibration shot
+	};
+	inline constexpr int NUM_GUNS = 2;
+	struct GunState
+	{
+		bool aim_valid = false; // false: pointing off the picture
+		float x = 0.0f, y = 0.0f; // where it points, in pixels of the presented frame (VKLibretro::Frame)
+		uint32_t buttons = 0; // GunButton bits
+	};
+	// The gun on USB port `port` (0 or 1). Any thread; the game reads it when it polls the gun.
+	void SetGun(int port, const GunState& state);
+	// Hands the USB ports back to their own bindings (light gun mode off).
+	void ReleaseGuns();
+	// Plugs a GunCon 2 into both USB ports, or unplugs them, in the running game and for the next
+	// ones (PCSX2.ini). Runs on the CPU thread.
+	void SetGunsPlugged(bool plugged);
+	// Decides, as each game starts, whether the guns are plugged in for it (called on the CPU thread
+	// with the disc serial).
+	void SetGunsPolicy(std::function<bool(const std::string& serial)> policy);
+	// Whether the core knows the game as a GunCon 2 game.
+	bool IsLightgunGame(const std::string& serial);
 } // namespace Emu

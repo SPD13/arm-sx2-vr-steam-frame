@@ -8,6 +8,7 @@
 #include "common/Console.h"
 #include "common/StringUtil.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -279,14 +280,19 @@ bool XrApp::CreateActions()
 	bool made = true;
 	for (const InputAction& action : input_actions)
 		made = made && make(&m_inputs[static_cast<size_t>(action.input)], action.name, action.label, action.type);
-	// The menu's pointers, one per hand.
-	XrActionCreateInfo aim_info{XR_TYPE_ACTION_CREATE_INFO};
-	std::strcpy(aim_info.actionName, "aim");
-	std::strcpy(aim_info.localizedActionName, "Menu pointer");
-	aim_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
-	aim_info.countSubactionPaths = 2;
-	aim_info.subactionPaths = m_hand_paths;
-	if (!made || XR_FAILED(xrCreateAction(m_action_set, &aim_info, &m_aim)))
+	// Per hand: the menu's pointers, where the light guns are held, and their recoil.
+	const auto make_per_hand = [this](XrAction* action, const char* name, const char* label, XrActionType type) {
+		XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+		std::strcpy(info.actionName, name);
+		std::strcpy(info.localizedActionName, label);
+		info.actionType = type;
+		info.countSubactionPaths = 2;
+		info.subactionPaths = m_hand_paths;
+		return XR_SUCCEEDED(xrCreateAction(m_action_set, &info, action));
+	};
+	if (!made || !make_per_hand(&m_aim, "aim", "Menu pointer", XR_ACTION_TYPE_POSE_INPUT) ||
+		!make_per_hand(&m_grip, "grip", "Light gun grip", XR_ACTION_TYPE_POSE_INPUT) ||
+		!make_per_hand(&m_haptic, "recoil", "Light gun recoil", XR_ACTION_TYPE_VIBRATION_OUTPUT))
 	{
 		Console.Error("XR: could not create the controller actions.");
 		return false;
@@ -307,15 +313,23 @@ bool XrApp::CreateActions()
 		{action(ControlInput::RightStick), "/user/hand/right/input/thumbstick"},
 	};
 	// Suggested apart: a runtime that rejects them still gets the gamepad bindings.
+	// The poses and haptics in steps, from all of them down to none, so a runtime that rejects one
+	// still gets the rest.
 	const auto suggest = [this](const char* profile, std::vector<std::pair<XrAction, const char*>> bindings) {
 		auto with_aim = bindings;
 		with_aim.insert(with_aim.end(),
 			{{m_aim, "/user/hand/left/input/aim/pose"}, {m_aim, "/user/hand/right/input/aim/pose"}});
-		if (!SuggestBindings(profile, with_aim))
-		{
-			Console.WarningFmt("XR: no aim pose for {}; the menu pointer is unavailable.", profile);
-			SuggestBindings(profile, bindings);
-		}
+		auto with_all = with_aim;
+		with_all.insert(with_all.end(),
+			{{m_grip, "/user/hand/left/input/grip/pose"}, {m_grip, "/user/hand/right/input/grip/pose"},
+				{m_haptic, "/user/hand/left/output/haptic"}, {m_haptic, "/user/hand/right/output/haptic"}});
+		if (SuggestBindings(profile, with_all))
+			return;
+		Console.WarningFmt("XR: no grip pose or haptics for {}; light guns follow the aim pose, without recoil.", profile);
+		if (SuggestBindings(profile, with_aim))
+			return;
+		Console.WarningFmt("XR: no aim pose for {}; the menu pointer is unavailable.", profile);
+		SuggestBindings(profile, bindings);
 	};
 
 	// Steam Frame native profile: all four face buttons on the right controller, a D-pad on the
@@ -357,6 +371,8 @@ bool XrApp::CreateActions()
 		space_info.subactionPath = m_hand_paths[hand];
 		space_info.poseInActionSpace.orientation.w = 1.0f;
 		XR_CHECK(xrCreateActionSpace(m_session, &space_info, &m_aim_spaces[hand]));
+		space_info.action = m_grip;
+		XR_CHECK(xrCreateActionSpace(m_session, &space_info, &m_grip_spaces[hand]));
 	}
 	return true;
 }
@@ -379,11 +395,14 @@ void XrApp::DestroySession()
 	if (m_session == XR_NULL_HANDLE)
 		return;
 	std::lock_guard lock(GraphicsQueueMutex());
-	for (XrSpace& space : m_aim_spaces)
+	for (XrSpace* spaces : {m_aim_spaces, m_grip_spaces})
 	{
-		if (space)
-			xrDestroySpace(space);
-		space = XR_NULL_HANDLE;
+		for (int hand = 0; hand < 2; hand++)
+		{
+			if (spaces[hand])
+				xrDestroySpace(spaces[hand]);
+			spaces[hand] = XR_NULL_HANDLE;
+		}
 	}
 	if (m_action_set)
 		xrDestroyActionSet(m_action_set);
@@ -601,16 +620,40 @@ bool XrApp::LocateHead(XrTime time, XrPosef* pose) const
 	return true;
 }
 
-bool XrApp::LocateAim(int hand, XrTime time, XrPosef* pose) const
+bool XrApp::LocatePose(XrSpace space, XrTime time, XrPosef* pose) const
 {
-	if (!m_aim_spaces[hand])
+	if (!space)
 		return false;
 	XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
-	if (XR_FAILED(xrLocateSpace(m_aim_spaces[hand], m_local_space, time, &location)))
+	if (XR_FAILED(xrLocateSpace(space, m_local_space, time, &location)))
 		return false;
 	constexpr XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
 	if ((location.locationFlags & needed) != needed)
 		return false;
 	*pose = location.pose;
 	return true;
+}
+
+bool XrApp::LocateAim(int hand, XrTime time, XrPosef* pose) const
+{
+	return LocatePose(m_aim_spaces[hand], time, pose);
+}
+
+bool XrApp::LocateGrip(int hand, XrTime time, XrPosef* pose) const
+{
+	return LocatePose(m_grip_spaces[hand], time, pose);
+}
+
+void XrApp::Vibrate(int hand, float seconds, float amplitude)
+{
+	if (!m_haptic || m_session_state != XR_SESSION_STATE_FOCUSED || amplitude <= 0.0f)
+		return;
+	XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+	info.action = m_haptic;
+	info.subactionPath = m_hand_paths[hand];
+	XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
+	vibration.duration = static_cast<XrDuration>(seconds * 1e9f);
+	vibration.frequency = XR_FREQUENCY_UNSPECIFIED;
+	vibration.amplitude = std::min(amplitude, 1.0f);
+	xrApplyHapticFeedback(m_session, &info, reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
 }

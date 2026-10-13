@@ -23,6 +23,17 @@ add_executable(ps2v
 	XrApp.cpp
 	XrApp.h
 	XrMath.h
+	gun/GunAim.cpp
+	gun/GunAim.h
+	gun/GunDepth.cpp
+	gun/GunDepth.h
+	gun/GunGames.cpp
+	gun/GunGames.h
+	gun/GunModel.cpp
+	gun/GunModel.h
+	gun/GunRenderer.cpp
+	gun/GunRenderer.h
+	third_party/cgltf.h
 	ui/Canvas.cpp
 	ui/Canvas.h
 	ui/Font.cpp
@@ -54,7 +65,8 @@ target_sources(ps2v PRIVATE "${PS2V_WEB_PAGE}")
 set(PS2V_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(PS2V_SHADERS
 	depth_stats.comp depth_hist.comp depth_range.comp depth_normalize.comp depth_hud.comp depth_background.comp depth_view.comp
-	window.vert window.frag)
+	window.vert window.frag
+	gun_depth.comp gun_depth_layered.comp gun.vert gun.frag gun_beam.vert gun_beam.frag)
 file(GLOB PS2V_SHADER_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.glsl")
 foreach(shader ${PS2V_SHADERS})
 	string(REPLACE "." "_" array_name "${shader}")
@@ -84,8 +96,13 @@ target_link_libraries(ps2v PRIVATE
 	OpenXR::openxr_loader
 )
 
-# resources/ (GameDB, shaders, fonts) next to the binary, as for the other frontends, and the game
-# profiles.
+# resources/ (GameDB, shaders, fonts) next to the binary, as for the other frontends, the game
+# profiles and the light gun's model.
 pcsx2_copy_runtime_resources(ps2v)
 add_custom_command(TARGET ps2v POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/profiles" "$<TARGET_FILE_DIR:ps2v>/profiles")
+# The light gun's model (tools/lightgun builds it).
+add_custom_command(TARGET ps2v POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ps2v>/assets"
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/../assets/lightgun.glb"
+		"$<TARGET_FILE_DIR:ps2v>/assets/lightgun.glb")
