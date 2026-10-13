@@ -13,6 +13,7 @@ namespace
 	constexpr int MARCH_STEPS = 96;
 	constexpr int REFINE_STEPS = 8;
 	constexpr float MIN_EYE_DISTANCE = 0.1f; // as main.cpp gives the GS
+	constexpr float MAX_PLANE_DISTANCE = 6.0f; // beside the screen, the beam ends on its plane up to this far
 } // namespace
 
 float GunDepthGrid::Sample(float u, float v) const
@@ -36,6 +37,8 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 	const float t_glass = -o.z / d.z;
 	const XrVector3f glass = o + d * t_glass;
 	const float half_w = 0.5f * screen.width, half_h = 0.5f * screen.height;
+	aim.on_plane = t_glass < MAX_PLANE_DISTANCE;
+	aim.end = Transform(screen.pose, glass);
 	if (std::abs(glass.x) > half_w || std::abs(glass.y) > half_h)
 		return aim;
 	aim.on_screen = true;

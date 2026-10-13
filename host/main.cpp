@@ -777,8 +777,9 @@ int main(int argc, char* argv[])
 					}
 					else
 					{
-						// Pointing away from the screen: a short beam shows where.
-						drawn.beam_end = Transform(muzzle_pose[h], {0.0f, 0.0f, -1.0f});
+						// Beside the screen: the beam ends on its plane, as the menu pointer's does;
+						// pointing away from it, a short beam shows where.
+						drawn.beam_end = aim.on_plane ? aim.end : Transform(muzzle_pose[h], {0.0f, 0.0f, -1.0f});
 						drawn.beam = beam_mode == 0;
 					}
 				}

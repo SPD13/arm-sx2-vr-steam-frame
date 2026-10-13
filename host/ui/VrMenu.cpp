@@ -22,6 +22,10 @@ namespace
 	constexpr float BUTTON_SIZE = 0.12f; // meters
 	constexpr float BUTTON_GAP = 0.03f; // between the two buttons
 	constexpr float BUTTON_MARGIN = 0.04f; // between the screen's right edge and the buttons
+	// A pointer gets onto a button within its circle, and stays on it (the beam and the trigger are
+	// the button's) until it leaves this much around its centre: a hand's tremble at the edge, or the
+	// game's parallax moving behind it, does not take the beam back into the game.
+	constexpr float BUTTON_HOLD_RADIUS = 0.75f * BUTTON_SIZE;
 	constexpr float POINTER_REACH = 6.0f; // the beam ends on the screen's plane up to this far away
 	constexpr float FREE_BEAM_LENGTH = 1.0f; // and is this long when it points elsewhere
 	constexpr float PANEL_LIFT = 0.03f; // the panel stands this far in front of the screen
@@ -218,6 +222,7 @@ void VrMenu::Open(Panel panel)
 {
 	if (m_open == Panel::None)
 		Emu::SetPaused(true);
+	m_on_button[0] = m_on_button[1] = -1;
 	m_open = panel;
 	if (panel == Panel::Settings)
 	{
@@ -351,17 +356,28 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	bool just_opened = false;
 	if (m_open == Panel::None)
 	{
-		// The button a hand points at, if any.
-		const auto button_at = [&](int h) {
-			for (int b = 0; b < NUM_BUTTONS; b++)
+		// The button each hand points at, if any: the nearest, within its circle, or within the hold
+		// radius of the one it was already on.
+		int on_button[2] = {-1, -1};
+		for (int h = 0; h < 2; h++)
+		{
+			const Hit& hit = hits[h];
+			int nearest = -1;
+			float distance = 0.0f;
+			for (int b = 0; b < NUM_BUTTONS && pointers[h].valid && hit.hit; b++)
 			{
-				const Hit& hit = hits[h];
-				if (pointers[h].valid && hit.hit && std::hypot(hit.x - button_x, hit.y - m_buttons[b].y) < 0.5f * BUTTON_SIZE)
-					return b;
+				const float d = std::hypot(hit.x - button_x, hit.y - m_buttons[b].y);
+				if (nearest < 0 || d < distance)
+				{
+					nearest = b;
+					distance = d;
+				}
 			}
-			return -1;
-		};
-		const int hovered = button_at(hand);
+			const float reach = nearest == m_on_button[h] ? BUTTON_HOLD_RADIUS : 0.5f * BUTTON_SIZE;
+			on_button[h] = nearest >= 0 && distance < reach ? nearest : -1;
+			m_on_button[h] = on_button[h];
+		}
+		const int hovered = on_button[hand];
 		for (int b = 0; b < NUM_BUTTONS; b++)
 		{
 			Button& button = m_buttons[b];
@@ -376,7 +392,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		// gun games reload that way).
 		for (int h = 0; h < 2; h++)
 		{
-			if (button_at(h) >= 0)
+			if (on_button[h] >= 0)
 			{
 				result.block_trigger[h] = true;
 				result.on_ui[h] = true;

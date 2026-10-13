@@ -53,6 +53,7 @@ struct GunStereo
 struct GunAim
 {
 	bool on_screen = false; // the beam crosses the screen quad
+	bool on_plane = false; // ... or the screen's plane beside it (end is there)
 	bool on_picture = false; // ... within the game's picture: the gun aims at the game
 	float window_x = 0.0f, window_y = 0.0f; // where, in pixels of the presented frame (for Emu::GunState)
 	XrVector3f end{}; // where the beam ends: the surface it reaches, or the glass

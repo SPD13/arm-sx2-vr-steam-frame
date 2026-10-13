@@ -144,6 +144,7 @@ private:
 	int m_hand = 1; // the pointer: 0 left, 1 right
 	bool m_trigger_down[2] = {};
 	bool m_swallow[2] = {}; // a trigger held through an open or close, ignored until released
+	int m_on_button[2] = {-1, -1}; // per hand, the button it points at (ButtonId), -1 for none
 
 	XrPosef m_screen{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -2.0f}};
 	float m_screen_width = 2.4f;
