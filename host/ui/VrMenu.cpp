@@ -34,6 +34,12 @@ namespace
 	constexpr int BUTTON_PX = 128;
 	constexpr int CURSOR_PX = 64;
 	constexpr int BEAM_W_PX = 256, BEAM_H_PX = 16;
+	// The tooltip: a rounded label left-aligned in its layer, at the buttons' pixel density.
+	constexpr int TOOLTIP_W_PX = 640, TOOLTIP_H_PX = 64;
+	constexpr float TOOLTIP_TEXT_SIZE = 32.0f;
+	constexpr float TOOLTIP_PAD_PX = 20.0f;
+	constexpr float TOOLTIP_GAP = 0.02f; // between a button and its tooltip
+	constexpr float METERS_PER_PX = BUTTON_SIZE / static_cast<float>(BUTTON_PX);
 	constexpr float BUTTON_GROUP_GAP = 0.05f; // more between the menu buttons and the light gun's
 	constexpr uint32_t GEAR_ICON = 0xf013;
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
@@ -82,7 +88,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		buttons_made = buttons_made && button.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, BUTTON_PX);
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
 		!buttons_made || !m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
-		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX))
+		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX) ||
+		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX))
 	{
 		Destroy();
 		return false;
@@ -108,6 +115,10 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	}
 	m_beam.Upload(canvas);
 
+	m_tooltip_canvas.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
+	m_tooltip.SetSize(TOOLTIP_W_PX * METERS_PER_PX, TOOLTIP_H_PX * METERS_PER_PX);
+	m_tooltip_text.clear();
+
 	m_buttons[GEAR].icon = GEAR_ICON;
 	m_buttons[GAMES].icon = GAMES_ICON;
 	m_buttons[GUN_MODE].icon = GUN_MODE_ICON;
@@ -128,6 +139,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 void VrMenu::Destroy()
 {
 	m_created = false;
+	m_show_tooltip = false;
+	m_tooltip.Destroy();
 	m_beam.Destroy();
 	m_cursor.Destroy();
 	for (Button& button : m_buttons)
@@ -164,6 +177,56 @@ void VrMenu::DrawButton(Button& button)
 		c.DrawIcon(m_icons, 60.0f, all, button.icon, Theme::text.WithAlpha(0.8f));
 	}
 	button.layer.Upload(c);
+}
+
+std::string VrMenu::TooltipText(int button) const
+{
+	switch (button)
+	{
+		case GEAR:
+			return "Settings";
+		case GAMES:
+			return "Game list";
+		case GUN_MODE:
+			if (!m_has_game)
+				return "Light gun mode (start a game first)";
+			return m_gun_on ? "Light gun mode: on" : "Light gun mode: off";
+		case GUNS:
+			if (!m_gun_on)
+				return "One or two light guns (light gun mode is off)";
+			return m_guns > 1 ? "Two light guns: two players" : "One light gun: one player";
+		default:
+			return {};
+	}
+}
+
+void VrMenu::ShowTooltip(int button, float button_x)
+{
+	m_show_tooltip = button >= 0;
+	if (!m_show_tooltip)
+		return;
+	std::string text = TooltipText(button);
+	if (text != m_tooltip_text)
+	{
+		// A pill as wide as the text, at the layer's left edge, beside the button.
+		Canvas& c = m_tooltip_canvas;
+		c.Clear();
+		const float text_w = m_text.Measure(text, TOOLTIP_TEXT_SIZE);
+		const float pill_w = std::min(text_w + 2.0f * TOOLTIP_PAD_PX, static_cast<float>(TOOLTIP_W_PX));
+		const Rect pill{0.0f, 0.0f, pill_w, static_cast<float>(TOOLTIP_H_PX)};
+		c.FillRect(pill, Theme::panel.WithAlpha(0.9f), 0.5f * TOOLTIP_H_PX);
+		c.StrokeRect(pill, Theme::border, 0.5f * TOOLTIP_H_PX, 2.0f);
+		c.SetClip(pill.Inset(TOOLTIP_PAD_PX, 0.0f));
+		c.DrawText(m_text, TOOLTIP_TEXT_SIZE, TOOLTIP_PAD_PX, 0.5f * (TOOLTIP_H_PX - m_text.LineHeight(TOOLTIP_TEXT_SIZE)),
+			text, Theme::text);
+		c.ResetClip();
+		m_tooltip.Upload(c);
+		m_tooltip_text = std::move(text);
+	}
+	XrPosef pose = m_screen;
+	pose.position = Transform(m_screen,
+		{button_x + 0.5f * BUTTON_SIZE + TOOLTIP_GAP + 0.5f * m_tooltip.Size().width, m_buttons[button].y, 0.0f});
+	m_tooltip.SetPose(pose);
 }
 
 void VrMenu::SetGunState(bool has_game, bool on, bool chosen, int guns)
@@ -281,6 +344,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	Result result;
 	m_show_pointer = false;
 	m_show_cursor = false;
+	m_show_tooltip = false;
 	if (!m_created)
 		return result;
 	m_screen = screen;
@@ -389,6 +453,8 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 				DrawButton(button);
 			}
 		}
+		// Disabled buttons too: their tooltip says why.
+		ShowTooltip(hovered, button_x);
 		// Only on the buttons themselves: a trigger aimed off the screen still reaches the game (light
 		// gun games reload that way).
 		for (int h = 0; h < 2; h++)
@@ -423,6 +489,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 						DrawButton(button);
 					}
 				}
+				ShowTooltip(-1, button_x);
 				just_opened = true;
 				hits[hand] = HitPlane(m_panel.Pose(), aim[hand]);
 				pointing[hand] = on_panel(hits[hand]);
@@ -519,8 +586,10 @@ void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 		if (m_buttons[b].layer.HasImage())
 			slots[1 + b] = m_buttons[b].layer.Layer();
 	}
+	if (m_show_tooltip && m_open == Panel::None && m_tooltip.HasImage())
+		slots[5] = m_tooltip.Layer();
 	if (m_show_pointer)
-		slots[5] = m_beam.Layer();
+		slots[6] = m_beam.Layer();
 	if (m_show_cursor)
-		slots[6] = m_cursor.Layer();
+		slots[7] = m_cursor.Layer();
 }

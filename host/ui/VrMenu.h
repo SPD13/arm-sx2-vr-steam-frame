@@ -7,8 +7,9 @@
 // light gun mode is on). One controller is the pointer: the one that pulled its trigger last (the
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
 // show; pointing at a button and pulling the trigger opens its panel in front of the screen and
-// pauses the game. Its trigger clicks, and the thumbsticks scroll the game list. A click away from
-// the panel, its close button, or starting a game close it.
+// pauses the game. A tooltip beside the button the pointer is on says what it does. Its trigger
+// clicks, and the thumbsticks scroll the game list. A click away from the panel, its close button,
+// or starting a game close it.
 //
 // A hand holding a light gun points with the gun's muzzle instead, and draws its own beam
 // (GunRenderer): the menu then only says where the ray meets the menu, if it does.
@@ -26,6 +27,7 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <string>
 
 class VrMenu
 {
@@ -72,9 +74,9 @@ public:
 	void OpenGameList();
 
 	// Its layers, each always in the same slot (null when hidden): the panel, the four buttons, the
-	// pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
+	// tooltip, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
 	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 7;
+	static constexpr int NUM_LAYER_SLOTS = 8;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
@@ -118,6 +120,10 @@ private:
 		NUM_BUTTONS
 	};
 	void DrawButton(Button& button);
+	// What the button does, as its tooltip says it.
+	std::string TooltipText(int button) const;
+	// Shows the tooltip of button (ButtonId) beside it, or hides it (-1).
+	void ShowTooltip(int button, float button_x);
 
 	void Open(Panel panel);
 	void Close();
@@ -142,11 +148,15 @@ private:
 	std::array<Pointer, 2> m_pointers;
 	OverlayLayer m_cursor;
 	OverlayLayer m_beam;
+	OverlayLayer m_tooltip;
+	Canvas m_tooltip_canvas;
+	std::string m_tooltip_text; // what m_tooltip shows
 
 	Panel m_open = Panel::None;
 	bool m_reanchor = false;
 	bool m_show_pointer = false; // the beam
 	bool m_show_cursor = false; // the dot at its end, when it ends on something
+	bool m_show_tooltip = false;
 	int m_hand = 1; // the pointer: 0 left, 1 right
 	bool m_trigger_down[2] = {};
 	bool m_swallow[2] = {}; // a trigger held through an open or close, ignored until released
