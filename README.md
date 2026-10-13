@@ -57,7 +57,7 @@ Two round buttons sit just outside the screen, on its right side and level with 
 | ⚙ Gear | The [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | The [game list](#game-list) |
 
-- **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. The controller you clicked with last is the pointer.
+- **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
 - **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the two buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
 - **Pausing.** Opening a menu pauses the game; closing it resumes.
 - **Closing a menu.** Its ✕ button, or a click anywhere off the panel. Starting or loading a game closes it too.

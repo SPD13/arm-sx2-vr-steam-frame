@@ -288,14 +288,13 @@ VrMenu::Result VrMenu::Update(
 			              std::abs(hits[h].y) > 0.5f * screen_height;
 		}
 	}
-	// The hand that clicks is the pointer; otherwise the one that points at the panel or away.
+	// The pointer is the controller that pulled its trigger last: the other one takes over only by
+	// pulling its own.
 	for (int h = 0; h < 2; h++)
 	{
 		if (pressed[h])
 			m_hand = h;
 	}
-	if (!pointing[m_hand] && pointing[1 - m_hand] && !m_trigger_down[m_hand])
-		m_hand = 1 - m_hand;
 	const int hand = m_hand;
 
 	bool just_opened = false;

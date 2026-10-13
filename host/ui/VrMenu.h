@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The menus in the headset. Two round buttons sit just outside the screen's right edge, level with
-// its top: a gear for the SettingsMenu and, below it, a gamepad for the GameListMenu. As soon as a
-// controller points away from the game, its beam and dot show; pointing at a button and pulling the
-// trigger opens its panel in front of the screen and pauses the game. The controller that clicked
-// last is the pointer; its trigger clicks, and the thumbsticks scroll the game list. A click away
-// from the panel, its close button, or starting a game close it.
+// its top: a gear for the SettingsMenu and, below it, a gamepad for the GameListMenu. One controller
+// is the pointer: the one that pulled its trigger last (the other takes over by pulling its own).
+// As soon as it points away from the game, its beam and dot show; pointing at a button and pulling
+// the trigger opens its panel in front of the screen and pauses the game. Its trigger clicks, and
+// the thumbsticks scroll the game list. A click away from the panel, its close button, or starting
+// a game close it.
 
 #pragma once
 
