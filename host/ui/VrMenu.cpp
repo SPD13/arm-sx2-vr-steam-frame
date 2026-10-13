@@ -220,7 +220,7 @@ void VrMenu::AnchorPanel()
 
 void VrMenu::Open(Panel panel)
 {
-	if (m_open == Panel::None)
+	if (m_open == Panel::None && m_pauses_game)
 		Emu::SetPaused(true);
 	m_on_button[0] = m_on_button[1] = -1;
 	m_open = panel;
@@ -244,7 +244,8 @@ void VrMenu::OpenGameList()
 void VrMenu::Close()
 {
 	m_open = Panel::None;
-	Emu::SetPaused(false);
+	if (m_pauses_game)
+		Emu::SetPaused(false);
 	Console.WriteLn("Menu: closed");
 }
 
@@ -505,25 +506,21 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	return result;
 }
 
-void VrMenu::AddLayers(const XrCompositionLayerBaseHeader** layers, uint32_t* count)
+void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
+	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
+		slots[i] = nullptr;
 	if (!m_created)
 		return;
-	if (m_open != Panel::None)
+	if (m_open != Panel::None && m_panel.HasImage())
+		slots[0] = m_panel.Layer();
+	for (int b = 0; m_open == Panel::None && b < NUM_BUTTONS; b++)
 	{
-		if (m_panel.HasImage())
-			layers[(*count)++] = m_panel.Layer();
-	}
-	else
-	{
-		for (Button& button : m_buttons)
-		{
-			if (button.layer.HasImage())
-				layers[(*count)++] = button.layer.Layer();
-		}
+		if (m_buttons[b].layer.HasImage())
+			slots[1 + b] = m_buttons[b].layer.Layer();
 	}
 	if (m_show_pointer)
-		layers[(*count)++] = m_beam.Layer();
+		slots[5] = m_beam.Layer();
 	if (m_show_cursor)
-		layers[(*count)++] = m_cursor.Layer();
+		slots[6] = m_cursor.Layer();
 }

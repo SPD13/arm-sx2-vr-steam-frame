@@ -68,6 +68,7 @@ struct DebugOptions
 	bool depth_panel = false; // depth debug view beside the screen
 	std::string depth_dump_dir; // when set, dump depth + colour PNGs there every 10 s
 	int depth_log_ms = 5000; // interval of the "Depth:" log line
+	bool no_menu_pause = false; // --no-menu-pause: the game keeps running while a menu is open
 	// --gun-script: shots gun 1 fires by itself, for testing without the headset.
 	struct GunShot
 	{
@@ -144,6 +145,7 @@ static void PrintUsage(const char* argv0)
 		"  --depth-trace          Log which colour/depth targets the 3D draws use\n"
 		"  --depth-log-ms N       Log the depth statistics every N ms (default 5000)\n"
 		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
+		"  --no-menu-pause        Keep the game running while a menu is open\n"
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
 		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
 		"                         with the pedal held for shots from a second before the first (testing)\n"
@@ -208,6 +210,8 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 			set("stereo_z_mode", "true");
 		else if (!std::strcmp(arg, "--depth-dump") && has_value)
 			debug->depth_dump_dir = argv[++i];
+		else if (!std::strcmp(arg, "--no-menu-pause"))
+			debug->no_menu_pause = true;
 		else if (!std::strcmp(arg, "--gun-script") && has_value)
 		{
 			if (!ParseGunScript(argv[++i], &debug->gun_script))
@@ -428,14 +432,16 @@ int main(int argc, char* argv[])
 	}
 	if (!menu.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("The settings menu is unavailable.");
+	menu.SetPausesGame(!debug_options.no_menu_pause);
 	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
 			Path::Combine(EmuFolders::AppRoot, "assets" FS_OSPATH_SEPARATOR_STR "lightgun.glb")))
 		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
 	if (stereo && !gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no depth; shots land on the screen glass.");
-	// Invisible quads that keep the guns' layers at the same place in the layer list. SteamVR shows
-	// quad layers as overlays matched by their place in the list: when a menu opens or closes and the
-	// layers before the guns change in number, a gun was shown for a frame where another layer was.
+	// An invisible quad for the layer slots that are empty this frame, so that every layer keeps its
+	// place in the layer list. SteamVR shows quad layers as overlays matched by their place in the
+	// list: when a menu opened or closed and layers moved in the list, the menu and the guns were
+	// shown for a frame where other layers had been.
 	OverlayLayer layer_pad;
 	if (layer_pad.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family, 4, 4))
 	{
@@ -446,8 +452,7 @@ int main(int argc, char* argv[])
 		layer_pad.SetSize(0.001f, 0.001f);
 		layer_pad.SetPose({{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, -50.0f, 0.0f}});
 	}
-	constexpr uint32_t LAYERS_BEFORE_GUNS = 11; // two screens, three debug panels, six menu layers
-	std::array<XrCompositionLayerQuad, LAYERS_BEFORE_GUNS> pads{};
+	std::array<XrCompositionLayerQuad, 16> pads{}; // one per layer slot (see below)
 	if (stereo)
 	{
 		screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
@@ -600,7 +605,10 @@ int main(int argc, char* argv[])
 				Console.WriteLnFmt("Light gun: mode {} for {}{}", gun_mode ? "on" : "off", serial, gun_chosen ? " (chosen)" : "");
 		}
 
+		// Frame timing, logged when a frame is slow: where the XR thread spent its time.
+		const Clock::time_point t_start = Clock::now();
 		const XrApp::Frame frame = xr.BeginFrame();
+		const Clock::time_point t_begun = Clock::now();
 		const XrApp::Input input = xr.ReadInput();
 
 		XrPosef head;
@@ -938,6 +946,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
+		const Clock::time_point t_input_done = Clock::now();
 		VKLibretro::Frame emu_frame;
 		if (VKLibretro::ConsumeFrame(&emu_frame))
 		{
@@ -1006,8 +1015,22 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		const XrCompositionLayerBaseHeader* layers[16];
-		uint32_t layer_count = 0;
+		const Clock::time_point t_emu_done = Clock::now();
+		// Every layer has a slot of its own, always at the same place in the list, with an invisible
+		// quad standing in when it is hidden (see layer_pad).
+		enum Slot
+		{
+			SLOT_SCREEN, // the screen (in stereo, the left eye's or both eyes'), or the volumetric window
+			SLOT_SCREEN_RIGHT, // in stereo, the right eye's screen
+			SLOT_DEPTH_PANEL,
+			SLOT_EYE_PANEL_0,
+			SLOT_EYE_PANEL_1,
+			SLOT_MENU, // VrMenu::NUM_LAYER_SLOTS of them
+			SLOT_GUNS = SLOT_MENU + VrMenu::NUM_LAYER_SLOTS, // two, last: over everything
+			NUM_SLOTS = SLOT_GUNS + 2
+		};
+		static_assert(NUM_SLOTS <= std::tuple_size_v<decltype(pads)>, "a pad per slot");
+		std::array<const XrCompositionLayerBaseHeader*, NUM_SLOTS> slots{};
 		if (flat && stereo)
 		{
 			const Clock::time_point now = Clock::now();
@@ -1017,19 +1040,19 @@ int main(int argc, char* argv[])
 			{
 				screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
 				screen_right.SetEyeVisibility(XR_EYE_VISIBILITY_RIGHT);
-				layers[layer_count++] = screen.Layer();
-				layers[layer_count++] = screen_right.Layer();
+				slots[SLOT_SCREEN] = screen.Layer();
+				slots[SLOT_SCREEN_RIGHT] = screen_right.Layer();
 			}
 			else if (ScreenLayer* only = left_live || !right_live ? &screen : &screen_right; only->HasImage())
 			{
 				only->SetEyeVisibility(XR_EYE_VISIBILITY_BOTH);
-				layers[layer_count++] = only->Layer();
+				slots[SLOT_SCREEN] = only->Layer();
 			}
 		}
 		else if (flat)
 		{
 			if (screen.HasImage())
-				layers[layer_count++] = screen.Layer();
+				slots[SLOT_SCREEN] = screen.Layer();
 		}
 		else if (frame.should_render && window.HasFrame())
 		{
@@ -1041,7 +1064,7 @@ int main(int argc, char* argv[])
 			const XrCompositionLayerBaseHeader* layer = window.Render(frame.display_time, depth_view.NormalizedView(),
 				depth_view.BackgroundView(), depth_view.GridWidth(), depth_view.GridHeight());
 			if (layer && !debug_options.eye_panels)
-				layers[layer_count++] = layer;
+				slots[SLOT_SCREEN] = layer;
 			for (int i = 0; layer && debug_options.eye_panels && i < 2; i++)
 			{
 				VKLibretro::Frame eye_image;
@@ -1050,29 +1073,52 @@ int main(int argc, char* argv[])
 			}
 		}
 		if (debug_options.depth_panel && depth_panel.HasImage())
-			layers[layer_count++] = depth_panel.Layer();
-		for (ScreenLayer& panel : eye_panels)
+			slots[SLOT_DEPTH_PANEL] = depth_panel.Layer();
+		for (int i = 0; i < 2; i++)
 		{
-			if (debug_options.eye_panels && panel.HasImage())
-				layers[layer_count++] = panel.Layer();
+			if (debug_options.eye_panels && eye_panels[i].HasImage())
+				slots[SLOT_EYE_PANEL_0 + i] = eye_panels[i].Layer();
 		}
 		if (screen_placed)
-			menu.AddLayers(layers, &layer_count);
-		// The guns last, over everything: they are nearer than anything else. Always at the same place
-		// in the list (see layer_pad).
+			menu.GetLayers(&slots[SLOT_MENU]);
 		if (frame.should_render)
+			gun_renderer.Render(frame.display_time, guns_drawn, &slots[SLOT_GUNS]);
+		// The list: every slot up to the last one in use, the empty ones filled by invisible quads.
+		const XrCompositionLayerBaseHeader* layers[NUM_SLOTS];
+		uint32_t layer_count = 0;
+		int last_used = -1;
+		for (int i = 0; i < NUM_SLOTS; i++)
+			last_used = slots[i] ? i : last_used;
+		for (int i = 0; i <= last_used; i++)
 		{
-			if ((guns_drawn[0].visible || guns_drawn[1].visible) && layer_pad.HasImage())
+			if (!slots[i] && layer_pad.HasImage())
 			{
-				for (uint32_t i = 0; layer_count < LAYERS_BEFORE_GUNS; i++)
-				{
-					pads[i] = *reinterpret_cast<const XrCompositionLayerQuad*>(layer_pad.Layer());
-					layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&pads[i]);
-				}
+				pads[i] = *reinterpret_cast<const XrCompositionLayerQuad*>(layer_pad.Layer());
+				slots[i] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&pads[i]);
 			}
-			gun_renderer.Render(frame.display_time, guns_drawn, layers, &layer_count);
+			if (slots[i])
+				layers[layer_count++] = slots[i];
 		}
+		const Clock::time_point t_rendered = Clock::now();
 		xr.EndFrame(frame, layers, layer_count);
+		{
+			const auto ms = [](Clock::time_point a, Clock::time_point b) {
+				return std::chrono::duration<float, std::milli>(b - a).count();
+			};
+			const Clock::time_point t_end = Clock::now();
+			static Clock::time_point last_start{};
+			const float period = last_start == Clock::time_point{} ? 0.0f : ms(last_start, t_start);
+			last_start = t_start;
+			static int slow_logs = 0;
+			if ((period > 25.0f || ms(t_begun, t_end) > 12.0f) && slow_logs < 300)
+			{
+				slow_logs++;
+				Console.WarningFmt("Frame: slow, {:.1f} ms since the last (wait {:.1f}, input+menu+guns {:.1f}, emu frame {:.1f}, "
+								   "render {:.1f}, end {:.1f} ms){}",
+					period, ms(t_start, t_begun), ms(t_begun, t_input_done), ms(t_input_done, t_emu_done),
+					ms(t_emu_done, t_rendered), ms(t_rendered, t_end), ui_open_last ? ", menu open" : "");
+			}
+		}
 		if (static int frames_logged = 0; frame.should_render && frames_logged < 3)
 		{
 			frames_logged++;

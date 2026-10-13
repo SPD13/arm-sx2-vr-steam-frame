@@ -484,9 +484,9 @@ XrPosef GunRenderer::MuzzlePose(const XrPosef& pose) const
 	return Compose(pose, m_model.Muzzle());
 }
 
-void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** layers,
-	uint32_t* count)
+void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** slots)
 {
+	slots[0] = slots[1] = nullptr;
 	if (!m_created || (!guns[0].visible && !guns[1].visible))
 		return;
 
@@ -711,6 +711,6 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 		q.pose.orientation = views[i].pose.orientation;
 		q.pose.position = Transform(views[i].pose, {0.5f * (left + right), 0.5f * (down + up), -QUAD_DISTANCE});
 		q.size = {right - left, up - down};
-		layers[(*count)++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
+		slots[i] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
 	}
 }

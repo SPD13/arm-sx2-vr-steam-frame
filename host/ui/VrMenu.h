@@ -71,8 +71,14 @@ public:
 	// Opens the game list (at start, when no game was given).
 	void OpenGameList();
 
-	// Appends the visible layers (at most 6).
-	void AddLayers(const XrCompositionLayerBaseHeader** layers, uint32_t* count);
+	// Its layers, each always in the same slot (null when hidden): the panel, the four buttons, the
+	// pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
+	// layer list, so a layer that moved in the list was shown for a frame where another had been.
+	static constexpr int NUM_LAYER_SLOTS = 7;
+	void GetLayers(const XrCompositionLayerBaseHeader** slots);
+
+	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
+	void SetPausesGame(bool pauses) { m_pauses_game = pauses; }
 
 private:
 	enum class Panel
@@ -148,6 +154,7 @@ private:
 
 	XrPosef m_screen{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -2.0f}};
 	float m_screen_width = 2.4f;
+	bool m_pauses_game = true;
 	bool m_has_game = false;
 	bool m_gun_on = false;
 	int m_guns = 1;

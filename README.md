@@ -334,6 +334,7 @@ Debugging only:
 | `--eye-panels` | Show what each eye renders on two flat panels |
 | `--eye-dump DIR`, `--depth-dump DIR` | Write eye images, or depth and colour PNGs, to `DIR` every 10 seconds |
 | `--stereo-alternate` | With `--stereo`, the frame-alternating prototype (each eye at 30 Hz) instead of multiview |
+| `--no-menu-pause` | Keep the game running while a menu is open |
 | `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot |
 | `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws; how often to log depth statistics |
 | `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen, `T:a`, `T:b`, `T:c`, `T:start`, `T:cal` tap that gun button (`cal`: the calibration shot, at the centre); comma separated, e.g. `20:0.5:0.5,22:off`. For aimed shots the pedal is held from a second before the first one |

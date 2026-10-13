@@ -43,9 +43,8 @@ public:
 		XrVector3f beam_end{};
 		uint32_t beam_color = 0xFF3030; // sRGB
 	};
-	// Appends its layers (two, one per eye) for xrEndFrame; none when no gun is visible.
-	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** layers,
-		uint32_t* count);
+	// Its two layers (one per eye) for xrEndFrame, in slots[0] and slots[1]; null when no gun is visible.
+	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** slots);
 
 	// The muzzle's pose, LOCAL space, for a gun at `pose`.
 	XrPosef MuzzlePose(const XrPosef& pose) const;
