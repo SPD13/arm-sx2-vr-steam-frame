@@ -433,6 +433,21 @@ int main(int argc, char* argv[])
 		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
 	if (stereo && !gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no depth; shots land on the screen glass.");
+	// Invisible quads that keep the guns' layers at the same place in the layer list. SteamVR shows
+	// quad layers as overlays matched by their place in the list: when a menu opens or closes and the
+	// layers before the guns change in number, a gun was shown for a frame where another layer was.
+	OverlayLayer layer_pad;
+	if (layer_pad.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family, 4, 4))
+	{
+		Canvas clear;
+		clear.Resize(4, 4);
+		clear.Clear();
+		layer_pad.Upload(clear);
+		layer_pad.SetSize(0.001f, 0.001f);
+		layer_pad.SetPose({{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, -50.0f, 0.0f}});
+	}
+	constexpr uint32_t LAYERS_BEFORE_GUNS = 11; // two screens, three debug panels, six menu layers
+	std::array<XrCompositionLayerQuad, LAYERS_BEFORE_GUNS> pads{};
 	if (stereo)
 	{
 		screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
@@ -984,9 +999,18 @@ int main(int argc, char* argv[])
 		}
 		if (screen_placed)
 			menu.AddLayers(layers, &layer_count);
-		// The guns last, over everything: they are nearer than anything else.
+		// The guns last, over everything: they are nearer than anything else. Always at the same place
+		// in the list (see layer_pad).
 		if (frame.should_render)
 		{
+			if ((guns_drawn[0].visible || guns_drawn[1].visible) && layer_pad.HasImage())
+			{
+				for (uint32_t i = 0; layer_count < LAYERS_BEFORE_GUNS; i++)
+				{
+					pads[i] = *reinterpret_cast<const XrCompositionLayerQuad*>(layer_pad.Layer());
+					layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&pads[i]);
+				}
+			}
 			gun_renderer.Render(frame.display_time, guns_drawn, layers, &layer_count);
 		}
 		xr.EndFrame(frame, layers, layer_count);
@@ -1003,6 +1027,7 @@ int main(int argc, char* argv[])
 	Emu::RequestShutdown();
 	gun_depth.Destroy();
 	gun_renderer.Destroy();
+	layer_pad.Destroy();
 	menu.Destroy();
 	for (ScreenLayer& panel : eye_panels)
 		panel.Destroy();
