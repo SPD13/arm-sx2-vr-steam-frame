@@ -135,7 +135,8 @@ static void PrintUsage(const char* argv0)
 		"  --depth-log-ms N       Log the depth statistics every N ms (default 5000)\n"
 		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
-		"                         the game, T:off reloads; comma separated (testing without the headset)\n"
+		"                         the game, T:off reloads; comma separated, with the pedal held from a second\n"
+		"                         before the first shot (testing without the headset)\n"
 		"The screen, window and stereo options are saved settings too (VR.ini in the settings folder,\n"
 		"read again when edited); on the command line they apply to this run only.\n"
 		"In the headset: both sticks clicked recenters the screen.\n",
@@ -776,7 +777,11 @@ int main(int argc, char* argv[])
 					state.aim_valid = !shot.offscreen;
 					state.x = r[0] + shot.u * (r[2] - r[0]);
 					state.y = r[1] + shot.v * (r[3] - r[1]);
-					state.buttons = firing ? Emu::GUN_TRIGGER : 0;
+					// The pedal is held from a second before the first shot (out of cover), and let go
+					// for an off-screen shot (back into cover, as players reload).
+					const bool pedal = t >= shots.front().time - 1.0f && !shot.offscreen;
+					state.buttons = (firing ? Emu::GUN_TRIGGER : 0u) |
+					                (pedal ? pedal_buttons[std::clamp(static_cast<int>(vr.gun_pedal + 0.5f), 0, 2)] : 0u);
 					if (firing && static_cast<int>(gun_script_next) != gun_script_logged)
 					{
 						gun_script_logged = static_cast<int>(gun_script_next);
