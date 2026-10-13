@@ -42,7 +42,7 @@ Two approaches were built and tested in the headset on Time Crisis II. **Geometr
 - Z-driven mapping with the convergence set at the scene's nearest normalised Z (0.12) spreads the parallax over the whole scene.
 
 **Open items**
-- **Motion:** each eye only updates at 30 Hz. Next is the full multiview port, so both eyes render every frame: two-layer targets, `VK_KHR_multiview` TFX pipelines and per-layer copies/merge, following PenguinScreen2. Their analysis is in the M3 session notes.
+- **Motion:** done with the multiview port (both eyes every frame, `--stereo`), see `docs/m3-multiview.md`. One open bug there: intermittent wall corruption in TC2's first shooting room, multiview only.
 - **Enemy bullets:** they look off. They are probably 2D sprites (FST or at maximum depth) pinned to the glass. Trace how they're drawn and place them at the depth around them.
 - **Per-game parameters:** convergence and depth should come from the game profile.
 - **Light gun (M4):** aiming has to go through the same per-eye shift.

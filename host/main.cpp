@@ -53,7 +53,7 @@ struct ScreenOptions
 	bool edge_fill = false; // background layer behind depth edges
 	std::string eye_dump_dir; // when set, write what both eyes see there every 10 s
 	bool eye_panels = false; // show each eye's render on a flat panel instead of in the eyes
-	GSVolumetric::StereoSettings stereo; // geometric stereo prototype (frame-alternating)
+	GSVolumetric::StereoSettings stereo; // geometric stereo (multiview unless --stereo-alternate)
 	float stereo_depth = 1.0f; // meters behind the screen for the farthest geometry
 	bool depth_panel = false; // depth debug view beside the screen
 	std::string depth_dump_dir; // when set, dump depth + colour PNGs there every 10 s
@@ -74,8 +74,9 @@ static void PrintUsage(const char* argv0)
 		"  --edge-fill            Fill depth edges with a background layer instead of stretching\n"
 		"  --eye-dump DIR         Write both eyes' images to DIR every 10 seconds\n"
 		"  --eye-panels           Show what each eye renders on two flat panels, side by side\n"
-		"  --stereo               Geometric stereo prototype: the GS draws alternate frames for each eye,\n"
-		"                         from where that eye is in front of the screen (window parallax)\n"
+		"  --stereo               Geometric stereo: the GS draws every frame for both eyes (multiview),\n"
+		"                         from where each eye is in front of the screen (window parallax)\n"
+		"  --stereo-alternate     With --stereo, draw alternate frames for each eye instead (prototype)\n"
 		"  --stereo-depth M       How far behind the screen the farthest geometry appears (default 1.0)\n"
 		"  --stereo-conv F        Convergence: Q (or normalised Z with --stereo-z) on the screen plane (default 1)\n"
 		"  --stereo-z             Drive the parallax by Z instead of Q\n"
@@ -83,6 +84,7 @@ static void PrintUsage(const char* argv0)
 		"  --depth-panel          Show the depth debug view beside the screen\n"
 		"  --no-hud-overlay       Leave the HUD painted on the scene instead of flat on the screen plane\n"
 		"  --sdl-pad              Drive pad 1 from the first SDL gamepad (testing)\n"
+		"  --load-state FILE      Start from a save state (SIGUSR1 saves debug/state.p2s, SIGUSR2 a snapshot)\n"
 		"  --depth-trace          Log which colour/depth targets the 3D draws use\n"
 		"  --depth-log-ms N       Log the depth statistics every N ms (default 5000)\n"
 		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
@@ -110,6 +112,8 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, ScreenOptions* 
 			screen->distance = std::strtof(argv[++i], nullptr);
 		else if (!std::strcmp(arg, "--sdl-pad"))
 			emu->sdl_pad = true;
+		else if (!std::strcmp(arg, "--load-state") && has_value)
+			emu->load_state = argv[++i];
 		else if (!std::strcmp(arg, "--depth-trace"))
 			GSVolumetric::SetTrace(true);
 		else if (!std::strcmp(arg, "--depth-log-ms") && has_value)
@@ -131,7 +135,12 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, ScreenOptions* 
 		else if (!std::strcmp(arg, "--eye-panels"))
 			screen->eye_panels = true;
 		else if (!std::strcmp(arg, "--stereo"))
+		{
 			screen->stereo.enabled = true;
+			screen->stereo.multiview = true;
+		}
+		else if (!std::strcmp(arg, "--stereo-alternate"))
+			screen->stereo.multiview = false;
 		else if (!std::strcmp(arg, "--stereo-depth") && has_value)
 			screen->stereo_depth = std::strtof(argv[++i], nullptr);
 		else if (!std::strcmp(arg, "--stereo-conv") && has_value)
@@ -248,7 +257,8 @@ int main(int argc, char* argv[])
 	GSVolumetric::SetEnabled(!screen_options.stereo.enabled);
 	GSVolumetric::SetStereo(screen_options.stereo);
 	if (screen_options.stereo.enabled)
-		Console.WriteLnFmt("Stereo: {} mode, depth {} m, convergence {}", screen_options.stereo.z_mode ? "Z" : "Q",
+		Console.WriteLnFmt("Stereo: {}, {} mode, depth {} m, convergence {}",
+			screen_options.stereo.multiview ? "multiview" : "alternating frames", screen_options.stereo.z_mode ? "Z" : "Q",
 			screen_options.stereo_depth, screen_options.stereo.convergence);
 	if (!screen_options.depth_dump_dir.empty())
 		FileSystem::EnsureDirectoryExists(screen_options.depth_dump_dir.c_str(), true);
@@ -350,7 +360,8 @@ int main(int argc, char* argv[])
 
 		const XrApp::Frame frame = xr.BeginFrame();
 		const XrApp::Input input = xr.ReadInput();
-		Emu::SetPad(input.pad);
+		if (!emu_options.sdl_pad) // with --sdl-pad, the SDL gamepad drives pad 1 alone
+			Emu::SetPad(input.pad);
 
 		XrPosef head;
 		// In front of the head whenever the app gains focus (the headset was put on: before that the
@@ -411,7 +422,17 @@ int main(int argc, char* argv[])
 		{
 			if (emu_frame.width && emu_frame.height)
 				screen_aspect = static_cast<float>(emu_frame.width) / static_cast<float>(emu_frame.height);
-			if (screen_options.stereo.enabled && emu_frame.stereo_eye == 1)
+			if (screen_options.stereo.enabled && emu_frame.right_image)
+			{
+				// Multiview: both eyes in one frame.
+				screen.Update(emu_frame);
+				VKLibretro::Frame right_frame = emu_frame;
+				right_frame.image = emu_frame.right_image;
+				right_frame.view = emu_frame.right_view;
+				screen_right.Update(right_frame);
+				last_eye_frame[0] = last_eye_frame[1] = Clock::now();
+			}
+			else if (screen_options.stereo.enabled && emu_frame.stereo_eye == 1)
 				screen_right.Update(emu_frame);
 			else if (screen_options.flat)
 				screen.Update(emu_frame);

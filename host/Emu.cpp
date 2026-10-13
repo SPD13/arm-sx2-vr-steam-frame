@@ -36,6 +36,7 @@
 #include "pcsx2/Achievements.h"
 #include "pcsx2/CDVD/CDVDcommon.h"
 #include "pcsx2/GS.h"
+#include "GS/GSVolumetric.h"
 #include "pcsx2/GameList.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/INISettingsInterface.h"
@@ -110,6 +111,41 @@ static void HandleSignal(int)
 	Emu::RequestShutdown();
 }
 
+// Debugging without the headset: SIGUSR1 saves a state to <data>/debug/state.p2s, SIGUSR2 writes
+// a snapshot of the presented frame to <data>/debug/snapNNN.png.
+static std::atomic<int> s_debug_request{0};
+static std::string s_debug_dir;
+
+static void HandleDebugSignal(int sig)
+{
+	s_debug_request.store(sig == SIGUSR1 ? 1 : 2, std::memory_order_release);
+}
+
+static void ServiceDebugRequest()
+{
+	const int request = s_debug_request.exchange(0, std::memory_order_acq_rel);
+	if (!request || s_debug_dir.empty())
+		return;
+	FileSystem::EnsureDirectoryExists(s_debug_dir.c_str(), true);
+	if (request == 1)
+	{
+		const std::string path = Path::Combine(s_debug_dir, "state.p2s");
+		VMManager::SaveState(path.c_str(), false, false, [](const std::string& error) {
+			Console.ErrorFmt("Debug: save state failed: {}", error);
+		});
+		Console.WriteLnFmt("Debug: saved state to {}", path);
+	}
+	else
+	{
+		static int s_snap = 0;
+		const std::string path = Path::Combine(s_debug_dir, fmt::format("snap{:03d}.png", s_snap++));
+		MTGS::RunOnGSThread([path]() { GSQueueSnapshot(path); });
+		GSVolumetric::RequestPresentDump(Path::Combine(s_debug_dir, fmt::format("present{:03d}", s_snap - 1)));
+		GSVolumetric::ArmDrawTrace(1);
+		Console.WriteLnFmt("Debug: snapshot queued to {}", path);
+	}
+}
+
 bool Emu::InitializeConfig(const Options& options)
 {
 	EmuFolders::SetAppRoot();
@@ -124,6 +160,7 @@ bool Emu::InitializeConfig(const Options& options)
 	FileSystem::EnsureDirectoryExists(EmuFolders::DataRoot.c_str(), true);
 	FileSystem::EnsureDirectoryExists(EmuFolders::Settings.c_str(), false);
 	CrashHandler::SetWriteDirectory(EmuFolders::DataRoot);
+	s_debug_dir = Path::Combine(EmuFolders::DataRoot, "debug");
 
 	const char* hw_check_error = nullptr;
 	if (!VMManager::PerformEarlyHardwareChecks(&hw_check_error))
@@ -172,7 +209,8 @@ bool Emu::InitializeConfig(const Options& options)
 			static constexpr std::pair<const char*, const char*> bindings[] = {
 				{"Up", "DPadUp"}, {"Down", "DPadDown"}, {"Left", "DPadLeft"}, {"Right", "DPadRight"},
 				{"Cross", "FaceSouth"}, {"Circle", "FaceEast"}, {"Square", "FaceWest"}, {"Triangle", "FaceNorth"},
-				{"Start", "Start"}, {"Select", "Back"}};
+				{"Start", "Start"}, {"Select", "Back"}, {"L1", "LeftShoulder"}, {"R1", "RightShoulder"},
+				{"L2", "+LeftTrigger"}, {"R2", "+RightTrigger"}};
 			for (const auto& [button, sdl] : bindings)
 				s_base_settings->SetStringValue("Pad1", button, fmt::format("SDL-0/{}", sdl).c_str());
 		}
@@ -251,6 +289,7 @@ static void CPUThreadMain(VMBootParameters params)
 				continue;
 
 			case VMState::Running:
+				ServiceDebugRequest();
 				VMManager::Execute();
 				continue;
 
@@ -326,11 +365,14 @@ void Emu::Start(const Options& options)
 	if (options.bios_only)
 		params.source_type = CDVD_SourceType::NoDisc;
 	params.fast_boot = options.fast_boot;
+	params.save_state = options.load_state;
 	params.fullscreen = true;
 
 	std::signal(SIGTERM, &HandleSignal);
 	std::signal(SIGINT, &HandleSignal);
 	std::signal(SIGHUP, &HandleSignal);
+	std::signal(SIGUSR1, &HandleDebugSignal);
+	std::signal(SIGUSR2, &HandleDebugSignal);
 
 	SysMemory::ReserveMemory();
 	s_cpu_thread = std::thread(CPUThreadMain, std::move(params));
@@ -580,6 +622,7 @@ void Host::OnSaveStateSaved(const std::string_view filename)
 
 void Host::PumpMessagesOnCPUThread()
 {
+	ServiceDebugRequest();
 	if (s_shutdown_requested.load(std::memory_order_acquire) && VMManager::HasValidVM())
 		VMManager::SetState(VMState::Stopping);
 	DrainCPUThreadQueue();

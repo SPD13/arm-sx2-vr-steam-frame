@@ -6,7 +6,9 @@
 #include "GS/Renderers/Vulkan/VKLibretro.h"
 
 #include "common/Console.h"
+#include "common/StringUtil.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 

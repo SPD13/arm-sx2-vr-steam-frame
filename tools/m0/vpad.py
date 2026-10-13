@@ -2,7 +2,7 @@
 """Virtual Xbox 360-style gamepad through Linux uinput (needs write access to /dev/uinput).
 Taps buttons at given times so an emulator can be driven without a person holding a controller.
 
-Usage: vpad.py --hold <seconds> <seconds>:<button> ...
+Usage: vpad.py --hold <seconds> <seconds>:<button>[:<held seconds>] ...
   buttons: a b x y lb rb back start guide up down left right
 The device exists from start until --hold seconds have passed.
 """
@@ -31,7 +31,11 @@ def main():
     hold = 0.0
     if args[:1] == ["--hold"]:
         hold, args = float(args[1]), args[2:]
-    events = sorted((float(t), b.lower()) for t, b in (a.split(":", 1) for a in args))
+    events = []
+    for a in args:
+        parts = a.split(":")
+        events.append((float(parts[0]), parts[1].lower(), float(parts[2]) if len(parts) > 2 else 0.15))
+    events.sort()
 
     fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
     fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
@@ -46,7 +50,7 @@ def main():
     fcntl.ioctl(fd, UI_DEV_CREATE)
     start = time.monotonic()
     try:
-        for at, button in events:
+        for at, button, held in events:
             time.sleep(max(0.0, start + at - time.monotonic()))
             if button in HAT:
                 code, value = HAT[button]
@@ -57,7 +61,7 @@ def main():
                 print(f"unknown button {button}", file=sys.stderr)
                 continue
             emit(fd, *press); emit(fd, EV_SYN, 0, 0)
-            time.sleep(0.15)
+            time.sleep(held)
             emit(fd, *release); emit(fd, EV_SYN, 0, 0)
             print(f"{time.monotonic() - start:6.1f}s {button}", flush=True)
         time.sleep(max(0.0, start + hold - time.monotonic()))
