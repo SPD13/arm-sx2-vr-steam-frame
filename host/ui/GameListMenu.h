@@ -3,8 +3,9 @@
 
 // The game list the games button opens: tabs for all games, the recently added ones, the recently
 // played ones, the most played ones and the favourites, one row per game with a star that marks it as a favourite.
-// Clicking a row starts the game, after asking when another one is running. Like SettingsMenu it
-// draws on a Canvas; VrMenu shows it and feeds it the pointer and the thumbsticks' scrolling.
+// Clicking a row starts the game, after asking when another one is running; the running game's row
+// resumes it, and its Restart button starts it over, after asking. Like SettingsMenu it draws on a
+// Canvas; VrMenu shows it and feeds it the pointer and the thumbsticks' scrolling.
 
 #pragma once
 
@@ -80,7 +81,8 @@ private:
 	float m_content_height = 0.0f;
 	bool m_needs_draw = true;
 	bool m_close_requested = false;
-	const Game* m_confirm = nullptr; // the game the switch dialog asks about
+	const Game* m_confirm = nullptr; // the game the dialog asks about
+	bool m_confirm_restart = false; // ... to restart it (it runs), not to switch to it
 
 	using Clock = std::chrono::steady_clock;
 	std::string m_toast;

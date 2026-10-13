@@ -19,6 +19,7 @@ namespace Icon
 	static constexpr uint32_t close = 0xf00d; // xmark
 	static constexpr uint32_t star = 0xf005;
 	static constexpr uint32_t play = 0xf04b;
+	static constexpr uint32_t restart = 0xf2ea; // rotate-left
 } // namespace Icon
 
 namespace
@@ -328,13 +329,23 @@ void GameListMenu::RunList()
 			clicked = nullptr;
 			m_needs_draw = true;
 		}
+		// The running game: Restart, left of its Resume badge, also on the row.
+		constexpr float badge_w = 150.0f, restart_w = 150.0f;
+		const Rect restart{row.Right() - badge_w - 18.0f - 12.0f - restart_w, row.y + 0.5f * (ROW_HEIGHT - 44.0f), restart_w, 44.0f};
+		if (running && m_gui.Button(GuiId("restart") ^ static_cast<uint32_t>(std::hash<std::string>{}(game.key)), restart,
+						   "Restart", Icon::restart))
+		{
+			m_confirm = &game;
+			m_confirm_restart = true;
+			clicked = nullptr;
+			m_needs_draw = true;
+		}
 
 		if (m_gui.Drawing())
 		{
 			// Title and details; at the right, what a click does.
 			const float text_x = star.Right() + 14.0f;
-			const float badge_w = 150.0f;
-			const float text_w = row.Right() - badge_w - 24.0f - text_x;
+			const float text_w = (running ? restart.x - 12.0f : row.Right() - badge_w - 24.0f) - text_x;
 			m_gui.Text(text_x, row.y + 14.0f, m_gui.Elide(game.info.title, Theme::label_size, text_w), Theme::label_size);
 			std::string details;
 			// On Recently Added, when it arrived even for the running game: its badge says it runs.
@@ -377,7 +388,10 @@ void GameListMenu::Launch(const Game& game)
 	if (IsRunning(game))
 		m_close_requested = true; // back to it
 	else if (!m_running.empty())
+	{
 		m_confirm = &game;
+		m_confirm_restart = false;
+	}
 	else
 	{
 		Emu::BootGame(game.info.path);
@@ -396,7 +410,8 @@ void GameListMenu::RunDialog()
 		c.FillRect({0, 0, WIDTH, HEIGHT}, Rgb(0x000000, 140), RADIUS);
 		c.FillRect(box, Theme::nav, 24.0f);
 		c.StrokeRect(box, Theme::border, 24.0f, 2.0f);
-		m_gui.Text(box.x + 40.0f, box.y + 36.0f, m_gui.Elide("Start " + game.info.title + "?", Theme::title_size - 4.0f, box.w - 80.0f),
+		const std::string title = (m_confirm_restart ? "Restart " : "Start ") + game.info.title + "?";
+		m_gui.Text(box.x + 40.0f, box.y + 36.0f, m_gui.Elide(title, Theme::title_size - 4.0f, box.w - 80.0f),
 			Theme::title_size - 4.0f);
 		std::string running_title = "The game";
 		for (const Game& other : m_games)
@@ -405,7 +420,10 @@ void GameListMenu::RunDialog()
 				running_title = other.info.title;
 		}
 		m_gui.TextWrapped(box.x + 40.0f, box.y + 96.0f, box.w - 80.0f,
-			fmt::format("{} is running. It stops, and progress since your last save is lost.", running_title),
+			m_confirm_restart ?
+				std::string("The game starts over, as a console reset does. Its current state and your play since "
+							"your last save are lost.") :
+				fmt::format("{} is running. It stops, and progress since your last save is lost.", running_title),
 			Theme::body_size, Theme::text_muted);
 	}
 	const float bw = 200.0f, by = box.Bottom() - 40.0f - 56.0f;
@@ -415,9 +433,14 @@ void GameListMenu::RunDialog()
 		m_needs_draw = true;
 		return;
 	}
-	if (m_gui.Button(GuiId("dialog_ok"), {box.Right() - 40.0f - bw, by, bw, 56.0f}, "Start", Icon::play, Gui::Style::Primary))
+	if (m_confirm_restart ?
+			m_gui.Button(GuiId("dialog_ok"), {box.Right() - 40.0f - bw, by, bw, 56.0f}, "Restart", Icon::restart, Gui::Style::Danger) :
+			m_gui.Button(GuiId("dialog_ok"), {box.Right() - 40.0f - bw, by, bw, 56.0f}, "Start", Icon::play, Gui::Style::Primary))
 	{
-		Emu::BootGame(game.info.path);
+		if (m_confirm_restart)
+			Emu::ResetGame();
+		else
+			Emu::BootGame(game.info.path);
 		m_confirm = nullptr;
 		m_close_requested = true;
 		m_needs_draw = true;

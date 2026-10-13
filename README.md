@@ -160,6 +160,7 @@ The gamepad button opens the list of games in the games folder (`roms/`), with f
 
 - **Favourites.** Click the ☆ next to a game to star it (it turns gold); click again to remove it. Kept in `favorites.txt`.
 - **Starting a game.** Click its row. If another game is running, a popup asks first, since progress since the last save is lost. Clicking the running game just resumes it.
+- **Restarting.** The running game's row has a **Restart** button: after a confirmation (its current state and play since the last save are lost) the console resets and the game starts over. Time Crisis then shows its GunCon 2 calibration screen again.
 - **Starting without a game.** `ps2v` without a disc image starts with no game and opens the list. A game that fails to start brings the list back with the reason.
 - **Where the data comes from.** Titles, serials and play time come from PCSX2's game list (play time is recorded when a game stops). A running game keeps the disc drive locked, so the list cannot rescan until it stops: games added meanwhile appear under their file name and get their real title afterwards.
 - **"Added"** is the file's inode change time, which an upload, copy or move into the folder sets even when the copy keeps the original modification date. Renaming a file, or changing its permissions, counts as adding it again.
