@@ -517,6 +517,13 @@ int main(int argc, char* argv[])
 	std::array<float, 2> gun_press_left{}, gun_press_right{}; // eased button presses, per gun
 	std::array<bool, 2> gun_fired{}; // the trigger was down last frame, per gun (recoil on a new pull)
 	std::optional<SettingsMenu::GunAction> gun_action; // asked in the menu, done once it has closed
+	// Per hand: where the grip is in the aim pose's frame, from the last frame that had both (for a
+	// frame without a grip pose), and the gun's last pose (to log jumps).
+	std::array<XrVector3f, 2> grip_in_aim{{{0.0f, -0.06f, 0.08f}, {0.0f, -0.06f, 0.08f}}};
+	std::array<std::optional<XrPosef>, 2> last_gun_pose;
+	int pose_logs = 0; // rate limit
+	bool ui_open_last = false;
+	std::array<bool, 2> beam_on_ui{}; // per hand, last frame (to log changes)
 	Clock::time_point gun_action_at{}, gun_action_until{};
 	Clock::time_point gun_script_start{}; // --gun-script: when the game started
 	size_t gun_script_next = 0;
@@ -624,17 +631,53 @@ int main(int argc, char* argv[])
 		for (int h = 0; h < 2; h++)
 		{
 			aim_valid[h] = xr.LocateAim(h, frame.display_time, &aim_pose[h]);
-			if (!aim_valid[h] || gun_of_hand[h] < 0)
+			if (gun_of_hand[h] < 0)
 				continue;
+			if (!aim_valid[h])
+			{
+				if (pose_logs < 200 && last_gun_pose[h])
+				{
+					pose_logs++;
+					Console.WarningFmt("Light gun: no aim pose for hand {} this frame", h);
+				}
+				last_gun_pose[h].reset();
+				continue;
+			}
 			// The barrel along the controller's pointing ray (tilted by the gun angle), held at the
-			// grip; without a grip pose, a little below and behind the ray's origin.
+			// grip; without a grip pose, where the grip was last seen relative to the ray.
 			gun_pose[h].orientation = aim_pose[h].orientation *
 			                          QuatFromAxisAngle({1.0f, 0.0f, 0.0f}, vr.gun_pitch * 3.14159265f / 180.0f);
 			XrPosef grip;
-			gun_pose[h].position = xr.LocateGrip(h, frame.display_time, &grip) ?
-			                           grip.position :
-			                           Transform(aim_pose[h], {0.0f, -0.06f, 0.08f});
+			if (xr.LocateGrip(h, frame.display_time, &grip))
+			{
+				gun_pose[h].position = grip.position;
+				grip_in_aim[h] = Rotate(Conjugate(aim_pose[h].orientation), grip.position - aim_pose[h].position);
+			}
+			else
+			{
+				gun_pose[h].position = Transform(aim_pose[h], grip_in_aim[h]);
+				if (pose_logs < 200)
+				{
+					pose_logs++;
+					Console.WarningFmt("Light gun: no grip pose for hand {} this frame", h);
+				}
+			}
 			muzzle_pose[h] = Compose(gun_pose[h], gun_renderer.Model().Muzzle());
+			// A jump from one frame to the next: log it, to tell a pose glitch from a rendering one.
+			if (last_gun_pose[h] && pose_logs < 200)
+			{
+				const XrVector3f moved = gun_pose[h].position - last_gun_pose[h]->position;
+				const XrQuaternionf turn = Conjugate(last_gun_pose[h]->orientation) * gun_pose[h].orientation;
+				const float degrees = 2.0f * std::acos(std::min(std::abs(turn.w), 1.0f)) * 57.29578f;
+				const float meters = std::sqrt(Dot(moved, moved));
+				if (meters > 0.08f || degrees > 25.0f)
+				{
+					pose_logs++;
+					Console.WarningFmt("Light gun: hand {} jumped {:.3f} m, {:.0f} deg in a frame{}", h, meters, degrees,
+						ui_open_last ? " (menu open)" : "");
+				}
+			}
+			last_gun_pose[h] = gun_pose[h];
 		}
 
 		// The game's controls. A trigger is a menu click while a menu is open or the pointer is on a
@@ -655,6 +698,7 @@ int main(int argc, char* argv[])
 			menu.SetGunState(!profile_serial.empty(), gun_mode, gun_chosen, vr.gun_players > 1.5f ? 2 : 1);
 			ui = menu.Update(frame.display_time, input, pointers, screen_pose_now, vr.screen_width,
 				vr.screen_width / screen_aspect);
+			ui_open_last = ui.open;
 			menu_recenter = ui.recenter;
 			if (ui.open)
 				controller = {};
@@ -777,6 +821,14 @@ int main(int argc, char* argv[])
 					drawn.press_right = gun_press_right[g];
 					drawn.beam_color = g == 0 ? 0xFF3A30 : 0x3A8CFF;
 					const int beam_mode = std::clamp(static_cast<int>(vr.gun_beam + 0.5f), 0, 2);
+					if (ui.on_ui[h] != beam_on_ui[h] && pose_logs < 200)
+					{
+						pose_logs++;
+						Console.WriteLnFmt("Light gun: hand {} beam {} the menu{}", h, ui.on_ui[h] ? "onto" : "off",
+							ui.on_ui[h] ? "" : fmt::format(" (now {})", aim.on_screen ? (aim.through_depth ? "in the window" : "on the glass") :
+							                                           aim.on_plane ? "beside the screen" : "away"));
+					}
+					beam_on_ui[h] = ui.on_ui[h];
 					if (ui.on_ui[h])
 					{
 						// On a menu or a button: the beam is the menu's pointer, always with its dot.
@@ -891,7 +943,14 @@ int main(int argc, char* argv[])
 		{
 			if (emu_frame.width && emu_frame.height)
 			{
-				screen_aspect = static_cast<float>(emu_frame.width) / static_cast<float>(emu_frame.height);
+				const float aspect = static_cast<float>(emu_frame.width) / static_cast<float>(emu_frame.height);
+				if (std::abs(aspect - screen_aspect) > 0.001f && pose_logs < 200)
+				{
+					pose_logs++;
+					Console.WriteLnFmt("Screen: aspect {:.3f} -> {:.3f} ({}x{})", screen_aspect, aspect, emu_frame.width,
+						emu_frame.height);
+				}
+				screen_aspect = aspect;
 				frame_size[0] = static_cast<float>(emu_frame.width);
 				frame_size[1] = static_cast<float>(emu_frame.height);
 				const float* r = emu_frame.draw_rect;
