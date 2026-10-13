@@ -90,6 +90,7 @@ enum class GunControl : uint8_t
 	Left,
 	Right,
 	Reload, // shoot off the screen
+	Calibrate, // the calibration shot (Time Crisis's GunCon 2 calibration screen), aimed like a shot
 	Pedal,
 	Count
 };

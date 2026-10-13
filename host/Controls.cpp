@@ -30,19 +30,19 @@ namespace
 
 	constexpr size_t NUM_GUN_CONTROLS = static_cast<size_t>(GunControl::Count);
 	constexpr std::array<const char*, NUM_GUN_CONTROLS> gun_keys = {
-		"trigger", "a", "b", "c", "start", "select", "up", "down", "left", "right", "reload", "pedal"};
+		"trigger", "a", "b", "c", "start", "select", "up", "down", "left", "right", "reload", "calibrate", "pedal"};
 	constexpr std::array<const char*, ControlMap::NUM_GUNS> gun_sections = {"GunCon1", "GunCon2"};
 
-	// The first gun in the right hand: the other hand's grip is the pedal. The second gun in the
-	// left hand: on the Steam Frame that controller has no face buttons, so its grip, D-pad and stick
-	// click stand in.
+	// The first gun in the right hand: the other hand's grip is the pedal, Y the calibration shot.
+	// The second gun in the left hand: on the Steam Frame that controller has no face buttons, so its
+	// grip, D-pad and stick click stand in.
 	constexpr std::array<std::array<ControlInput, NUM_GUN_CONTROLS>, ControlMap::NUM_GUNS> gun_defaults = {{
 		{ControlInput::RightTrigger, ControlInput::A, ControlInput::B, ControlInput::RightGrip, ControlInput::Menu,
 			ControlInput::Menu, ControlInput::DpadUp, ControlInput::DpadDown, ControlInput::DpadLeft,
-			ControlInput::DpadRight, ControlInput::None, ControlInput::LeftGrip},
+			ControlInput::DpadRight, ControlInput::None, ControlInput::Y, ControlInput::LeftGrip},
 		{ControlInput::LeftTrigger, ControlInput::LeftGrip, ControlInput::DpadDown, ControlInput::DpadUp,
 			ControlInput::LeftStickClick, ControlInput::None, ControlInput::None, ControlInput::None, ControlInput::None,
-			ControlInput::None, ControlInput::None, ControlInput::None},
+			ControlInput::None, ControlInput::None, ControlInput::DpadLeft, ControlInput::None},
 	}};
 
 	// What the controllers did before mapping existed.
@@ -101,7 +101,7 @@ const char* ControlMap::Name(ControlInput input, bool frame_controllers)
 const char* ControlMap::Name(GunControl control)
 {
 	static constexpr std::array<const char*, NUM_GUN_CONTROLS> names = {"Trigger", "A", "B", "C", "Start", "Select",
-		"D-pad up", "D-pad down", "D-pad left", "D-pad right", "Reload", "Pedal (cover)"};
+		"D-pad up", "D-pad down", "D-pad left", "D-pad right", "Reload", "Calibration shot", "Pedal (cover)"};
 	return names[static_cast<size_t>(control)];
 }
 
@@ -326,6 +326,7 @@ ControlMap::GunsOutput ControlMap::ApplyGuns(const ControllerState& state, int g
 		set(GunControl::Left, Emu::GUN_LEFT);
 		set(GunControl::Right, Emu::GUN_RIGHT);
 		set(GunControl::Reload, Emu::GUN_SHOOT_OFFSCREEN);
+		set(GunControl::Calibrate, Emu::GUN_RECALIBRATE);
 		set(GunControl::Pedal, pedal_button);
 		bool start, select;
 		if (map[static_cast<size_t>(GunControl::Start)] == map[static_cast<size_t>(GunControl::Select)])

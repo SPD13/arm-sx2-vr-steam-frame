@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// Beam: additive light with a white core, fading in from the muzzle. Dot: a white centre in a
-// coloured glow, over a dark rim so it shows on light pictures too. Premultiplied alpha.
+// Beam: a white core in a coloured glow, fading in from the muzzle. Dot: a white centre in a
+// coloured glow, over a dark rim so it shows on light pictures too. Premultiplied alpha, with real
+// coverage: SteamVR's quad layers drop light that has no alpha (purely additive).
 
 #version 450
 
@@ -24,8 +25,9 @@ void main()
 		const float glow = exp(-across * across * 6.0);
 		const float core = exp(-across * across * 60.0);
 		const float along = smoothstep(0.0, 0.25, v_uv.x);
-		const vec3 rgb = (colour.rgb * glow + vec3(core)) * along * colour.a;
-		out_colour = vec4(rgb, 0.0);
+		const float alpha = max(core, glow * 0.75) * along * colour.a;
+		const vec3 rgb = mix(colour.rgb, vec3(1.0), core / max(core + glow * 0.75, 1e-4));
+		out_colour = vec4(rgb * alpha, alpha);
 	}
 	else
 	{

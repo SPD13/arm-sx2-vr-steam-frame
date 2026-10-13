@@ -126,7 +126,7 @@ While it runs, the page shows the address to open (for example `http://192.168.1
 
 ### Controls
 
-Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 12 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown. See [Controller mapping](#controller-mapping).
+Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown. See [Controller mapping](#controller-mapping).
 
 ### Light Gun
 
@@ -238,12 +238,12 @@ In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugg
 - **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
 - **Recoil.** Each shot gives a short pulse in the controller.
 - **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2) with a blue beam, for two-player games. With one gun, the other hand's grip is the pedal.
-- **Calibration.** Games calibrate the gun in their own options. The emulator also knows the screen size of about 30 GunCon 2 games; for Time Crisis games, **Calibrate** on the Light Gun page fires the calibration shot.
-- **Turning it on and off.** The crosshair button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Both guns stay plugged in while it is on, so switching between one and two guns does not unplug anything.
+- **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and fire the **calibration shot** (Y by default; a trigger pull does not count there), then press A to confirm. **Calibrate** on the Light Gun page fires one too. The emulator also knows the screen size of about 30 GunCon 2 games.
+- **Turning it on and off.** The crosshair button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
 
 ### GunCon controls
 
-**Settings › Controls › GunCon** maps each gun's controls like the DualShock 2's. Defaults:
+**Settings › Controls › GunCon** maps each gun's 13 controls like the DualShock 2's. Defaults:
 
 | GunCon 2 | Gun 1 (right hand) | Gun 2 (left hand) |
 |---|---|---|
@@ -254,6 +254,7 @@ In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugg
 | Start | View button, tap | Left stick click |
 | Select | View button, hold | — |
 | Reload | — (shoot off the screen) | — |
+| Calibration shot | Y | Left D-pad left |
 | Pedal | Left grip | — |
 
 The Steam Frame's left controller has no face buttons, so gun 2 uses its grip, D-pad and stick click. An input both sets use shows a `*`: with two guns it works gun 2 only. **Gun hand: Left** swaps the hands.
@@ -266,7 +267,7 @@ Everything lives in the data folder, `$XDG_DATA_HOME/ps2v` (by default `~/.local
 |---|---|
 | `inis/PCSX2.ini` | Emulator settings (graphics, audio and the rest of PCSX2's options) |
 | `inis/VR.ini` | Screen, 3D and Wi-Fi transfer settings, see [VR.ini reference](#vrini-reference) |
-| `inis/Controls.ini` | Controller mapping: `[Pad1]` for the DualShock 2 (`cross = a`, `select = menu`, `left_stick = left_stick` …), `[GunCon1]` and `[GunCon2]` for the guns (`trigger = right_trigger`, `pedal = left_grip` …) |
+| `inis/Controls.ini` | Controller mapping: `[Pad1]` for the DualShock 2 (`cross = a`, `select = menu`, `left_stick = left_stick` …), `[GunCon1]` and `[GunCon2]` for the guns (`trigger = right_trigger`, `calibrate = y`, `pedal = left_grip` …) |
 | `inis/lightgun.ini` | Light gun mode per game, by serial, when you chose it: `[Games] SLUS-20219 = true` |
 | `inis/favorites.txt` | Favourite games, one path per line |
 | `inis/playtime.dat` | Play time per game (PCSX2's) |
@@ -334,7 +335,7 @@ Debugging only:
 | `--stereo-alternate` | With `--stereo`, the frame-alternating prototype (each eye at 30 Hz) instead of multiview |
 | `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot |
 | `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws; how often to log depth statistics |
-| `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen; comma separated, e.g. `20:0.5:0.5,22:off`. The pedal is held from a second before the first shot, except during off-screen shots |
+| `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen, `T:a`, `T:b`, `T:c`, `T:start`, `T:cal` tap that gun button (`cal`: the calibration shot, at the centre); comma separated, e.g. `20:0.5:0.5,22:off`. For aimed shots the pedal is held from a second before the first one |
 
 ## How it works
 

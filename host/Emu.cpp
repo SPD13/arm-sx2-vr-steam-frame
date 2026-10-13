@@ -767,18 +767,18 @@ void Emu::ReleaseGuns()
 }
 
 // The policy for each new game, and the serial it was last asked about (CPU thread only).
-static std::function<bool(const std::string&)> s_guns_policy;
+static std::function<int(const std::string&)> s_guns_policy;
 static std::string s_guns_policy_serial;
 
 // On the CPU thread: the USB ports as the ini has them, in the running game too.
-static void ApplyGunPorts(bool plugged)
+static void ApplyGunPorts(int guns)
 {
 	{
 		auto lock = Host::GetSettingsLock();
 		if (!s_base_settings)
 			return;
 		for (u32 port = 0; port < USB::NUM_PORTS; port++)
-			USB::SetConfigDevice(*s_base_settings, port, plugged ? "guncon2" : "None");
+			USB::SetConfigDevice(*s_base_settings, port, static_cast<int>(port) < guns ? "guncon2" : "None");
 		Host::CommitBaseSettingChanges();
 	}
 	if (!VMManager::HasValidVM())
@@ -792,15 +792,15 @@ static void ApplyGunPorts(bool plugged)
 	if (EmuConfig.USB == old_config.USB)
 		return;
 	USB::CheckForConfigChanges(old_config);
-	Console.WriteLnFmt("Light gun: GunCon 2 {} both USB ports", plugged ? "plugged into" : "unplugged from");
+	Console.WriteLnFmt("Light gun: {} GunCon 2 plugged in", guns);
 }
 
-void Emu::SetGunsPlugged(bool plugged)
+void Emu::SetGunsPlugged(int guns)
 {
-	Host::RunOnCPUThread([plugged]() { ApplyGunPorts(plugged); });
+	Host::RunOnCPUThread([guns]() { ApplyGunPorts(guns); });
 }
 
-void Emu::SetGunsPolicy(std::function<bool(const std::string& serial)> policy)
+void Emu::SetGunsPolicy(std::function<int(const std::string& serial)> policy)
 {
 	Host::RunOnCPUThread([policy = std::move(policy)]() mutable { s_guns_policy = std::move(policy); });
 }
@@ -973,7 +973,7 @@ void Host::OnGameChanged(const std::string& title, const std::string& elf_overri
 	if (s_guns_policy && !disc_serial.empty() && disc_serial != s_guns_policy_serial)
 	{
 		s_guns_policy_serial = disc_serial;
-		Host::RunOnCPUThread([plugged = s_guns_policy(disc_serial)]() { ApplyGunPorts(plugged); });
+		Host::RunOnCPUThread([guns = s_guns_policy(disc_serial)]() { ApplyGunPorts(guns); });
 	}
 	else if (disc_serial.empty())
 		s_guns_policy_serial.clear();

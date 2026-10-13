@@ -141,12 +141,13 @@ namespace Emu
 	void SetGun(int port, const GunState& state);
 	// Hands the USB ports back to their own bindings (light gun mode off).
 	void ReleaseGuns();
-	// Plugs a GunCon 2 into both USB ports, or unplugs them, in the running game and for the next
-	// ones (PCSX2.ini). Runs on the CPU thread.
-	void SetGunsPlugged(bool plugged);
-	// Decides, as each game starts, whether the guns are plugged in for it (called on the CPU thread
+	// Plugs a GunCon 2 into the first `guns` USB ports (0 to 2) and unplugs the rest, in the running
+	// game and for the next ones (PCSX2.ini). Runs on the CPU thread. A port without a gun matters:
+	// Time Crisis asks to calibrate every gun plugged in when it starts.
+	void SetGunsPlugged(int guns);
+	// Decides, as each game starts, how many guns are plugged in for it (called on the CPU thread
 	// with the disc serial).
-	void SetGunsPolicy(std::function<bool(const std::string& serial)> policy);
+	void SetGunsPolicy(std::function<int(const std::string& serial)> policy);
 	// Whether the core knows the game as a GunCon 2 game.
 	bool IsLightgunGame(const std::string& serial);
 } // namespace Emu

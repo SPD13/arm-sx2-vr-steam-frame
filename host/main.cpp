@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -73,11 +74,13 @@ struct DebugOptions
 		float time = 0.0f; // seconds after the game started
 		bool offscreen = false;
 		float u = 0.5f, v = 0.5f; // where in the game's picture (0..1, top left origin)
+		uint32_t button = 0; // a tap of these Emu::GunButton bits instead of a shot
 	};
 	std::vector<GunShot> gun_script;
 };
 
-// "T:U:V" (a shot at U, V of the picture T seconds in) or "T:off" (a reload), comma separated.
+// "T:U:V" (a shot at U, V of the picture T seconds in), "T:off" (a reload) or "T:a", "T:b", "T:c",
+// "T:start", "T:cal" (a tap of that button; cal: the calibration shot, at the centre), comma separated.
 static bool ParseGunScript(const char* text, std::vector<DebugOptions::GunShot>* shots)
 {
 	std::string spec(text);
@@ -88,11 +91,18 @@ static bool ParseGunScript(const char* text, std::vector<DebugOptions::GunShot>*
 		const std::string item = spec.substr(start, end - start);
 		DebugOptions::GunShot shot;
 		char rest[16] = {};
+		static constexpr std::pair<const char*, uint32_t> buttons[] = {
+			{"a", Emu::GUN_A}, {"b", Emu::GUN_B}, {"c", Emu::GUN_C}, {"start", Emu::GUN_START},
+			{"cal", Emu::GUN_RECALIBRATE}};
 		if (std::sscanf(item.c_str(), "%f:%f:%f", &shot.time, &shot.u, &shot.v) == 3)
 			shots->push_back(shot);
-		else if (std::sscanf(item.c_str(), "%f:%15s", &shot.time, rest) == 2 && !std::strcmp(rest, "off"))
+		else if (std::sscanf(item.c_str(), "%f:%15s", &shot.time, rest) == 2)
 		{
-			shot.offscreen = true;
+			shot.offscreen = !std::strcmp(rest, "off");
+			for (const auto& [name, bit] : buttons)
+				shot.button = !std::strcmp(rest, name) ? bit : shot.button;
+			if (!shot.offscreen && !shot.button)
+				return false;
 			shots->push_back(shot);
 		}
 		else
@@ -135,8 +145,8 @@ static void PrintUsage(const char* argv0)
 		"  --depth-log-ms N       Log the depth statistics every N ms (default 5000)\n"
 		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
-		"                         the game, T:off reloads; comma separated, with the pedal held from a second\n"
-		"                         before the first shot (testing without the headset)\n"
+		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
+		"                         with the pedal held for shots from a second before the first (testing)\n"
 		"The screen, window and stereo options are saved settings too (VR.ini in the settings folder,\n"
 		"read again when edited); on the command line they apply to this run only.\n"
 		"In the headset: both sticks clicked recenters the screen.\n",
@@ -336,7 +346,11 @@ int main(int argc, char* argv[])
 	// Light gun mode per game: the guns are plugged in as a game starts, before it looks for them.
 	GunGames gun_games;
 	gun_games.Load(Path::Combine(EmuFolders::Settings, "lightgun.ini"));
-	Emu::SetGunsPolicy([&gun_games](const std::string& serial) { return gun_games.IsOn(serial); });
+	// How many guns: VR.ini's, read on the CPU thread as a game starts.
+	std::atomic<int> gun_count{settings.Get().gun_players > 1.5f ? 2 : 1};
+	Emu::SetGunsPolicy([&gun_games, &gun_count](const std::string& serial) {
+		return gun_games.IsOn(serial) ? gun_count.load() : 0;
+	});
 
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
 	// The mode is fixed for the run. The stereo prototype shows the GS's own per-eye frames on a
@@ -504,7 +518,7 @@ int main(int argc, char* argv[])
 		if (on == gun_mode)
 			return;
 		gun_mode = on;
-		Emu::SetGunsPlugged(on);
+		Emu::SetGunsPlugged(on ? gun_count.load() : 0);
 		if (!on)
 			Emu::ReleaseGuns();
 		apply_gun_depth();
@@ -532,6 +546,13 @@ int main(int argc, char* argv[])
 			// A new distance moves the screen along its axis; a new width moves the panels beside it.
 			if (screen_placed && (vr.screen_distance != applied.screen_distance || vr.screen_width != applied.screen_width))
 				place_screen(PushScreen(screen_pose_now, vr.screen_distance - applied.screen_distance));
+			// One gun or two: plug the second in or out.
+			if (const int guns = vr.gun_players > 1.5f ? 2 : 1; guns != gun_count.load())
+			{
+				gun_count.store(guns);
+				if (gun_mode)
+					Emu::SetGunsPlugged(guns);
+			}
 			applied = vr;
 		}
 
@@ -721,9 +742,10 @@ int main(int argc, char* argv[])
 				const int h = g == 0 ? first_hand : 1 - first_hand;
 				state.buttons = out.gun[g].buttons;
 				GunRenderer::Gun& drawn = guns_drawn[g];
+				GunAim aim;
 				if (aim_valid[h])
 				{
-					const GunAim aim = AimGun(muzzle_pose[h], gun_screen, gun_stereo.z_mode ? &gun_stereo : nullptr, depth_grid);
+					aim = AimGun(muzzle_pose[h], gun_screen, gun_stereo.z_mode ? &gun_stereo : nullptr, depth_grid);
 					const bool on_ui = ui.on_ui[h] || ui.open;
 					state.aim_valid = aim.on_picture && !on_ui;
 					state.x = aim.window_x;
@@ -777,23 +799,38 @@ int main(int argc, char* argv[])
 					state.aim_valid = !shot.offscreen;
 					state.x = r[0] + shot.u * (r[2] - r[0]);
 					state.y = r[1] + shot.v * (r[3] - r[1]);
-					// The pedal is held from a second before the first shot (out of cover), and let go
-					// for an off-screen shot (back into cover, as players reload).
-					const bool pedal = t >= shots.front().time - 1.0f && !shot.offscreen;
-					state.buttons = (firing ? Emu::GUN_TRIGGER : 0u) |
+					// For a shot, the pedal is held from a second before the first one (out of cover);
+					// it is let go for an off-screen shot (back into cover, as players reload) and for
+					// button taps.
+					const bool aimed = !shot.offscreen && !shot.button;
+					const bool pedal = aimed && t >= shots.front().time - 1.0f;
+					state.buttons = (firing ? (shot.button ? shot.button : Emu::GUN_TRIGGER) : 0u) |
 					                (pedal ? pedal_buttons[std::clamp(static_cast<int>(vr.gun_pedal + 0.5f), 0, 2)] : 0u);
 					if (firing && static_cast<int>(gun_script_next) != gun_script_logged)
 					{
 						gun_script_logged = static_cast<int>(gun_script_next);
-						Console.WriteLnFmt("Gun script: shot {} at {:.1f} s: {}", gun_script_next + 1, t,
-							shot.offscreen ? std::string("off screen") : fmt::format("({:.0f}, {:.0f})", state.x, state.y));
+						Console.WriteLnFmt("Gun script: {} {} at {:.1f} s: {}", shot.button ? "tap" : "shot",
+							gun_script_next + 1, t,
+							shot.button ? fmt::format("buttons {:#x}", shot.button) :
+							shot.offscreen ? std::string("off screen") :
+							                 fmt::format("({:.0f}, {:.0f})", state.x, state.y));
 					}
 				}
 
 				// Recoil on each new pull of the trigger.
 				const bool fired = (state.buttons & (Emu::GUN_TRIGGER | Emu::GUN_SHOOT_OFFSCREEN)) != 0;
 				if (fired && !gun_fired[g])
+				{
 					xr.Vibrate(h, 0.03f, vr.gun_haptics);
+					// Where each shot went, to compare with where the game shows it.
+					Console.WriteLnFmt("Light gun: gun {} shot {} ({:.0f}, {:.0f}) of {:.0f}x{:.0f}, {}", g + 1,
+						state.aim_valid ? "at" : "off the picture,", state.x, state.y, frame_size[0], frame_size[1],
+						!aim_valid[h]       ? "no pose" :
+						aim.through_depth   ? fmt::format("beam ends {:.2f} m behind the glass", -Dot(aim.end -
+						                          screen_pose_now.position, Rotate(screen_pose_now.orientation, {0.0f, 0.0f, 1.0f}))) :
+						aim.on_screen       ? std::string("beam ends on the glass") :
+						                      std::string("off the screen"));
+				}
 				gun_fired[g] = fired;
 				Emu::SetGun(g, state);
 			}

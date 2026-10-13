@@ -570,9 +570,9 @@ void SettingsMenu::RunControls()
 			fmt::format("{}: click a control, then press what you want for it. Triggers still click in menus.", controllers),
 		Theme::small_size, Theme::text_muted);
 
-	// Two columns: nine rows for the pad, six for a gun.
+	// Two columns: nine rows for the pad, seven for a gun.
 	const int count = m_controls_guncon ? static_cast<int>(GunControl::Count) : static_cast<int>(Ps2Control::Count);
-	const int rows = m_controls_guncon ? 6 : 9;
+	const int rows = m_controls_guncon ? 7 : 9;
 	constexpr float gap = 16.0f, row_h = 48.0f, row_gap = 6.0f; // ends above the toasts
 	const float col_w = 0.5f * (CONTENT_RIGHT - CONTENT_X - gap);
 	const float top = m_y + 96.0f;
@@ -613,7 +613,7 @@ void SettingsMenu::RunControls()
 		m_gui.TextCentered(pill, label, Theme::small_size, ink);
 	}
 	if (m_controls_guncon)
-		m_gui.Text(CONTENT_X, top + 6.0f * (row_h + row_gap) + 6.0f,
+		m_gui.Text(CONTENT_X, top + 7.0f * (row_h + row_gap) + 6.0f,
 			"* in both guns' sets: with two guns, gun 2 has it. Pedal presses the Light Gun page's pedal button.",
 			Theme::small_size, Theme::text_muted);
 }

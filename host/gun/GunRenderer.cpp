@@ -346,7 +346,7 @@ bool GunRenderer::CreatePipelines()
 	depth.depthTestEnable = VK_TRUE;
 	depth.depthWriteEnable = VK_TRUE;
 	depth.depthCompareOp = VK_COMPARE_OP_LESS;
-	// Premultiplied alpha over what is already drawn; the beam adds light (alpha 0).
+	// Premultiplied alpha over what is already drawn.
 	VkPipelineColorBlendAttachmentState blend_attachment{};
 	blend_attachment.blendEnable = VK_TRUE;
 	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
