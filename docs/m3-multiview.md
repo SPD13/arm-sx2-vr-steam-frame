@@ -223,10 +223,9 @@ So the bug needs several draws with different constant-buffer offsets inside one
 
 **Fix** (`GSDeviceVK::RestartMultiviewPassForNewConstants`): in multiview, when the VS or PS constant buffer changes, end the open render pass and begin it again in place, with the same framebuffer and clears turned into loads.
 
-**Result:** 8 of 8 runs clean, 59.8 fps, GPU about 18% (unchanged), and no `CheckStereoRenderPass` reports.
+**Result:** 8 of 8 runs clean, 59.8 fps, GPU about 18% (unchanged), and no `CheckStereoRenderPass` reports. Confirmed in the headset: stepping out of cover and shooting, repeatedly, shows no corruption.
 
 **Open follow-ups:**
 
-- confirm in the headset;
 - reduce the bug to a small Vulkan repro for Mesa (multiview pass, several draws, `vkCmdBindDescriptorSets` with new dynamic offsets between them);
 - once Mesa is fixed, the restart can be gated on the driver version.
