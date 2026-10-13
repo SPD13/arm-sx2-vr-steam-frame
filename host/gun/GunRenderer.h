@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The light guns in the headset: the model in each gun hand, with its trigger and side buttons
-// moving as they are pressed, the beam from its muzzle and the dot where it lands. Drawn per eye
-// into an alpha-blended OpenXR projection layer of its own, which goes on top of the other layers
-// (the guns are nearer than anything else). Smaller than the eye's recommended size: it only holds
-// the guns and beams.
+// moving as they are pressed, the beam from its muzzle and the dot where it lands. Drawn per eye,
+// with that eye's view and field of view, and shown as one alpha-blended quad layer per eye that
+// fills its field of view a little in front of it, so the picture lands where it was drawn. Quad
+// layers, not a projection layer: SteamVR puts quad layers (the screen, the menus) over projection
+// layers whatever their order, and the guns must be over everything. Smaller than the eye's
+// recommended size: it only holds the guns and beams.
 
 #pragma once
 
@@ -41,8 +43,9 @@ public:
 		XrVector3f beam_end{};
 		uint32_t beam_color = 0xFF3030; // sRGB
 	};
-	// Returns the layer for xrEndFrame, or null when no gun is visible.
-	const XrCompositionLayerBaseHeader* Render(XrTime display_time, const std::array<Gun, 2>& guns);
+	// Appends its layers (two, one per eye) for xrEndFrame; none when no gun is visible.
+	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** layers,
+		uint32_t* count);
 
 	// The muzzle's pose, LOCAL space, for a gun at `pose`.
 	XrPosef MuzzlePose(const XrPosef& pose) const;
@@ -93,6 +96,5 @@ private:
 	std::array<VkFence, NUM_SLOTS> m_fences{};
 	size_t m_slot = 0;
 
-	std::array<XrCompositionLayerProjectionView, 2> m_layer_views{};
-	XrCompositionLayerProjection m_layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+	std::array<XrCompositionLayerQuad, 2> m_layers{};
 };

@@ -34,6 +34,10 @@ namespace
 	constexpr float TRIGGER_TRAVEL = -12.0f * 3.14159265f / 180.0f; // negative: back toward the grip
 	constexpr float BUTTON_TRAVEL = 0.001f; // meters into the body
 
+	// How far in front of each eye its quad stands: about where the guns are, so that the
+	// compositor's reprojection of the quad (as a flat picture at this distance) moves them right.
+	constexpr float QUAD_DISTANCE = 0.5f;
+
 	constexpr float BEAM_WIDTH = 0.004f;
 	constexpr float DOT_SIZE = 0.01f; // radius at the eye, growing with distance
 	constexpr float DOT_GROWTH = 0.006f; // per meter
@@ -480,10 +484,11 @@ XrPosef GunRenderer::MuzzlePose(const XrPosef& pose) const
 	return Compose(pose, m_model.Muzzle());
 }
 
-const XrCompositionLayerBaseHeader* GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns)
+void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** layers,
+	uint32_t* count)
 {
 	if (!m_created || (!guns[0].visible && !guns[1].visible))
-		return nullptr;
+		return;
 
 	XrViewLocateInfo locate{XR_TYPE_VIEW_LOCATE_INFO};
 	locate.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -495,7 +500,7 @@ const XrCompositionLayerBaseHeader* GunRenderer::Render(XrTime display_time, con
 	if (XR_FAILED(xrLocateViews(m_xr->Session(), &locate, &view_state, 2, &view_count, views)) || view_count != 2 ||
 		!(view_state.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) ||
 		!(view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
-		return nullptr;
+		return;
 
 	const size_t slot = m_slot;
 	m_slot = (m_slot + 1) % NUM_SLOTS;
@@ -524,7 +529,7 @@ const XrCompositionLayerBaseHeader* GunRenderer::Render(XrTime display_time, con
 			// Nothing was submitted with the fence: signal it again with an empty submit.
 			std::lock_guard queue_lock(GraphicsQueueMutex());
 			vkQueueSubmit(m_queue, 0, nullptr, m_fences[slot]);
-			return nullptr;
+			return;
 		}
 	}
 
@@ -690,19 +695,22 @@ const XrCompositionLayerBaseHeader* GunRenderer::Render(XrTime display_time, con
 			xrReleaseSwapchainImage(eye.swapchain, &release);
 	}
 
+	// Each eye's picture on a quad that fills its field of view QUAD_DISTANCE in front of it.
 	for (int i = 0; i < 2; i++)
 	{
-		XrCompositionLayerProjectionView& v = m_layer_views[i];
-		v = {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW};
-		v.pose = views[i].pose;
-		v.fov = views[i].fov;
-		v.subImage.swapchain = m_eyes[i].swapchain;
-		v.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(m_eyes[i].width), static_cast<int32_t>(m_eyes[i].height)}};
+		const XrFovf& fov = views[i].fov;
+		const float left = std::tan(fov.angleLeft) * QUAD_DISTANCE, right = std::tan(fov.angleRight) * QUAD_DISTANCE;
+		const float down = std::tan(fov.angleDown) * QUAD_DISTANCE, up = std::tan(fov.angleUp) * QUAD_DISTANCE;
+		XrCompositionLayerQuad& q = m_layers[i];
+		q = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+		q.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+		q.space = m_xr->LocalSpace();
+		q.eyeVisibility = i == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
+		q.subImage.swapchain = m_eyes[i].swapchain;
+		q.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(m_eyes[i].width), static_cast<int32_t>(m_eyes[i].height)}};
+		q.pose.orientation = views[i].pose.orientation;
+		q.pose.position = Transform(views[i].pose, {0.5f * (left + right), 0.5f * (down + up), -QUAD_DISTANCE});
+		q.size = {right - left, up - down};
+		layers[(*count)++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
 	}
-	m_layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
-	m_layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-	m_layer.space = m_xr->LocalSpace();
-	m_layer.viewCount = 2;
-	m_layer.views = m_layer_views.data();
-	return reinterpret_cast<const XrCompositionLayerBaseHeader*>(&m_layer);
 }

@@ -946,11 +946,10 @@ int main(int argc, char* argv[])
 		}
 		if (screen_placed)
 			menu.AddLayers(layers, &layer_count);
-		// The guns last: they are nearer than anything else.
+		// The guns last, over everything: they are nearer than anything else.
 		if (frame.should_render)
 		{
-			if (const XrCompositionLayerBaseHeader* guns = gun_renderer.Render(frame.display_time, guns_drawn))
-				layers[layer_count++] = guns;
+			gun_renderer.Render(frame.display_time, guns_drawn, layers, &layer_count);
 		}
 		xr.EndFrame(frame, layers, layer_count);
 		if (static int frames_logged = 0; frame.should_render && frames_logged < 3)
