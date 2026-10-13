@@ -55,7 +55,7 @@ The multiview mode is selected through `GSVolumetric::StereoSettings::multiview`
 - **Which draws get the parallax shift.** Only draws into the displayed framebuffers (recent `DISPFB` bases) are shifted. The following are never shifted:
   - offscreen render targets. TC2 renders character shadows into a 128×128 target at 0x1a40 and textures 3D scenery from it;
   - draws that texture from a picture already holding per-eye content (`GSTexture::HasStereoContent`, which propagates through copies);
-  - flat textured quads with Q exactly 1;
+  - flat textured quads with Q exactly 1, unless (in Z mode) they are depth-tested against the scene (GEQUAL/GREATER) at a non-zero Z. Those are placed by their Z like any 3D draw. TC2 draws its wall-lamp halos as additive Q = 1 billboards at the lamp's depth; pinned, they floated in front of the wall;
   - full-width untextured fills;
   - HUDs stamped at the Z maximum, as before.
 - **The fix** for the bug below (section 3).
@@ -309,7 +309,7 @@ All off unless set. The one-off experiment switches from the hunt were removed a
   - `presentNNN-left/right.png`, the images handed to the host;
   - `-layer0/1.png`, both layers of `m_current`.
 
-  It also arms a one-frame draw trace in the log: a `Draw:` line for every hardware draw.
+  It also arms a one-frame draw trace in the log. Every hardware draw gets a `Draw:` line (targets, texture, bbox). With stereo on, it also gets a `Draw stereo:` line with the shift decision (`shifted`, `offscreen`, `pin:hud`, `pin:stereo-source`, `pin:q1`, `pin:fill`), plus Z and Q ranges, blend and depth-test state. Comparing the left and right present dumps then shows each object's disparity.
 - **Environment variables.** Paths are on the Frame.
 
   | Variable | Effect |
