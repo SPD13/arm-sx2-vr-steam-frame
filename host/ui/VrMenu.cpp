@@ -21,8 +21,9 @@ namespace
 {
 	constexpr float BUTTON_SIZE = 0.12f; // meters
 	constexpr float BUTTON_GAP = 0.03f; // between the two buttons
-	constexpr float BUTTON_INSET = 0.05f; // from the screen's corner
-	constexpr float BUTTON_ZONE = 3.0f; // the pointer shows within this many button sizes around them
+	constexpr float BUTTON_MARGIN = 0.04f; // between the screen's right edge and the buttons
+	constexpr float POINTER_REACH = 6.0f; // the beam ends on the screen's plane up to this far away
+	constexpr float FREE_BEAM_LENGTH = 1.0f; // and is this long when it points elsewhere
 	constexpr float PANEL_LIFT = 0.03f; // the panel stands this far in front of the screen
 	constexpr float CURSOR_SIZE = 0.035f;
 	constexpr float BEAM_WIDTH = 0.006f;
@@ -140,25 +141,22 @@ void VrMenu::DrawButton(Button& button)
 	button.layer.Upload(c);
 }
 
-VrMenu::Hit VrMenu::HitQuad(const XrPosef& quad, float width, float height, const XrPosef& aim)
+VrMenu::Hit VrMenu::HitPlane(const XrPosef& quad, const XrPosef& aim)
 {
 	Hit hit;
 	const XrVector3f dir = Rotate(aim.orientation, {0.0f, 0.0f, -1.0f});
 	const XrQuaternionf to_quad = Conjugate(quad.orientation);
 	const XrVector3f o = Rotate(to_quad, aim.position - quad.position);
 	const XrVector3f d = Rotate(to_quad, dir);
-	// Only from in front of the quad (+Z side), pointing at it.
+	// Only from in front of the plane (+Z side), pointing at it, and not too far.
 	if (o.z <= 0.0f || d.z >= -1e-4f)
 		return hit;
 	const float t = -o.z / d.z;
-	const float x = o.x + t * d.x, y = o.y + t * d.y;
-	if (std::abs(x) > 0.5f * width || std::abs(y) > 0.5f * height)
+	if (t > POINTER_REACH)
 		return hit;
 	hit.hit = true;
-	hit.x = x;
-	hit.y = y;
-	hit.u = x / width + 0.5f;
-	hit.v = 0.5f - y / height;
+	hit.x = o.x + t * d.x;
+	hit.y = o.y + t * d.y;
 	hit.point = aim.position + dir * t;
 	hit.normal = Rotate(quad.orientation, {0.0f, 0.0f, 1.0f});
 	return hit;
@@ -207,15 +205,17 @@ void VrMenu::Close()
 void VrMenu::PlacePointer(XrTime time, const XrPosef& aim, const Hit& hit, const XrQuaternionf& facing)
 {
 	m_show_pointer = true;
+	m_show_cursor = hit.hit;
 	XrPosef cursor;
 	cursor.position = hit.point + hit.normal * 0.004f;
 	cursor.orientation = facing;
 	m_cursor.SetPose(cursor);
 
-	// A thin quad from the controller to the dot, turned about its length to face the head.
+	// A thin quad from the controller to the dot (or into the room when it hits nothing), turned
+	// about its length to face the head.
 	const XrVector3f dir = Rotate(aim.orientation, {0.0f, 0.0f, -1.0f});
 	const XrVector3f start = aim.position + dir * 0.02f;
-	const float length = std::sqrt(Dot(hit.point - start, hit.point - start));
+	const float length = hit.hit ? std::sqrt(Dot(hit.point - start, hit.point - start)) : FREE_BEAM_LENGTH;
 	const XrVector3f centre = start + dir * (0.5f * length);
 	XrPosef head;
 	XrVector3f to_head = m_xr->LocateHead(time, &head) ? head.position - centre : Rotate(aim.orientation, {0.0f, 1.0f, 0.0f});
@@ -231,6 +231,7 @@ VrMenu::Result VrMenu::Update(
 {
 	Result result;
 	m_show_pointer = false;
+	m_show_cursor = false;
 	if (!m_created)
 		return result;
 	m_screen = screen;
@@ -252,53 +253,59 @@ VrMenu::Result VrMenu::Update(
 			m_swallow[h] = false;
 	}
 
-	// The buttons, one above the other in the top right corner, and the area around them where
-	// the pointer shows.
+	// The buttons, one above the other just outside the screen's right edge, level with its top.
 	const float spacing = BUTTON_SIZE + BUTTON_GAP;
-	const XrVector3f corner{0.5f * screen_width - BUTTON_INSET - 0.5f * BUTTON_SIZE,
-		0.5f * screen_height - BUTTON_INSET - 0.5f * BUTTON_SIZE, 0.01f};
-	XrPosef gear_pose = screen, games_pose = screen, zone_pose = screen;
-	gear_pose.position = Transform(screen, corner);
-	games_pose.position = Transform(screen, {corner.x, corner.y - spacing, corner.z});
-	zone_pose.position = Transform(screen, {corner.x, corner.y - 0.5f * spacing, corner.z});
+	const float button_x = 0.5f * screen_width + BUTTON_MARGIN + 0.5f * BUTTON_SIZE;
+	const float gear_y = 0.5f * screen_height - 0.5f * BUTTON_SIZE, games_y = gear_y - spacing;
+	XrPosef gear_pose = screen, games_pose = screen;
+	gear_pose.position = Transform(screen, {button_x, gear_y, 0.0f});
+	games_pose.position = Transform(screen, {button_x, games_y, 0.0f});
 	m_gear.layer.SetPose(gear_pose);
 	m_games.layer.SetPose(games_pose);
-	const float zone_w = BUTTON_ZONE * BUTTON_SIZE, zone_h = BUTTON_ZONE * BUTTON_SIZE + spacing;
 	if (m_open != Panel::None && m_reanchor)
 		AnchorPanel();
 	m_reanchor = false;
 
-	// Where each controller points: the open panel, else the area around the buttons.
+	// Where each controller points: on the open panel's plane, else on the screen's. Without a
+	// menu, the pointer is out while a controller points anywhere but at the game.
 	XrPosef aim[2];
 	Hit hits[2];
+	bool pointing[2] = {}; // at the panel, or away from the game
 	for (int h = 0; h < 2; h++)
 	{
 		if (!m_xr->LocateAim(h, time, &aim[h]))
 			continue;
 		if (m_open != Panel::None)
-			hits[h] = HitQuad(m_panel.Pose(), m_panel.Size().width, m_panel.Size().height, aim[h]);
+		{
+			hits[h] = HitPlane(m_panel.Pose(), aim[h]);
+			pointing[h] = hits[h].hit && std::abs(hits[h].x) <= 0.5f * m_panel.Size().width &&
+			              std::abs(hits[h].y) <= 0.5f * m_panel.Size().height;
+		}
 		else
-			hits[h] = HitQuad(zone_pose, zone_w, zone_h, aim[h]);
+		{
+			hits[h] = HitPlane(screen, aim[h]);
+			pointing[h] = !hits[h].hit || std::abs(hits[h].x) > 0.5f * screen_width ||
+			              std::abs(hits[h].y) > 0.5f * screen_height;
+		}
 	}
-	// The hand that clicks is the pointer; otherwise the one that points at something.
+	// The hand that clicks is the pointer; otherwise the one that points at the panel or away.
 	for (int h = 0; h < 2; h++)
 	{
 		if (pressed[h])
 			m_hand = h;
 	}
-	if (!hits[m_hand].hit && hits[1 - m_hand].hit && !m_trigger_down[m_hand])
+	if (!pointing[m_hand] && pointing[1 - m_hand] && !m_trigger_down[m_hand])
 		m_hand = 1 - m_hand;
 	const int hand = m_hand;
 
 	bool just_opened = false;
 	if (m_open == Panel::None)
 	{
-		// Which button a hit in the zone is on (zone coordinates: the gear above, the games below).
 		const auto on = [&](const Hit& hit, float centre_y) {
-			return hit.hit && std::hypot(hit.x, hit.y - centre_y) < 0.5f * BUTTON_SIZE;
+			return hit.hit && std::hypot(hit.x - button_x, hit.y - centre_y) < 0.5f * BUTTON_SIZE;
 		};
 		const Hit& hit = hits[hand];
-		const bool on_gear = on(hit, 0.5f * spacing), on_games = on(hit, -0.5f * spacing);
+		const bool on_gear = on(hit, gear_y), on_games = on(hit, games_y);
 		for (Button* button : {&m_gear, &m_games})
 		{
 			const bool hovered = button == &m_gear ? on_gear : on_games;
@@ -308,9 +315,10 @@ VrMenu::Result VrMenu::Update(
 				DrawButton(*button);
 			}
 		}
-		// Only on the buttons themselves: aiming near the corner in a game still shoots.
+		// Only on the buttons themselves: a trigger aimed off the screen still reaches the game (light
+		// gun games reload that way).
 		for (int h = 0; h < 2; h++)
-			result.block_trigger[h] = on(hits[h], 0.5f * spacing) || on(hits[h], -0.5f * spacing);
+			result.block_trigger[h] = on(hits[h], gear_y) || on(hits[h], games_y);
 		if ((on_gear || on_games) && pressed[hand])
 		{
 			Open(on_gear ? Panel::Settings : Panel::Games);
@@ -318,20 +326,23 @@ VrMenu::Result VrMenu::Update(
 			DrawButton(m_gear);
 			DrawButton(m_games);
 			just_opened = true;
-			hits[hand] = HitQuad(m_panel.Pose(), m_panel.Size().width, m_panel.Size().height, aim[hand]);
+			hits[hand] = HitPlane(m_panel.Pose(), aim[hand]);
+			pointing[hand] = hits[hand].hit && std::abs(hits[hand].x) <= 0.5f * m_panel.Size().width &&
+			                 std::abs(hits[hand].y) <= 0.5f * m_panel.Size().height;
 		}
-		else if (hit.hit)
-			PlacePointer(time, aim[hand], hit, zone_pose.orientation);
+		else if (pointing[hand])
+			PlacePointer(time, aim[hand], hit, screen.orientation);
 	}
 
 	if (m_open != Panel::None)
 	{
 		result.open = true;
+		const bool on_panel = pointing[hand];
 		const Hit& panel_hit = hits[hand];
 		GuiInput gui;
-		gui.pointer = panel_hit.hit;
-		gui.x = panel_hit.u * static_cast<float>(SettingsMenu::WIDTH);
-		gui.y = panel_hit.v * static_cast<float>(SettingsMenu::HEIGHT);
+		gui.pointer = on_panel;
+		gui.x = (panel_hit.x / m_panel.Size().width + 0.5f) * static_cast<float>(SettingsMenu::WIDTH);
+		gui.y = (0.5f - panel_hit.y / m_panel.Size().height) * static_cast<float>(SettingsMenu::HEIGHT);
 		// While a control is being mapped, a trigger press is the input to map: neither a click nor
 		// a click away that closes the menu.
 		const bool mapping = m_open == Panel::Settings && m_settings_menu->IsMappingControl();
@@ -370,9 +381,9 @@ VrMenu::Result VrMenu::Update(
 				m_panel.Upload(m_game_list->GetCanvas());
 			close = m_game_list->TakeCloseRequest();
 		}
-		if (close || (usable && pressed[hand] && !panel_hit.hit))
+		if (close || (usable && pressed[hand] && !on_panel))
 			Close();
-		else if (panel_hit.hit)
+		else
 			PlacePointer(time, aim[hand], panel_hit, m_panel.Pose().orientation);
 		if (just_opened || m_open == Panel::None)
 		{
@@ -405,8 +416,7 @@ void VrMenu::AddLayers(const XrCompositionLayerBaseHeader** layers, uint32_t* co
 		}
 	}
 	if (m_show_pointer)
-	{
 		layers[(*count)++] = m_beam.Layer();
+	if (m_show_cursor)
 		layers[(*count)++] = m_cursor.Layer();
-	}
 }

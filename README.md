@@ -50,15 +50,15 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ## In the headset
 
-Two round buttons sit in the top right corner of the screen:
+Two round buttons sit just outside the screen, on its right side and level with its top, so they never cover the game:
 
 | Button | Opens |
 |---|---|
 | ⚙ Gear | The [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | The [game list](#game-list) |
 
-- **Pointing.** Aim either controller at a button or a menu: a beam and a dot show where it points. The controller you clicked with last is the pointer.
-- **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the two buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Aiming near the corner while playing still shoots.
+- **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. The controller you clicked with last is the pointer.
+- **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the two buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
 - **Pausing.** Opening a menu pauses the game; closing it resumes.
 - **Closing a menu.** Its ✕ button, or a click anywhere off the panel. Starting or loading a game closes it too.
 - **Scrolling** the game list: either thumbstick, or drag its scroll bar.

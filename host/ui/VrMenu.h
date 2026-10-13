@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 PS2 Volumetric contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The menus in the headset. Two round buttons sit in the screen's top right corner: a gear for the
-// SettingsMenu and, below it, a gamepad for the GameListMenu. Pointing a controller at one and
-// pulling the trigger opens its panel in front of the screen and pauses the game. The controller
-// that clicked last is the pointer, drawn as a beam and a dot; its trigger clicks, and the
-// thumbsticks scroll the game list. A click away from the panel, its close button, or starting a
-// game close it.
+// The menus in the headset. Two round buttons sit just outside the screen's right edge, level with
+// its top: a gear for the SettingsMenu and, below it, a gamepad for the GameListMenu. As soon as a
+// controller points away from the game, its beam and dot show; pointing at a button and pulling the
+// trigger opens its panel in front of the screen and pauses the game. The controller that clicked
+// last is the pointer; its trigger clicks, and the thumbsticks scroll the game list. A click away
+// from the panel, its close button, or starting a game close it.
 
 #pragma once
 
@@ -57,12 +57,12 @@ private:
 	struct Hit
 	{
 		bool hit = false;
-		float u = 0.0f, v = 0.0f; // on the quad, (0, 0) top left
 		float x = 0.0f, y = 0.0f; // meters from the quad's centre, +y up
 		XrVector3f point{};
 		XrVector3f normal{};
 	};
-	static Hit HitQuad(const XrPosef& quad, float width, float height, const XrPosef& aim);
+	// Where aim's ray meets quad's plane, from the front and within reach.
+	static Hit HitPlane(const XrPosef& quad, const XrPosef& aim);
 
 	// A round button beside the screen.
 	struct Button
@@ -99,7 +99,8 @@ private:
 
 	Panel m_open = Panel::None;
 	bool m_reanchor = false;
-	bool m_show_pointer = false;
+	bool m_show_pointer = false; // the beam
+	bool m_show_cursor = false; // the dot at its end, when it ends on something
 	int m_hand = 1; // the pointer: 0 left, 1 right
 	bool m_trigger_down[2] = {};
 	bool m_swallow[2] = {}; // a trigger held through an open or close, ignored until released
