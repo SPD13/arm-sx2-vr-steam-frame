@@ -115,16 +115,15 @@ What the script does:
 
 **Statistics:** about 1 in 3 baseline runs breaks. A candidate fix needs at least 8 runs that actually step out before it can be called a fix. Two or three clean runs mean nothing.
 
-**Debug tools in the code** (all off unless set):
+**Debug tools in the code** (all off unless set). The one-off experiment switches used during the hunt (`PS2V_ALL_LAYERED`, `PS2V_MV_*`, `PS2V_RING_SCALE`, `PS2V_BIG_VRING`, `PS2V_CACHED_RINGS`, `PS2V_GS_DELAY_US`, `PS2V_NO_VSEXPAND`, `PS2V_TRACE_SRC`) and the stereo diagnostic logs (`Stereo draws/pin/mark/bg`, `TC read/move`) were removed after the fix. Sections 4 and 6 still name them as a record of what was tried. What remains:
 
 - **ps2v flags:** `--load-state FILE`, and `--sdl-pad`, which makes the SDL pad drive pad 1 alone; the XR controllers are ignored.
 - **`SIGUSR1`:** writes a save state to `~/.local/share/ps2v/debug/state.p2s`.
 - **`SIGUSR2`:** at the next present, writes:
   - `presentNNN-left/right.png`, the images handed to the host;
-  - `-layer0/1.png`, both layers of `m_current`;
-  - `-merge0.png`, the merge output.
+  - `-layer0/1.png`, both layers of `m_current`.
 
-  It also arms a one-frame draw trace in the log: a `Draw:` line and a `Draw objs:` line (texture object pointers) for every hardware draw.
+  It also arms a one-frame draw trace in the log: a `Draw:` line for every hardware draw.
 - **Environment variables.** Paths are on the Frame.
 
   | Variable | Effect |
@@ -132,14 +131,9 @@ What the script does:
   | `PS2V_TRACE_SAVE=dir` | Saves the render target after every draw of a traced frame. Adds a GPU flush per draw, which changes the outcome. |
   | `PS2V_TRACE_SAVE_EVERY=N` | Saves only every Nth draw instead. |
   | `PS2V_TRACE_SAVE_DS=1` | Saves the depth buffer instead of the render target. |
-  | `PS2V_TRACE_SRC=dir` | Saves each source texture of the traced frame once. |
-  | `PS2V_FLUSH_FILE=file` | The file holds "first last"; draws in that index range end the pass and wait for the GPU. Re-read every frame, so it can be changed during a run. |
-  | `PS2V_ALL_LAYERED`, `PS2V_MV_EAGER_CLEAR`, `PS2V_MV_RT_BARRIER[=same]`, `PS2V_MV_REBIND`, `PS2V_MV_DIRTY=<hex mask, 1 = all>`, `PS2V_BIG_VRING`, `PS2V_RING_SCALE=n` | The experiments in section 4. |
+  | `PS2V_FLUSH_FILE=file` | The file holds "first last"; draws in that index range end the pass and wait for the GPU. Re-read every frame, so it can be changed during a run (`tools/mv-debug/stepout.sh`). |
 
-- **Logs in `emulog.txt`, stereo only:**
-  - `Stereo draws` every 5 s: draw classification counts;
-  - `Stereo pin` and `Stereo mark` examples;
-  - `TC read` / `TC move`: texture-cache read-backs and moves, first 200.
+- **`CheckStereoRenderPass`** logs `VK stereo: ... render pass on a N-layer target` when a pass's view count does not match its target's layers (a path still missing a per-layer loop; none expected).
 - **Vulkan validation:** the layer is copied to `~/vklayers` on the Frame. Run with `VK_LAYER_PATH=/home/steamos/vklayers VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation`. `VK_KHRONOS_VALIDATION_DUPLICATE_MESSAGE_LIMIT=100000` makes counts comparable between runs.
 
 ## 4. What has been tested
