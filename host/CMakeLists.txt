@@ -33,6 +33,8 @@ add_executable(ps2v
 	gun/GunModel.h
 	gun/GunRenderer.cpp
 	gun/GunRenderer.h
+	gun/GunView.cpp
+	gun/GunView.h
 	third_party/cgltf.h
 	ui/Canvas.cpp
 	ui/Canvas.h

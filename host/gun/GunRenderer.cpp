@@ -20,7 +20,9 @@
 
 namespace
 {
-	constexpr float RESOLUTION_SCALE = 0.7f; // of the eye's recommended size
+	// The guns' picture: this sharp (about the Steam Frame's), within a swapchain this large.
+	constexpr float PIXELS_PER_DEGREE = 18.0f;
+	constexpr uint32_t MAX_PIXELS = 1600;
 	constexpr float NEAR_Z = 0.02f;
 	constexpr float FAR_Z = 50.0f;
 
@@ -34,8 +36,8 @@ namespace
 	constexpr float TRIGGER_TRAVEL = -12.0f * 3.14159265f / 180.0f; // negative: back toward the grip
 	constexpr float BUTTON_TRAVEL = 0.001f; // meters into the body
 
-	// How far in front of each eye its quad stands: about where the guns are, so that the
-	// compositor's reprojection of the quad (as a flat picture at this distance) moves them right.
+	// How far from each eye its quad stands: about where the guns are, so that the compositor's
+	// reprojection of the quad (as a flat picture at this distance) moves them right.
 	constexpr float QUAD_DISTANCE = 0.5f;
 
 	constexpr float BEAM_WIDTH = 0.004f;
@@ -191,8 +193,8 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 
 bool GunRenderer::CreateEye(Eye& eye, const XrViewConfigurationView& config)
 {
-	eye.width = std::max(64u, static_cast<uint32_t>(config.recommendedImageRectWidth * RESOLUTION_SCALE));
-	eye.height = std::max(64u, static_cast<uint32_t>(config.recommendedImageRectHeight * RESOLUTION_SCALE));
+	eye.width = std::min(MAX_PIXELS, config.maxImageRectWidth ? config.maxImageRectWidth : MAX_PIXELS);
+	eye.height = std::min(MAX_PIXELS, config.maxImageRectHeight ? config.maxImageRectHeight : MAX_PIXELS);
 	XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
 	info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
 	info.format = m_format;
@@ -591,25 +593,48 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 	VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	vkBeginCommandBuffer(cmd, &begin);
+
+	// What each eye's view has to take in: every gun, the end of its beam and its dot.
+	std::vector<XrVector3f> points;
+	for (const Gun& gun : guns)
+	{
+		if (!gun.visible)
+			continue;
+		for (const XrVector3f& corner : m_model.BoundsCorners())
+			points.push_back(Transform(gun.pose, corner));
+		if (gun.beam || gun.dot)
+			points.push_back(gun.beam_end);
+	}
+	uint32_t pixels[2][2] = {};
+	for (int i = 0; i < 2; i++)
+	{
+		Eye& eye = m_eyes[i];
+		eye.view.Fit(views[i].pose.position, points);
+		eye.view.PixelSize(PIXELS_PER_DEGREE, std::min(eye.width, eye.height), &pixels[i][0], &pixels[i][1]);
+		pixels[i][0] = std::min(pixels[i][0], eye.width);
+		pixels[i][1] = std::min(pixels[i][1], eye.height);
+	}
+
 	for (int i = 0; i < 2; i++)
 	{
 		const Eye& eye = m_eyes[i];
-		const XrPosef& eye_pose = views[i].pose;
-		const Mat4 view = ViewFromPose(eye_pose);
-		const Mat4 vp = Multiply(Projection(views[i].fov, NEAR_Z, FAR_Z), view);
-		const XrQuaternionf to_view = Conjugate(eye_pose.orientation);
+		const XrPosef camera = eye.view.Camera();
+		const Mat4 view = ViewFromPose(camera);
+		const Mat4 vp = Multiply(Projection(eye.view.Fov(), NEAR_Z, FAR_Z), view);
+		const XrQuaternionf to_view = Conjugate(camera.orientation);
+		const uint32_t width = pixels[i][0], height = pixels[i][1];
 
 		VkClearValue clears[2] = {};
 		clears[1].depthStencil = {1.0f, 0};
 		VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 		rp.renderPass = m_render_pass;
 		rp.framebuffer = eye.framebuffers[image_index[i]];
-		rp.renderArea = {{0, 0}, {eye.width, eye.height}};
+		rp.renderArea = {{0, 0}, {width, height}};
 		rp.clearValueCount = 2;
 		rp.pClearValues = clears;
 		vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-		const VkViewport viewport{0.0f, 0.0f, static_cast<float>(eye.width), static_cast<float>(eye.height), 0.0f, 1.0f};
-		const VkRect2D scissor{{0, 0}, {eye.width, eye.height}};
+		const VkViewport viewport{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f};
+		const VkRect2D scissor{{0, 0}, {width, height}};
 		vkCmdSetViewport(cmd, 0, 1, &viewport);
 		vkCmdSetScissor(cmd, 0, 1, &scissor);
 
@@ -632,7 +657,7 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 		}
 
 		// The beams, then the dots on top.
-		const XrVector3f eye_pos = eye_pose.position;
+		const XrVector3f eye_pos = camera.position;
 		for (int pass = 0; pass < 2; pass++)
 		{
 			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pass == 0 ? m_beam_pipeline : m_dot_pipeline);
@@ -695,22 +720,18 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 			xrReleaseSwapchainImage(eye.swapchain, &release);
 	}
 
-	// Each eye's picture on a quad that fills its field of view QUAD_DISTANCE in front of it.
+	// Each eye's picture on its quad, where the view put it.
 	for (int i = 0; i < 2; i++)
 	{
-		const XrFovf& fov = views[i].fov;
-		const float left = std::tan(fov.angleLeft) * QUAD_DISTANCE, right = std::tan(fov.angleRight) * QUAD_DISTANCE;
-		const float down = std::tan(fov.angleDown) * QUAD_DISTANCE, up = std::tan(fov.angleUp) * QUAD_DISTANCE;
 		XrCompositionLayerQuad& q = m_layers[i];
 		q = {XR_TYPE_COMPOSITION_LAYER_QUAD};
 		q.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
 		q.space = m_xr->LocalSpace();
 		q.eyeVisibility = i == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
 		q.subImage.swapchain = m_eyes[i].swapchain;
-		q.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(m_eyes[i].width), static_cast<int32_t>(m_eyes[i].height)}};
-		q.pose.orientation = views[i].pose.orientation;
-		q.pose.position = Transform(views[i].pose, {0.5f * (left + right), 0.5f * (down + up), -QUAD_DISTANCE});
-		q.size = {right - left, up - down};
+		q.subImage.imageRect = {{0, 0}, {static_cast<int32_t>(pixels[i][0]), static_cast<int32_t>(pixels[i][1])}};
+		q.pose = m_eyes[i].view.QuadPose(QUAD_DISTANCE);
+		q.size = m_eyes[i].view.QuadSize(QUAD_DISTANCE);
 		slots[i] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
 	}
 }

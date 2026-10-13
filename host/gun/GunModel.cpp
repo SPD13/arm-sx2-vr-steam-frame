@@ -10,6 +10,7 @@
 #define CGLTF_IMPLEMENTATION
 #include "third_party/cgltf.h"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -138,6 +139,20 @@ bool GunModel::Load(const std::string& path)
 		Console.ErrorFmt("Light gun: {} has no gun in it", path);
 		return false;
 	}
+	// The box around every part, as placed in the model.
+	XrVector3f lo{1e9f, 1e9f, 1e9f}, hi{-1e9f, -1e9f, -1e9f};
+	for (const Draw& draw : m_draws)
+	{
+		for (uint32_t i = draw.first_index; draw.present && i < draw.first_index + draw.index_count; i++)
+		{
+			const float* v = m_vertices[m_indices[i]].position;
+			const XrVector3f p = Transform(draw.node, {v[0], v[1], v[2]});
+			lo = {std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)};
+			hi = {std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)};
+		}
+	}
+	for (int c = 0; c < 8; c++)
+		m_corners[c] = {(c & 1) ? hi.x : lo.x, (c & 2) ? hi.y : lo.y, (c & 4) ? hi.z : lo.z};
 	Console.WriteLnFmt("Light gun: {} ({} triangles), muzzle at ({:.3f}, {:.3f}, {:.3f})", path, m_indices.size() / 3,
 		m_muzzle.position.x, m_muzzle.position.y, m_muzzle.position.z);
 	return true;

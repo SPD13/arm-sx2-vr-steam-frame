@@ -53,10 +53,13 @@ public:
 	const Draw& Get(Part part) const { return m_draws[static_cast<size_t>(part)]; }
 	// The aim ray's origin, pointing along its -Z, in the model.
 	const XrPosef& Muzzle() const { return m_muzzle; }
+	// The corners of a box around the whole gun, in the model (its parts as they rest).
+	const std::array<XrVector3f, 8>& BoundsCorners() const { return m_corners; }
 
 private:
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;
 	std::array<Draw, static_cast<size_t>(Part::Count)> m_draws{};
 	XrPosef m_muzzle{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.09f, -0.2f}};
+	std::array<XrVector3f, 8> m_corners{};
 };

@@ -3,16 +3,15 @@
 
 // The light guns in the headset: the model in each gun hand, with its trigger and side buttons
 // moving as they are pressed, the beam from its muzzle and the dot where it lands. Drawn per eye,
-// with that eye's view and field of view, and shown as one alpha-blended quad layer per eye that
-// fills its field of view a little in front of it, so the picture lands where it was drawn. Quad
-// layers, not a projection layer: SteamVR puts quad layers (the screen, the menus) over projection
-// layers whatever their order, and the guns must be over everything. Smaller than the eye's
-// recommended size: it only holds the guns and beams.
+// from the eye through a quad that covers the guns and beams (GunView), shown as one alpha-blended
+// quad layer per eye. Quad layers, not a projection layer: SteamVR puts quad layers (the screen, the
+// menus) over projection layers whatever their order, and the guns must be over everything.
 
 #pragma once
 
 #include "XrApp.h"
 #include "gun/GunModel.h"
+#include "gun/GunView.h"
 
 #include <array>
 #include <string>
@@ -53,7 +52,8 @@ private:
 	struct Eye
 	{
 		XrSwapchain swapchain = XR_NULL_HANDLE;
-		uint32_t width = 0, height = 0;
+		uint32_t width = 0, height = 0; // the swapchain's; each frame draws in its top-left part
+		GunView view;
 		std::vector<VkImageView> views;
 		std::vector<VkFramebuffer> framebuffers;
 		VkImage depth = VK_NULL_HANDLE;
