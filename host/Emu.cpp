@@ -763,6 +763,15 @@ void Emu::SetGun(int port, const GunState& state)
 	usb_lightgun::SetHostState(static_cast<u32>(port), true, state.aim_valid, state.x, state.y, state.buttons);
 }
 
+unsigned Emu::GetGunCalibration(int port, int* x, int* y)
+{
+	s16 px = 0, py = 0;
+	const u32 count = usb_lightgun::GetGameParams(static_cast<u32>(port), &px, &py);
+	*x = px;
+	*y = py;
+	return count;
+}
+
 void Emu::ReleaseGuns()
 {
 	for (u32 port = 0; port < USB::NUM_PORTS; port++)

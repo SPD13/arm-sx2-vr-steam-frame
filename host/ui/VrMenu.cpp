@@ -45,9 +45,9 @@ namespace
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
 	constexpr uint32_t VOLUMETRIC_ICON = 0xf1b2; // cube
 	constexpr uint32_t FLAT_ICON = 0xf0c8; // square
-	constexpr uint32_t GUN_MODE_ICON = 0xf05b; // crosshairs
+	constexpr uint32_t GUN_MODE_ICON = 0xe19b; // gun
 	constexpr uint32_t ONE_GUN_ICON = 0xf007; // user
-	constexpr uint32_t TWO_GUNS_ICON = 0xf0c0; // users
+	constexpr uint32_t TWO_GUNS_ICON = 0xf500; // user-group: two people
 	constexpr uint32_t PAUSE_ICON = 0xf04c;
 	constexpr uint32_t PLAY_ICON = 0xf04b;
 	constexpr uint32_t POWER_ICON = 0xf011; // power-off
@@ -86,15 +86,17 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_xr = &xr;
 	if (!LoadFont(&m_text, "Roboto-Regular.ttf") || !LoadFont(&m_icons, "fa-solid-900.ttf"))
 		return false;
-	// The groups' layouts: each button's place below its group's first, with a gap before the light gun's.
+	// The groups' layouts: each button's place below its group's first. At the top, the light gun's
+	// two come after a gap below the game list.
 	const float spacing = BUTTON_SIZE + BUTTON_GAP;
+	static constexpr int group_of[NUM_BUTTONS] = {0, 0, 1, 0, 0, 2, 2}; // GEAR ... POWER
+	static constexpr float slot_of[NUM_BUTTONS] = {0, 1, 0, 2, 3, 0, 1}; // in spacings
 	for (int b = 0; b < NUM_BUTTONS; b++)
 	{
 		Button& button = m_buttons[b];
-		button.group = b >= PAUSE ? 1 : 0;
-		const int first = button.group == 0 ? GEAR : PAUSE;
-		button.offset = (b - first) * spacing + (b >= GUN_MODE && b < PAUSE ? BUTTON_GROUP_GAP : 0.0f);
-		m_groups[button.group].height = button.offset + BUTTON_SIZE;
+		button.group = group_of[b];
+		button.offset = slot_of[b] * spacing + (b == GUN_MODE || b == GUNS ? BUTTON_GROUP_GAP : 0.0f);
+		m_groups[button.group].height = std::max(m_groups[button.group].height, button.offset + BUTTON_SIZE);
 	}
 	bool buttons_made = true;
 	for (ButtonGroup& group : m_groups)
@@ -107,7 +109,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
 		!buttons_made || !m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
 		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX) ||
-		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX))
+		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX) ||
+		!m_notice.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX))
 	{
 		Destroy();
 		return false;
@@ -162,6 +165,7 @@ void VrMenu::Destroy()
 	m_created = false;
 	m_show_tooltip = false;
 	m_tooltip.Destroy();
+	m_notice.Destroy();
 	m_beam.Destroy();
 	m_cursor.Destroy();
 	for (ButtonGroup& group : m_groups)
@@ -311,6 +315,32 @@ void VrMenu::OnGameChanged()
 	UpdatePauseButton();
 }
 
+void VrMenu::ShowNotice(std::string text, float seconds)
+{
+	if (!m_created)
+		return;
+	// A pill as wide as the text, centred in the layer.
+	Canvas& c = m_notice_canvas;
+	c.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
+	c.Clear();
+	const float text_w = m_text.Measure(text, TOOLTIP_TEXT_SIZE);
+	const float pill_w = std::min(text_w + 2.0f * TOOLTIP_PAD_PX, static_cast<float>(TOOLTIP_W_PX));
+	const Rect pill{0.5f * (TOOLTIP_W_PX - pill_w), 0.0f, pill_w, static_cast<float>(TOOLTIP_H_PX)};
+	c.FillRect(pill, Theme::panel.WithAlpha(0.9f), 0.5f * TOOLTIP_H_PX);
+	c.StrokeRect(pill, Theme::accent, 0.5f * TOOLTIP_H_PX, 2.0f);
+	c.SetClip(pill.Inset(TOOLTIP_PAD_PX, 0.0f));
+	c.DrawText(m_text, TOOLTIP_TEXT_SIZE, pill.x + TOOLTIP_PAD_PX, 0.5f * (TOOLTIP_H_PX - m_text.LineHeight(TOOLTIP_TEXT_SIZE)),
+		text, Theme::text);
+	c.ResetClip();
+	m_notice.Upload(c);
+	m_notice.SetSize(TOOLTIP_W_PX * METERS_PER_PX, TOOLTIP_H_PX * METERS_PER_PX);
+	XrPosef pose = m_screen;
+	pose.position = Transform(m_screen, {0.0f, -0.5f * m_screen_height - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
+	m_notice.SetPose(pose);
+	m_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(seconds * 1000.0f));
+	Console.WriteLnFmt("Menu: notice \"{}\"", text);
+}
+
 void VrMenu::SetGunState(bool has_game, bool on, bool chosen, int guns)
 {
 	if (m_settings_menu)
@@ -432,6 +462,13 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		return result;
 	m_screen = screen;
 	m_screen_width = screen_width;
+	m_screen_height = screen_height;
+	if (m_notice.HasImage())
+	{
+		XrPosef pose = screen;
+		pose.position = Transform(screen, {0.0f, -0.5f * screen_height - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
+		m_notice.SetPose(pose);
+	}
 	m_pointers = pointers;
 
 	// A game from the list that would not start: back to the list, which says why.
@@ -451,11 +488,13 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	}
 
 	// The buttons, one above the other just outside the screen's right edge: the top group from level
-	// with its top, the bottom one down to level with its bottom (kept below the top one on a small screen).
+	// with its top, the 3D button at mid height, the bottom group down to level with its bottom; on a
+	// small screen each is kept below the one above.
 	const float button_x = 0.5f * screen_width + BUTTON_MARGIN + 0.5f * BUTTON_SIZE;
+	const auto below = [](const ButtonGroup& above) { return above.top_y - above.height - BUTTON_GAP - BUTTON_GROUP_GAP; };
 	m_groups[0].top_y = 0.5f * screen_height - 0.5f * BUTTON_SIZE;
-	m_groups[1].top_y = std::min(-0.5f * screen_height - 0.5f * BUTTON_SIZE + m_groups[1].height,
-		m_groups[0].top_y - m_groups[0].height - BUTTON_GAP - BUTTON_GROUP_GAP);
+	m_groups[1].top_y = std::min(0.0f, below(m_groups[0]));
+	m_groups[2].top_y = std::min(-0.5f * screen_height - 0.5f * BUTTON_SIZE + m_groups[2].height, below(m_groups[1]));
 	for (Button& button : m_buttons)
 		button.y = m_groups[button.group].top_y - button.offset;
 	for (ButtonGroup& group : m_groups)
@@ -675,7 +714,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 4 + NUM_GROUPS, "the panel, the button groups, the tooltip, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 5 + NUM_GROUPS, "the panel, the button groups, the tooltip, the notice, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
@@ -689,8 +728,10 @@ void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 	}
 	if (m_show_tooltip && m_open == Panel::None && m_tooltip.HasImage())
 		slots[1 + NUM_GROUPS] = m_tooltip.Layer();
+	if (m_notice.HasImage() && std::chrono::steady_clock::now() < m_notice_until)
+		slots[2 + NUM_GROUPS] = m_notice.Layer();
 	if (m_show_pointer)
-		slots[2 + NUM_GROUPS] = m_beam.Layer();
+		slots[3 + NUM_GROUPS] = m_beam.Layer();
 	if (m_show_cursor)
-		slots[3 + NUM_GROUPS] = m_cursor.Layer();
+		slots[4 + NUM_GROUPS] = m_cursor.Layer();
 }

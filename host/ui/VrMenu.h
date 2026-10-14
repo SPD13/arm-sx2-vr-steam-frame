@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The menus in the headset. Round buttons sit just outside the screen's right edge, from its top
-// down: a gear for the SettingsMenu, a gamepad for the GameListMenu, the 3D mode (volumetric, a lit
-// cube, or flat, a square; switched at once with a click), then the light gun's two: light
-// gun mode on or off (a crosshair, lit while on) and one or two guns (one or two people, only while
-// light gun mode is on). At the bottom, level with the screen's bottom edge: pause (lit while the
+// down: a gear for the SettingsMenu, a gamepad for the GameListMenu, then after a gap the light
+// gun's two: light gun mode on or off (a gun, lit while on) and one or two guns (one or two
+// people, only while light gun mode is on). At mid height, the 3D mode (volumetric, a lit cube, or
+// flat, a square; switched at once with a click). At the bottom, level with the screen's bottom edge: pause (lit while the
 // user paused the game; menus opened and closed meanwhile leave it paused) and, below it, a red
 // power button that quits after a confirmation. One controller is the pointer: the one that pulled its trigger last (the
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
@@ -28,6 +28,7 @@
 #include "ui/SettingsMenu.h"
 
 #include <array>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -76,13 +77,16 @@ public:
 
 	// Opens the game list (at start, when no game was given).
 	void OpenGameList();
+
+	// A short message centred below the screen for `seconds` (e.g. a gun calibrated).
+	void ShowNotice(std::string text, float seconds);
 	// The screen was placed again: an open panel moves with it.
 	void Reanchor() { m_reanchor = true; }
 
-	// Its layers, each always in the same slot (null when hidden): the panel, the two button groups, the
-	// tooltip, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
+	// Its layers, each always in the same slot (null when hidden): the panel, the three button groups, the
+	// tooltip, the notice below the screen, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
 	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 6;
+	static constexpr int NUM_LAYER_SLOTS = 8;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
@@ -129,8 +133,8 @@ private:
 		POWER,
 		NUM_BUTTONS
 	};
-	// Buttons share a quad layer per group (there are only 16 layers): the top ones, from the gear
-	// to the light gun's, and the bottom ones, pause and power.
+	// Buttons share a quad layer per group (there are only 16 layers): the top ones (the gear, the
+	// game list and the light gun's), the 3D button, and the bottom ones (pause and power).
 	struct ButtonGroup
 	{
 		OverlayLayer layer;
@@ -138,7 +142,7 @@ private:
 		float height = 0.0f; // meters, from its first button's top to its last's bottom
 		float top_y = 0.0f; // its first button's centre, meters above the screen's centre
 	};
-	static constexpr int NUM_GROUPS = 2;
+	static constexpr int NUM_GROUPS = 3;
 	// Redraws the group button is in.
 	void DrawButton(const Button& button);
 	void DrawGroup(int group);
@@ -175,6 +179,9 @@ private:
 	OverlayLayer m_tooltip;
 	Canvas m_tooltip_canvas;
 	std::string m_tooltip_text; // what m_tooltip shows
+	OverlayLayer m_notice;
+	Canvas m_notice_canvas;
+	std::chrono::steady_clock::time_point m_notice_until{};
 
 	Panel m_open = Panel::None;
 	bool m_reanchor = false;
@@ -188,6 +195,7 @@ private:
 
 	XrPosef m_screen{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -2.0f}};
 	float m_screen_width = 2.4f;
+	float m_screen_height = 1.8f;
 	bool m_pauses_game = true;
 	bool m_has_game = false;
 	bool m_gun_on = false;

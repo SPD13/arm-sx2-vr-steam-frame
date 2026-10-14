@@ -51,15 +51,15 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ## In the headset
 
-Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, and pause and power at the bottom:
+Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, the 3D button at mid height, and pause and power at the bottom:
 
 | Button | Does |
 |---|---|
 | ⚙ Gear | Opens the [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
-| ▣ Cube / ■ square (below it) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
-| ⌖ Crosshair (after a gap) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
+| 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
+| ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
 | ⏸ Pause (bottom, above power) | Pauses or resumes the game; lit (a play icon) while paused. Menus opened meanwhile leave it paused, and another game starts unpaused |
 | ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit** |
 
@@ -128,16 +128,17 @@ While it runs, the page shows the address to open (for example `http://192.168.1
 
 ### Controls
 
-Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown. See [Controller mapping](#controller-mapping).
+Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown (not the colours).
+
+Under the GunCon controls, the gun's colour, from gray, black, white, red, blue, green, orange and purple; it applies at once. Gun 1 has one colour for playing alone (gray by default) and one for two players (red); gun 2 has one (blue). The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. See [Controller mapping](#controller-mapping).
 
 ### Light Gun
 
 | Option | Values | Notes |
 |---|---|---|
-| Light gun mode | Auto · Off · On | For the running game, as the crosshair button. **Auto** is on for the games the emulator knows as GunCon 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
+| Light gun mode | Auto · Off · On | For the running game, as the gun button. **Auto** is on for the games the emulator knows as GunCon 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
 | Guns | One gun · Two guns | Two: one in each hand, for two players. As the people button. |
 | Gun hand | Right · Left | The hand that holds gun 1. |
-| Gun colour | Gray, black, white, red, blue, green, orange, purple | The body; applies at once. The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. |
 | Beam | Beam and dot · Dot · Off | What shows where the gun points. On a menu or a button the dot always shows. |
 | Pedal button | A · B · C | The gun button the pedal input presses: the one the game takes cover with. |
 | Recoil | Off – 100 % | Strength of the controller's pulse on each shot. |
@@ -241,8 +242,8 @@ In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugg
 - **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
 - **Recoil.** Each shot gives a short pulse in the controller.
 - **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2) with a blue beam, for two-player games. With one gun, the other hand's grip is the pedal.
-- **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and fire the **calibration shot** (Y by default; a trigger pull does not count there), then press A to confirm. **Calibrate** on the Light Gun page fires one too. The emulator also knows the screen size of about 30 GunCon 2 games.
-- **Turning it on and off.** The crosshair button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
+- **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and pull the trigger, then press A to confirm. "Gun calibrated" shows below the screen when the game takes it. As on a real gun, the guns see no light while the picture is black, which is what the game checks after the shot. The **calibration shot** (Y by default, and **Calibrate** on the Light Gun page) does the same without that check. The emulator also knows the screen size of about 30 GunCon 2 games.
+- **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
 
 ### GunCon controls
 
@@ -300,7 +301,9 @@ Values are read in this order, each overriding the one before: built-in defaults
 | | `gun_pedal` | 0 | 0 A, 1 B, 2 C | | live |
 | | `gun_haptics` | 0.6 | 0 – 1 | | live |
 | | `gun_pitch` | 0 | −45 – 45° | | live |
-| | `gun_color` | `#8c8c91` | `#rrggbb` | | live |
+| | `gun_color` | `#8c8c91` | `#rrggbb`: gun 1, one player | | live |
+| | `gun_color_2p` | `#c0282d` | `#rrggbb`: gun 1, two players | | live |
+| | `gun2_color` | `#2f5fd0` | `#rrggbb`: gun 2 | | live |
 
 Numbers outside their range are clamped. `[Stereo]` settings apply in volumetric mode.
 
@@ -342,7 +345,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 | Pages | `ui/SettingsMenu.{h,cpp}`, `ui/GameListMenu.{h,cpp}` | The settings categories, and the game list. |
 | Controllers | `XrApp.{h,cpp}`, `Controls.{h,cpp}` | `XrApp` reports the controllers as they are (one OpenXR action per button, grip, trigger and stick); `ControlMap` turns that into the DualShock 2 state. |
 | Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. |
-| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
+| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunLight` is the guns' light sensor: a black picture (under 10% of it lit, which leaves room for the emulator's own messages) is no light, so the guns report off the screen; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
 | Emulator | `Emu.{h,cpp}` | The CPU thread, PCSX2's host callbacks, and what the menus need: pause, settings, save states, the game list, switching games. Switching runs on the CPU thread, and resuming from a menu is skipped while a switch is under way so it cannot cancel it. |
 
 ## Known limitations

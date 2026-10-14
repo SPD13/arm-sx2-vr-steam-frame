@@ -139,6 +139,8 @@ namespace Emu
 	};
 	// The gun on USB port `port` (0 or 1). Any thread; the game reads it when it polls the gun.
 	void SetGun(int port, const GunState& state);
+	// How many times the game has set the gun's calibration offset (GunCon 2 Set Param), and the last one.
+	unsigned GetGunCalibration(int port, int* x, int* y);
 	// Hands the USB ports back to their own bindings (light gun mode off).
 	void ReleaseGuns();
 	// Plugs a GunCon 2 into the first `guns` USB ports (0 to 2) and unplugs the rest, in the running

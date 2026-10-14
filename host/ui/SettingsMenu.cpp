@@ -29,7 +29,7 @@ namespace Icon
 	static constexpr uint32_t restart = 0xf2ea; // rotate-left
 	static constexpr uint32_t info = 0xf05a; // circle-info
 	static constexpr uint32_t transfer = 0xf1eb; // wifi
-	static constexpr uint32_t lightgun = 0xf05b; // crosshairs
+	static constexpr uint32_t lightgun = 0xe19b; // gun
 } // namespace Icon
 
 namespace
@@ -611,10 +611,62 @@ void SettingsMenu::RunControls()
 		                                                Theme::text_muted;
 		m_gui.TextCentered(pill, label, Theme::small_size, ink);
 	}
-	if (m_controls_guncon)
-		m_gui.Text(CONTENT_X, top + 7.0f * (row_h + row_gap) + 6.0f,
-			"* in both guns' sets: with two guns, gun 2 has it. Pedal presses the Light Gun page's pedal button.",
-			Theme::small_size, Theme::text_muted);
+	if (!m_controls_guncon)
+		return;
+	const float below = top + 7.0f * (row_h + row_gap);
+	m_gui.Text(CONTENT_X, below + 6.0f,
+		"* in both guns' sets: with two guns, gun 2 has it. Pedal presses the Light Gun page's pedal button.",
+		Theme::small_size, Theme::text_muted);
+
+	// The gun's colour: gun 1 has one for playing alone and one for two players.
+	VrSettings vr = m_settings.Get();
+	bool changed = false;
+	const Rect left{CONTENT_X, below + 48.0f, col_w, 72.0f};
+	const Rect right{CONTENT_X + col_w + gap, left.y, col_w, left.h};
+	if (m_controls_gun == 0)
+	{
+		changed |= GunColor("gun_color", "Colour, one player", left, &vr.gun_color);
+		changed |= GunColor("gun_color_2p", "Colour, two players", right, &vr.gun_color_2p);
+	}
+	else
+		changed |= GunColor("gun2_color", "Colour", left, &vr.gun2_color);
+	if (changed)
+		SetVr(vr);
+}
+
+bool SettingsMenu::GunColor(std::string_view id, std::string_view label, const Rect& area, uint32_t* rgb)
+{
+	// A colour not offered here (set in VR.ini) leaves none selected.
+	const auto preset = std::find_if(std::begin(GUN_COLORS), std::end(GUN_COLORS),
+		[&](const Swatch& sw) { return sw.rgb == *rgb; });
+	m_gui.Text(area.x, area.y, fmt::format("{}: {}", label, preset == std::end(GUN_COLORS) ? FormatColor(*rgb) : preset->name),
+		Theme::small_size, Theme::text_muted);
+	const Rect row{area.x, area.y + 30.0f, area.w, area.h - 30.0f};
+	constexpr int num_colours = static_cast<int>(std::size(GUN_COLORS));
+	const float swatch_gap = 7.0f;
+	const float swatch_w = (row.w - swatch_gap * (num_colours - 1)) / num_colours;
+	bool picked = false;
+	for (int i = 0; i < num_colours; i++)
+	{
+		const Rect r{row.x + static_cast<float>(i) * (swatch_w + swatch_gap), row.y, swatch_w, row.h};
+		bool hovered = false;
+		if (m_gui.Clickable(GuiId(id, i), r, &hovered))
+		{
+			*rgb = GUN_COLORS[i].rgb;
+			picked = true;
+		}
+		if (m_gui.Drawing())
+		{
+			Canvas& c = m_gui.Draw();
+			const bool selected = GUN_COLORS[i].rgb == *rgb;
+			c.FillRect(r.Inset(selected || hovered ? 5.0f : 3.0f, selected || hovered ? 5.0f : 3.0f), Rgb(GUN_COLORS[i].rgb), 10.0f);
+			if (selected)
+				c.StrokeRect(r, Theme::accent, 12.0f, 3.0f);
+			else if (hovered)
+				c.StrokeRect(r, Theme::border, 12.0f, 2.0f);
+		}
+	}
+	return picked;
 }
 
 void SettingsMenu::RunLightGun()
@@ -652,35 +704,6 @@ void SettingsMenu::RunLightGun()
 	{
 		vr.gun_left_hand = hand == 1;
 		changed = true;
-	}
-
-	// The colours as swatches; one not offered here (set in VR.ini) leaves none selected.
-	const auto preset = std::find_if(std::begin(GUN_COLORS), std::end(GUN_COLORS),
-		[&](const Swatch& sw) { return sw.rgb == vr.gun_color; });
-	const Rect colours = Row(preset == std::end(GUN_COLORS) ? "Gun colour (custom)" : "Gun colour",
-		preset == std::end(GUN_COLORS) ? FormatColor(vr.gun_color) : preset->name, h);
-	constexpr int num_colours = static_cast<int>(std::size(GUN_COLORS));
-	const float swatch_gap = 7.0f;
-	const float swatch_w = (colours.w - swatch_gap * (num_colours - 1)) / num_colours;
-	for (int i = 0; i < num_colours; i++)
-	{
-		const Rect r{colours.x + static_cast<float>(i) * (swatch_w + swatch_gap), colours.y, swatch_w, colours.h};
-		bool hovered = false;
-		if (m_gui.Clickable(GuiId("gun_color", i), r, &hovered))
-		{
-			vr.gun_color = GUN_COLORS[i].rgb;
-			changed = true;
-		}
-		if (m_gui.Drawing())
-		{
-			Canvas& c = m_gui.Draw();
-			const bool selected = GUN_COLORS[i].rgb == vr.gun_color;
-			c.FillRect(r.Inset(selected || hovered ? 5.0f : 3.0f, selected || hovered ? 5.0f : 3.0f), Rgb(GUN_COLORS[i].rgb), 10.0f);
-			if (selected)
-				c.StrokeRect(r, Theme::accent, 12.0f, 3.0f);
-			else if (hovered)
-				c.StrokeRect(r, Theme::border, 12.0f, 2.0f);
-		}
 	}
 
 	static constexpr std::array<std::string_view, 3> beams = {"Beam and dot", "Dot", "Off"};

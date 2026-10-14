@@ -105,6 +105,8 @@ private:
 	void RunControls();
 	void RunLightGun();
 	void RunMappingDialog();
+	// A gun colour: its name over a row of swatches in area; true when one was picked (into *rgb).
+	bool GunColor(std::string_view id, std::string_view label, const Rect& area, uint32_t* rgb);
 	// What a control is called, and what its input is called, on the Controls page.
 	std::string TargetName(const MapTarget& target) const;
 	std::string InputLabel(const MapTarget& target) const;
