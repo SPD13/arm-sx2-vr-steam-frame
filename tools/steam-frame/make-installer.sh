@@ -32,6 +32,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # The Frame-side uninstall steps travel inside the app (the install steps come with each release); the copy is not committed
+mkdir -p "$SRC/embedded"
 cp "$HERE/frame-uninstall.sh" "$SRC/embedded/frame-uninstall.sh"
 cd "$SRC"
 
