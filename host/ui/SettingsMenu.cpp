@@ -562,8 +562,16 @@ void SettingsMenu::RunControls()
 		m_toast_until = Clock::now() + std::chrono::seconds(3);
 		m_needs_draw = true;
 	}
+	// Whether the hands without a gun show their controllers, at the right; the help beside it.
+	constexpr float toggle_w = 290.0f;
+	const Rect show{CONTENT_RIGHT - toggle_w, m_y + 58.0f, toggle_w, 44.0f};
+	VrSettings vr = m_settings.Get();
+	if (m_gui.Toggle(GuiId("show_controllers"), show, &vr.show_controllers))
+		SetVr(vr);
+	m_gui.Text(show.x, std::round(show.y + 0.5f * (show.h - m_gui.TextFont().LineHeight(Theme::body_size))), "Show controllers",
+		Theme::body_size);
 	const std::string_view controllers = m_frame_controllers ? "Steam Frame controllers" : "Touch layout";
-	m_gui.Text(CONTENT_X, m_y + 56.0f,
+	m_gui.TextWrapped(CONTENT_X, m_y + 56.0f, show.x - 32.0f - CONTENT_X,
 		m_controls_guncon ?
 			fmt::format("{}: gun 1 is in your gun hand, gun 2 in the other. Used while light gun mode is on.", controllers) :
 			fmt::format("{}: click a control, then press what you want for it. Triggers still click in menus.", controllers),
@@ -574,7 +582,7 @@ void SettingsMenu::RunControls()
 	const int rows = m_controls_guncon ? 7 : 9;
 	constexpr float gap = 16.0f, row_h = 48.0f, row_gap = 6.0f; // ends above the toasts
 	const float col_w = 0.5f * (CONTENT_RIGHT - CONTENT_X - gap);
-	const float top = m_y + 96.0f;
+	const float top = m_y + 110.0f;
 	for (int i = 0; i < count; i++)
 	{
 		const MapTarget target{m_controls_guncon ? m_controls_gun : -1, i};

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The light guns in the headset: the model in each gun hand, with its trigger and side buttons
-// moving as they are pressed, the beam from its muzzle and the dot where it lands. Drawn per eye,
+// moving as they are pressed, the beam from its muzzle and the dot where it lands. The hands without
+// a gun can show their controllers, as SteamVR's models (ControllerModel), drawn alike. Drawn per eye,
 // from the eye through a quad that covers the guns and beams (GunView), shown as alpha-blended quad
 // layers. Quad layers, not a projection layer: SteamVR puts quad layers (the screen, the menus) over
 // projection layers whatever their order, and the guns must be over everything.
@@ -14,6 +15,7 @@
 
 #pragma once
 
+#include "ControllerModel.h"
 #include "XrApp.h"
 #include "gun/GunModel.h"
 #include "gun/GunView.h"
@@ -27,13 +29,19 @@ class GunRenderer
 public:
 	~GunRenderer();
 
-	// Loads the model from model_path and creates the layer; false if either fails.
+	// Loads the gun model from model_path and SteamVR's controller models, and creates the layers;
+	// false when there is nothing to draw or the layers fail.
 	bool Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uint32_t queue_family_index,
 		const std::string& model_path);
 	void Destroy();
 	bool IsCreated() const { return m_created; }
+	// Whether it draws guns, and a hand's controller (0 left, 1 right).
+	bool HasGun() const { return m_created && m_model.IsLoaded(); }
+	bool HasController(int hand) const { return m_created && m_controllers[hand].set != VK_NULL_HANDLE; }
 
 	const GunModel& Model() const { return m_model; }
+	// A hand's controller model (0 left, 1 right), for its pose.
+	const ControllerModel& Controller(int hand) const { return m_controllers[hand].model; }
 
 	struct Gun
 	{
@@ -47,9 +55,16 @@ public:
 		XrVector3f beam_end{};
 		uint32_t beam_color = 0xFF3030; // sRGB
 	};
+	struct Hand
+	{
+		bool visible = false; // its controller
+		XrPosef pose{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}; // the model's origin, LOCAL space
+	};
 	static constexpr int NUM_LAYERS = 4;
 	// Its layers (two per eye) for xrEndFrame, in slots[0] to slots[NUM_LAYERS - 1]; null when not in use.
-	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** slots);
+	// hands[h] is hand h's controller (0 left, 1 right), moving as controller says.
+	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const std::array<Hand, 2>& hands,
+		const ControllerState& controller, const XrCompositionLayerBaseHeader** slots);
 
 	// The muzzle's pose, LOCAL space, for a gun at `pose`.
 	XrPosef MuzzlePose(const XrPosef& pose) const;
@@ -72,7 +87,10 @@ private:
 	void DestroyPane(Pane& pane);
 	void ResetPanes();
 	bool CreatePipelines();
-	bool CreateMeshBuffer();
+	// A host-visible buffer holding vertices then indices; false if it fails.
+	bool CreateMeshBuffer(const void* vertices, VkDeviceSize vertex_bytes, const std::vector<uint32_t>& indices,
+		VkBuffer* buffer, VkDeviceMemory* memory, VkDeviceSize* index_offset);
+	bool CreateControllers();
 	uint32_t FindMemoryType(uint32_t type_bits, VkMemoryPropertyFlags properties) const;
 
 	XrApp* m_xr = nullptr;
@@ -104,6 +122,25 @@ private:
 	VkBuffer m_mesh = VK_NULL_HANDLE;
 	VkDeviceMemory m_mesh_memory = VK_NULL_HANDLE;
 	VkDeviceSize m_index_offset = 0;
+
+	// The controllers: per hand its model, mesh and texture.
+	struct ControllerMesh
+	{
+		ControllerModel model;
+		VkBuffer mesh = VK_NULL_HANDLE;
+		VkDeviceMemory mesh_memory = VK_NULL_HANDLE;
+		VkDeviceSize index_offset = 0;
+		VkImage texture = VK_NULL_HANDLE;
+		VkDeviceMemory texture_memory = VK_NULL_HANDLE;
+		VkImageView texture_view = VK_NULL_HANDLE;
+		VkDescriptorSet set = VK_NULL_HANDLE; // its texture; set once it is all on the GPU
+	};
+	std::array<ControllerMesh, 2> m_controllers;
+	VkSampler m_sampler = VK_NULL_HANDLE;
+	VkDescriptorSetLayout m_set_layout = VK_NULL_HANDLE;
+	VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
+	VkPipelineLayout m_controller_layout = VK_NULL_HANDLE;
+	VkPipeline m_controller_pipeline = VK_NULL_HANDLE;
 
 	static constexpr size_t NUM_SLOTS = 3;
 	VkCommandPool m_pool = VK_NULL_HANDLE;

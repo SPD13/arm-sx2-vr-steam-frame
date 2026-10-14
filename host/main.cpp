@@ -364,6 +364,8 @@ int main(int argc, char* argv[])
 	menu.SetPausesGame(!debug_options.no_menu_pause);
 	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
 			Path::Combine(EmuFolders::AppRoot, "assets" FS_OSPATH_SEPARATOR_STR "lightgun.glb")))
+		Console.Error("Light gun: neither guns nor controllers can be shown.");
+	else if (!gun_renderer.HasGun())
 		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
 	if (!gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no depth; shots land on the screen glass.");
@@ -637,7 +639,7 @@ int main(int argc, char* argv[])
 			std::array<VrMenu::Pointer, 2> pointers;
 			for (int h = 0; h < 2; h++)
 			{
-				const bool gun = gun_of_hand[h] >= 0 && gun_renderer.IsCreated();
+				const bool gun = gun_of_hand[h] >= 0 && gun_renderer.HasGun();
 				pointers[h] = {aim_valid[h], gun ? muzzle_pose[h] : aim_pose[h], gun};
 			}
 			menu.SetGunState(!profile_serial.empty(), gun_mode, gun_chosen, vr.gun_players > 1.5f ? 2 : 1);
@@ -745,7 +747,7 @@ int main(int argc, char* argv[])
 					state.x = aim.window_x;
 					state.y = aim.window_y;
 
-					drawn.visible = gun_renderer.IsCreated();
+					drawn.visible = gun_renderer.HasGun();
 					drawn.pose = gun_pose[h];
 					drawn.body_color = vr.gun_color;
 					drawn.trigger = controls.GunTrigger(input.controller, g);
@@ -956,8 +958,24 @@ int main(int argc, char* argv[])
 		}
 		if (screen_placed)
 			menu.GetLayers(&slots[SLOT_MENU]);
+		// The controllers, as SteamVR draws them, in the hands without a gun (Settings > Controls).
+		std::array<GunRenderer::Hand, 2> hands_drawn;
+		if (vr.show_controllers && xr.HasFrameControllers())
+		{
+			for (int h = 0; h < 2; h++)
+			{
+				if ((gun_of_hand[h] >= 0 && gun_renderer.HasGun()) || !gun_renderer.HasController(h))
+					continue;
+				const ControllerModel& model = gun_renderer.Controller(h);
+				XrPosef grip;
+				if (xr.LocateGrip(h, frame.display_time, &grip))
+					hands_drawn[h] = {true, model.FromGrip(grip)};
+				else if (aim_valid[h])
+					hands_drawn[h] = {true, model.FromAim(aim_pose[h])};
+			}
+		}
 		if (frame.should_render)
-			gun_renderer.Render(frame.display_time, guns_drawn, &slots[SLOT_GUNS]);
+			gun_renderer.Render(frame.display_time, guns_drawn, hands_drawn, input.controller, &slots[SLOT_GUNS]);
 		// The list: every slot up to the last one in use, the empty ones filled by invisible quads.
 		const XrCompositionLayerBaseHeader* layers[NUM_SLOTS];
 		uint32_t layer_count = 0;

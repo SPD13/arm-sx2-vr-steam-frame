@@ -6,6 +6,8 @@ find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 
 add_executable(ps2v
 	main.cpp
+	ControllerModel.cpp
+	ControllerModel.h
 	Controls.cpp
 	Controls.h
 	Profile.cpp
@@ -62,7 +64,7 @@ target_sources(ps2v PRIVATE "${PS2V_WEB_PAGE}")
 # Shaders become SPIR-V arrays in generated headers: shaders/name.stage -> name.stage.h, array name_stage.
 set(PS2V_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(PS2V_SHADERS
-	gun_depth.comp gun_depth_layered.comp gun.vert gun.frag gun_beam.vert gun_beam.frag)
+	gun_depth.comp gun_depth_layered.comp gun.vert gun.frag gun_beam.vert gun_beam.frag controller.vert controller.frag)
 file(GLOB PS2V_SHADER_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.glsl")
 foreach(shader ${PS2V_SHADERS})
 	string(REPLACE "." "_" array_name "${shader}")

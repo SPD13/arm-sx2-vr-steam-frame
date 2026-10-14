@@ -130,6 +130,8 @@ While it runs, the page shows the address to open (for example `http://192.168.1
 
 Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown. See [Controller mapping](#controller-mapping).
 
+**Show controllers** (on by default) shows your controllers in the headset, as SteamVR's own Steam Frame controller models, with their buttons, triggers, grips and sticks moving as you press them. In light gun mode a hand holding a gun shows the gun instead; with one gun, the other hand still shows its controller. The models are read from the SteamVR install (`/opt/steamvr` on the Steam Frame); without them, no controllers are shown.
+
 ### Light Gun
 
 | Option | Values | Notes |
@@ -294,6 +296,7 @@ Values are read in this order, each overriding the one before: built-in defaults
 | `[Stereo]` | `stereo_depth` | 3.0 | 0 – 20 m | `--stereo-depth` | live |
 | | `stereo_convergence` | 0.12 | 0.01 – 1 | `--stereo-conv` | live |
 | `[Web]` | `web_require_code` | true | | | live |
+| `[Controllers]` | `show_controllers` | true | | | live |
 | `[LightGun]` | `gun_players` | 1 | 1 – 2 | | live |
 | | `gun_left_hand` | false | | | live |
 | | `gun_beam` | 0 | 0 beam and dot, 1 dot, 2 off | | live |

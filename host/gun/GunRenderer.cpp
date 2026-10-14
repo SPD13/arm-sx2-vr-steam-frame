@@ -7,6 +7,8 @@
 
 #include <cstdint>
 
+#include "controller.frag.h"
+#include "controller.vert.h"
 #include "gun.frag.h"
 #include "gun.vert.h"
 #include "gun_beam.frag.h"
@@ -27,6 +29,10 @@ namespace
 	constexpr uint32_t MAX_PIXELS = 1600;
 	constexpr float NEAR_Z = 0.02f;
 	constexpr float FAR_Z = 50.0f;
+
+	constexpr float CONTROLLER_ROUGHNESS = 0.55f;
+	// SteamVR's controller models, by hand.
+	constexpr const char* CONTROLLER_MODELS[2] = {"frame_controller_left", "frame_controller_right"};
 
 	// Fixed colours of the moving parts (sRGB) and their roughness.
 	constexpr uint32_t TRIGGER_COLOR = 0x141414;
@@ -103,7 +109,11 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 	m_device = device;
 	m_gpu = gpu;
 	m_queue = queue;
-	if (!m_model.Load(model_path))
+	const bool has_gun = m_model.Load(model_path);
+	bool has_controllers = false;
+	for (int h = 0; h < 2; h++)
+		has_controllers |= m_controllers[h].model.Load(CONTROLLER_MODELS[h], h);
+	if (!has_gun && !has_controllers)
 		return false;
 
 	uint32_t count = 0;
@@ -167,7 +177,11 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 		if (!CreatePane(m_panes[i], configs[i % 2]))
 			return false;
 	}
-	if (!CreatePipelines() || !CreateMeshBuffer())
+	if (!CreatePipelines())
+		return false;
+	if (has_gun &&
+		!CreateMeshBuffer(m_model.Vertices().data(), m_model.Vertices().size() * sizeof(GunModel::Vertex), m_model.Indices(),
+			&m_mesh, &m_mesh_memory, &m_index_offset))
 		return false;
 
 	VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -188,6 +202,8 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 		if (vkCreateFence(device, &fence_info, nullptr, &fence) != VK_SUCCESS)
 			return false;
 	}
+	if (has_controllers && !CreateControllers())
+		Console.Error("Controllers: could not put the models on the GPU; no controllers shown.");
 	Console.WriteLnFmt("Light gun: two {}x{} layers per eye", m_panes[0].width, m_panes[0].height);
 	m_created = true;
 	return true;
@@ -305,6 +321,24 @@ bool GunRenderer::CreatePipelines()
 	};
 	if (!layout(sizeof(MeshConstants), &m_mesh_layout) || !layout(sizeof(QuadConstants), &m_beam_layout))
 		return false;
+	// The controllers: the same constants, and their texture.
+	const VkDescriptorSetLayoutBinding texture_binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+		VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+	VkDescriptorSetLayoutCreateInfo set_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+	set_info.bindingCount = 1;
+	set_info.pBindings = &texture_binding;
+	if (vkCreateDescriptorSetLayout(m_device, &set_info, nullptr, &m_set_layout) != VK_SUCCESS)
+		return false;
+	{
+		const VkPushConstantRange push{both, 0, sizeof(MeshConstants)};
+		VkPipelineLayoutCreateInfo info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+		info.setLayoutCount = 1;
+		info.pSetLayouts = &m_set_layout;
+		info.pushConstantRangeCount = 1;
+		info.pPushConstantRanges = &push;
+		if (vkCreatePipelineLayout(m_device, &info, nullptr, &m_controller_layout) != VK_SUCCESS)
+			return false;
+	}
 
 	const auto module = [this](const uint32_t* code, size_t size) {
 		VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -318,6 +352,8 @@ bool GunRenderer::CreatePipelines()
 	const VkShaderModule mesh_frag = module(gun_frag, sizeof(gun_frag));
 	const VkShaderModule beam_vert = module(gun_beam_vert, sizeof(gun_beam_vert));
 	const VkShaderModule beam_frag = module(gun_beam_frag, sizeof(gun_beam_frag));
+	const VkShaderModule textured_vert = module(controller_vert, sizeof(controller_vert));
+	const VkShaderModule textured_frag = module(controller_frag, sizeof(controller_frag));
 	VkPipelineShaderStageCreateInfo stages[2] = {};
 	stages[0].sType = stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -386,6 +422,25 @@ bool GunRenderer::CreatePipelines()
 	info.layout = m_mesh_layout;
 	VkResult res = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &info, nullptr, &m_mesh_pipeline);
 
+	// The controllers: textured.
+	const VkVertexInputBindingDescription controller_binding{0, sizeof(ControllerModel::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+	const VkVertexInputAttributeDescription controller_attributes[3] = {
+		{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(ControllerModel::Vertex, position)},
+		{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(ControllerModel::Vertex, normal)},
+		{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ControllerModel::Vertex, uv)},
+	};
+	VkPipelineVertexInputStateCreateInfo controller_input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+	controller_input.vertexBindingDescriptionCount = 1;
+	controller_input.pVertexBindingDescriptions = &controller_binding;
+	controller_input.vertexAttributeDescriptionCount = 3;
+	controller_input.pVertexAttributeDescriptions = controller_attributes;
+	info.pVertexInputState = &controller_input;
+	stages[0].module = textured_vert;
+	stages[1].module = textured_frag;
+	info.layout = m_controller_layout;
+	if (res == VK_SUCCESS)
+		res = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &info, nullptr, &m_controller_pipeline);
+
 	// The beam and dot: four vertices from the push constants.
 	VkPipelineVertexInputStateCreateInfo no_input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
 	info.pVertexInputState = &no_input;
@@ -400,7 +455,7 @@ bool GunRenderer::CreatePipelines()
 	if (res == VK_SUCCESS)
 		res = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &info, nullptr, &m_dot_pipeline);
 
-	for (VkShaderModule m : {mesh_vert, mesh_frag, beam_vert, beam_frag})
+	for (VkShaderModule m : {mesh_vert, mesh_frag, beam_vert, beam_frag, textured_vert, textured_frag})
 		vkDestroyShaderModule(m_device, m, nullptr);
 	if (res != VK_SUCCESS)
 	{
@@ -410,32 +465,190 @@ bool GunRenderer::CreatePipelines()
 	return true;
 }
 
-bool GunRenderer::CreateMeshBuffer()
+bool GunRenderer::CreateMeshBuffer(const void* vertices, VkDeviceSize vertex_bytes, const std::vector<uint32_t>& indices,
+	VkBuffer* buffer, VkDeviceMemory* memory, VkDeviceSize* index_offset)
 {
-	const auto& vertices = m_model.Vertices();
-	const auto& indices = m_model.Indices();
-	const VkDeviceSize vertex_bytes = vertices.size() * sizeof(GunModel::Vertex);
-	m_index_offset = (vertex_bytes + 15) & ~VkDeviceSize(15);
+	*index_offset = (vertex_bytes + 15) & ~VkDeviceSize(15);
 	VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-	info.size = m_index_offset + indices.size() * sizeof(uint32_t);
+	info.size = *index_offset + indices.size() * sizeof(uint32_t);
 	info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-	if (vkCreateBuffer(m_device, &info, nullptr, &m_mesh) != VK_SUCCESS)
+	if (vkCreateBuffer(m_device, &info, nullptr, buffer) != VK_SUCCESS)
 		return false;
 	VkMemoryRequirements req;
-	vkGetBufferMemoryRequirements(m_device, m_mesh, &req);
+	vkGetBufferMemoryRequirements(m_device, *buffer, &req);
 	VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
 	alloc.allocationSize = req.size;
 	alloc.memoryTypeIndex =
 		FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	if (alloc.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(m_device, &alloc, nullptr, &m_mesh_memory) != VK_SUCCESS)
+	if (alloc.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(m_device, &alloc, nullptr, memory) != VK_SUCCESS)
 		return false;
-	vkBindBufferMemory(m_device, m_mesh, m_mesh_memory, 0);
+	vkBindBufferMemory(m_device, *buffer, *memory, 0);
 	void* mapped = nullptr;
-	if (vkMapMemory(m_device, m_mesh_memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS)
+	if (vkMapMemory(m_device, *memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS)
 		return false;
-	std::memcpy(mapped, vertices.data(), vertex_bytes);
-	std::memcpy(static_cast<char*>(mapped) + m_index_offset, indices.data(), indices.size() * sizeof(uint32_t));
-	vkUnmapMemory(m_device, m_mesh_memory);
+	std::memcpy(mapped, vertices, vertex_bytes);
+	std::memcpy(static_cast<char*>(mapped) + *index_offset, indices.data(), indices.size() * sizeof(uint32_t));
+	vkUnmapMemory(m_device, *memory);
+	return true;
+}
+
+bool GunRenderer::CreateControllers()
+{
+	VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+	sampler_info.magFilter = VK_FILTER_LINEAR;
+	sampler_info.minFilter = VK_FILTER_LINEAR;
+	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler_info.addressModeU = sampler_info.addressModeV = sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+	const VkDescriptorPoolSize pool_size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+	VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+	pool_info.maxSets = 2;
+	pool_info.poolSizeCount = 1;
+	pool_info.pPoolSizes = &pool_size;
+	if (vkCreateSampler(m_device, &sampler_info, nullptr, &m_sampler) != VK_SUCCESS ||
+		vkCreateDescriptorPool(m_device, &pool_info, nullptr, &m_descriptor_pool) != VK_SUCCESS)
+		return false;
+
+	for (ControllerMesh& c : m_controllers)
+	{
+		if (!c.model.IsLoaded())
+			continue;
+		const ControllerModel::Texture& texture = c.model.GetTexture();
+		const auto& vertices = c.model.Vertices();
+		if (!CreateMeshBuffer(vertices.data(), vertices.size() * sizeof(ControllerModel::Vertex), c.model.Indices(), &c.mesh,
+				&c.mesh_memory, &c.index_offset))
+			return false;
+
+		// The texture, every level through one staging buffer.
+		const uint32_t levels = static_cast<uint32_t>(texture.levels.size());
+		VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+		image_info.imageType = VK_IMAGE_TYPE_2D;
+		image_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+		image_info.extent = {texture.width, texture.height, 1};
+		image_info.mipLevels = levels;
+		image_info.arrayLayers = 1;
+		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		if (vkCreateImage(m_device, &image_info, nullptr, &c.texture) != VK_SUCCESS)
+			return false;
+		VkMemoryRequirements req;
+		vkGetImageMemoryRequirements(m_device, c.texture, &req);
+		VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+		alloc.allocationSize = req.size;
+		alloc.memoryTypeIndex = FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		if (alloc.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(m_device, &alloc, nullptr, &c.texture_memory) != VK_SUCCESS)
+			return false;
+		vkBindImageMemory(m_device, c.texture, c.texture_memory, 0);
+
+		std::vector<VkBufferImageCopy> copies;
+		VkDeviceSize staging_size = 0;
+		for (uint32_t l = 0; l < levels; l++)
+		{
+			VkBufferImageCopy copy{};
+			copy.bufferOffset = staging_size;
+			copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, 1};
+			copy.imageExtent = {std::max(texture.width >> l, 1u), std::max(texture.height >> l, 1u), 1};
+			copies.push_back(copy);
+			staging_size += texture.levels[l].size() * sizeof(uint32_t);
+		}
+		VkBuffer staging = VK_NULL_HANDLE;
+		VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+		VkBufferCreateInfo staging_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+		staging_info.size = staging_size;
+		staging_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bool uploaded = vkCreateBuffer(m_device, &staging_info, nullptr, &staging) == VK_SUCCESS;
+		if (uploaded)
+		{
+			vkGetBufferMemoryRequirements(m_device, staging, &req);
+			alloc.allocationSize = req.size;
+			alloc.memoryTypeIndex =
+				FindMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			uploaded = alloc.memoryTypeIndex != UINT32_MAX && vkAllocateMemory(m_device, &alloc, nullptr, &staging_memory) == VK_SUCCESS;
+		}
+		void* mapped = nullptr;
+		uploaded = uploaded && vkBindBufferMemory(m_device, staging, staging_memory, 0) == VK_SUCCESS &&
+		           vkMapMemory(m_device, staging_memory, 0, VK_WHOLE_SIZE, 0, &mapped) == VK_SUCCESS;
+		if (uploaded)
+		{
+			for (uint32_t l = 0; l < levels; l++)
+				std::memcpy(static_cast<char*>(mapped) + copies[l].bufferOffset, texture.levels[l].data(),
+					texture.levels[l].size() * sizeof(uint32_t));
+			vkUnmapMemory(m_device, staging_memory);
+
+			VkCommandBuffer cmd = m_cmd[0];
+			vkResetCommandBuffer(cmd, 0);
+			VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+			begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+			vkBeginCommandBuffer(cmd, &begin);
+			VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+			barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.image = c.texture;
+			barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
+			barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr,
+				1, &barrier);
+			vkCmdCopyBufferToImage(cmd, staging, c.texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				static_cast<uint32_t>(copies.size()), copies.data());
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+				nullptr, 1, &barrier);
+			vkEndCommandBuffer(cmd);
+			VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+			submit.commandBufferCount = 1;
+			submit.pCommandBuffers = &cmd;
+			// The fence of slot 0 is signalled (made so); the upload signals it again when done.
+			vkWaitForFences(m_device, 1, &m_fences[0], VK_TRUE, UINT64_MAX);
+			vkResetFences(m_device, 1, &m_fences[0]);
+			{
+				std::lock_guard lock(GraphicsQueueMutex());
+				uploaded = vkQueueSubmit(m_queue, 1, &submit, m_fences[0]) == VK_SUCCESS;
+			}
+			if (uploaded)
+				vkWaitForFences(m_device, 1, &m_fences[0], VK_TRUE, UINT64_MAX);
+			else
+			{
+				std::lock_guard lock(GraphicsQueueMutex());
+				vkQueueSubmit(m_queue, 0, nullptr, m_fences[0]);
+			}
+		}
+		if (staging)
+			vkDestroyBuffer(m_device, staging, nullptr);
+		if (staging_memory)
+			vkFreeMemory(m_device, staging_memory, nullptr);
+		if (!uploaded)
+			return false;
+		c.model.ReleaseTexture();
+
+		VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+		view_info.image = c.texture;
+		view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		view_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+		view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
+		if (vkCreateImageView(m_device, &view_info, nullptr, &c.texture_view) != VK_SUCCESS)
+			return false;
+		VkDescriptorSetAllocateInfo set_alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+		set_alloc.descriptorPool = m_descriptor_pool;
+		set_alloc.descriptorSetCount = 1;
+		set_alloc.pSetLayouts = &m_set_layout;
+		VkDescriptorSet set = VK_NULL_HANDLE;
+		if (vkAllocateDescriptorSets(m_device, &set_alloc, &set) != VK_SUCCESS)
+			return false;
+		const VkDescriptorImageInfo image{m_sampler, c.texture_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+		write.dstSet = set;
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		write.pImageInfo = &image;
+		vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+		c.set = set;
+	}
 	return true;
 }
 
@@ -462,12 +675,39 @@ void GunRenderer::Destroy()
 		vkDestroyBuffer(m_device, m_mesh, nullptr);
 	if (m_mesh_memory)
 		vkFreeMemory(m_device, m_mesh_memory, nullptr);
-	for (VkPipeline pipeline : {m_mesh_pipeline, m_beam_pipeline, m_dot_pipeline})
+	for (ControllerMesh& c : m_controllers)
+	{
+		if (c.mesh)
+			vkDestroyBuffer(m_device, c.mesh, nullptr);
+		if (c.mesh_memory)
+			vkFreeMemory(m_device, c.mesh_memory, nullptr);
+		if (c.texture_view)
+			vkDestroyImageView(m_device, c.texture_view, nullptr);
+		if (c.texture)
+			vkDestroyImage(m_device, c.texture, nullptr);
+		if (c.texture_memory)
+			vkFreeMemory(m_device, c.texture_memory, nullptr);
+		c.mesh = VK_NULL_HANDLE;
+		c.mesh_memory = c.texture_memory = VK_NULL_HANDLE;
+		c.texture = VK_NULL_HANDLE;
+		c.texture_view = VK_NULL_HANDLE;
+		c.set = VK_NULL_HANDLE;
+	}
+	if (m_descriptor_pool)
+		vkDestroyDescriptorPool(m_device, m_descriptor_pool, nullptr);
+	if (m_sampler)
+		vkDestroySampler(m_device, m_sampler, nullptr);
+	if (m_set_layout)
+		vkDestroyDescriptorSetLayout(m_device, m_set_layout, nullptr);
+	m_descriptor_pool = VK_NULL_HANDLE;
+	m_sampler = VK_NULL_HANDLE;
+	m_set_layout = VK_NULL_HANDLE;
+	for (VkPipeline pipeline : {m_mesh_pipeline, m_beam_pipeline, m_dot_pipeline, m_controller_pipeline})
 	{
 		if (pipeline)
 			vkDestroyPipeline(m_device, pipeline, nullptr);
 	}
-	for (VkPipelineLayout layout : {m_mesh_layout, m_beam_layout})
+	for (VkPipelineLayout layout : {m_mesh_layout, m_beam_layout, m_controller_layout})
 	{
 		if (layout)
 			vkDestroyPipelineLayout(m_device, layout, nullptr);
@@ -477,8 +717,8 @@ void GunRenderer::Destroy()
 	m_pool = VK_NULL_HANDLE;
 	m_mesh = VK_NULL_HANDLE;
 	m_mesh_memory = VK_NULL_HANDLE;
-	m_mesh_pipeline = m_beam_pipeline = m_dot_pipeline = VK_NULL_HANDLE;
-	m_mesh_layout = m_beam_layout = VK_NULL_HANDLE;
+	m_mesh_pipeline = m_beam_pipeline = m_dot_pipeline = m_controller_pipeline = VK_NULL_HANDLE;
+	m_mesh_layout = m_beam_layout = m_controller_layout = VK_NULL_HANDLE;
 	m_render_pass = VK_NULL_HANDLE;
 	m_device = VK_NULL_HANDLE;
 }
@@ -496,13 +736,18 @@ void GunRenderer::ResetPanes()
 	m_fitted = {-1, -1};
 }
 
-void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, const XrCompositionLayerBaseHeader** slots)
+void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, const std::array<Hand, 2>& hands,
+	const ControllerState& controller, const XrCompositionLayerBaseHeader** slots)
 {
 	std::fill(slots, slots + NUM_LAYERS, nullptr);
 	if (!m_created)
 		return;
+	// The controllers there are models of.
+	std::array<bool, 2> hand_shown{};
+	for (int h = 0; h < 2; h++)
+		hand_shown[h] = hands[h].visible && m_controllers[h].set;
 	// Hidden: a frame of empty panes where the guns were, then no layers at all.
-	if (!guns[0].visible && !guns[1].visible && m_showing[0] < 0 && m_showing[1] < 0)
+	if (!guns[0].visible && !guns[1].visible && !hand_shown[0] && !hand_shown[1] && m_showing[0] < 0 && m_showing[1] < 0)
 	{
 		ResetPanes();
 		return;
@@ -523,8 +768,15 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 		return;
 	}
 
-	// What each eye's view has to take in: every gun, the end of its beam and its dot.
+	// What each eye's view has to take in: every gun, the end of its beam and its dot, and the controllers.
 	std::vector<XrVector3f> points;
+	for (int h = 0; h < 2; h++)
+	{
+		if (!hand_shown[h])
+			continue;
+		for (const XrVector3f& corner : m_controllers[h].model.BoundsCorners())
+			points.push_back(Transform(hands[h].pose, corner));
+	}
 	for (const Gun& gun : guns)
 	{
 		if (!gun.visible)
@@ -699,10 +951,13 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 			vkCmdSetScissor(cmd, 0, 1, &scissor);
 
 			// The guns.
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipeline);
 			const VkDeviceSize vertex_offset = 0;
-			vkCmdBindVertexBuffers(cmd, 0, 1, &m_mesh, &vertex_offset);
-			vkCmdBindIndexBuffer(cmd, m_mesh, m_index_offset, VK_INDEX_TYPE_UINT32);
+			if (!parts.empty())
+			{
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipeline);
+				vkCmdBindVertexBuffers(cmd, 0, 1, &m_mesh, &vertex_offset);
+				vkCmdBindIndexBuffer(cmd, m_mesh, m_index_offset, VK_INDEX_TYPE_UINT32);
+			}
 			for (const PartDraw& d : parts)
 			{
 				MeshConstants c{};
@@ -714,6 +969,33 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 				std::memcpy(c.colour, d.colour, sizeof(c.colour));
 				vkCmdPushConstants(cmd, m_mesh_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(c), &c);
 				vkCmdDrawIndexed(cmd, d.draw->index_count, 1, d.draw->first_index, 0, 0);
+			}
+
+			// The controllers, each part where its input has moved it.
+			for (int h = 0; h < 2; h++)
+			{
+				if (!hand_shown[h])
+					continue;
+				const ControllerMesh& c = m_controllers[h];
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_controller_pipeline);
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_controller_layout, 0, 1, &c.set, 0, nullptr);
+				vkCmdBindVertexBuffers(cmd, 0, 1, &c.mesh, &vertex_offset);
+				vkCmdBindIndexBuffer(cmd, c.mesh, c.index_offset, VK_INDEX_TYPE_UINT32);
+				for (const ControllerModel::Part& part : c.model.Parts())
+				{
+					const XrPosef pose = Compose(hands[h].pose, c.model.PartPose(part, controller));
+					MeshConstants k{};
+					const Mat4 mvp = Multiply(vp, MatrixFromPose(pose));
+					std::memcpy(k.mvp, mvp.m, sizeof(k.mvp));
+					const Mat4 normal = MatrixFromPose({to_view * pose.orientation, {0.0f, 0.0f, 0.0f}});
+					for (int col = 0; col < 3; col++)
+						std::memcpy(k.normal_to_view[col], &normal.m[col * 4], 3 * sizeof(float));
+					k.colour[0] = k.colour[1] = k.colour[2] = 1.0f;
+					k.colour[3] = CONTROLLER_ROUGHNESS;
+					vkCmdPushConstants(cmd, m_controller_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+						sizeof(k), &k);
+					vkCmdDrawIndexed(cmd, part.index_count, 1, part.first_index, 0, 0);
+				}
 			}
 
 			// The beams, then the dots on top.
