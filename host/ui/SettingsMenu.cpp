@@ -70,7 +70,15 @@ void SettingsMenu::Refresh()
 	Emu::RefreshSaveSlots();
 	m_slots = Emu::GetSaveSlots();
 	m_dialog = Dialog::None;
+	m_dialog_only = false;
 	m_mapping.reset();
+	m_needs_draw = true;
+}
+
+void SettingsMenu::ShowQuitDialog()
+{
+	m_dialog = Dialog::Exit;
+	m_dialog_only = true;
 	m_needs_draw = true;
 }
 
@@ -140,6 +148,14 @@ void SettingsMenu::SetCore(const Emu::CoreSettings& settings)
 
 void SettingsMenu::Run()
 {
+	if (m_dialog_only)
+	{
+		if (m_dialog != Dialog::None)
+			RunDialog();
+		if (m_dialog == Dialog::None)
+			m_close_requested = true;
+		return;
+	}
 	if (m_gui.Drawing())
 	{
 		Canvas& c = m_gui.Draw();

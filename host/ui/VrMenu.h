@@ -5,7 +5,9 @@
 // down: a gear for the SettingsMenu, a gamepad for the GameListMenu, the 3D mode (volumetric, a lit
 // cube, or flat, a square; switched at once with a click), then the light gun's two: light
 // gun mode on or off (a crosshair, lit while on) and one or two guns (one or two people, only while
-// light gun mode is on). One controller is the pointer: the one that pulled its trigger last (the
+// light gun mode is on). At the bottom, level with the screen's bottom edge: pause (lit while the
+// user paused the game; menus opened and closed meanwhile leave it paused) and, below it, a red
+// power button that quits after a confirmation. One controller is the pointer: the one that pulled its trigger last (the
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
 // show; pointing at a button and pulling the trigger opens its panel in front of the screen and
 // pauses the game. A tooltip beside the button the pointer is on says what it does. Its trigger
@@ -69,14 +71,16 @@ public:
 	// The light gun buttons' state: whether a game runs, whether light gun mode is on for it (and
 	// whether the user chose that), and how many guns.
 	void SetGunState(bool has_game, bool on, bool chosen, int guns);
+	// Another game (or none) started: a new game is not paused.
+	void OnGameChanged();
 
 	// Opens the game list (at start, when no game was given).
 	void OpenGameList();
 
-	// Its layers, each always in the same slot (null when hidden): the panel, the five buttons, the
+	// Its layers, each always in the same slot (null when hidden): the panel, the two button groups, the
 	// tooltip, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
 	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 9;
+	static constexpr int NUM_LAYER_SLOTS = 6;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
@@ -100,15 +104,16 @@ private:
 	// Where aim's ray meets quad's plane, from the front and within reach.
 	static Hit HitPlane(const XrPosef& quad, const XrPosef& aim);
 
-	// A round button beside the screen.
+	// A round button beside the screen, drawn in its group's layer.
 	struct Button
 	{
-		OverlayLayer layer;
-		Canvas canvas;
+		int group = 0;
+		float offset = 0.0f; // meters below its group's first button
 		uint32_t icon = 0;
 		bool hovered = false;
 		bool lit = false; // drawn in the accent colour (light gun mode on)
 		bool disabled = false; // dimmed, and clicks do nothing
+		bool danger = false; // red (the power button)
 		float y = 0.0f; // its centre, meters above the screen's centre
 	};
 	enum ButtonId
@@ -118,11 +123,26 @@ private:
 		MODE_3D,
 		GUN_MODE,
 		GUNS,
+		PAUSE,
+		POWER,
 		NUM_BUTTONS
 	};
-	void DrawButton(Button& button);
+	// Buttons share a quad layer per group (there are only 16 layers): the top ones, from the gear
+	// to the light gun's, and the bottom ones, pause and power.
+	struct ButtonGroup
+	{
+		OverlayLayer layer;
+		Canvas canvas;
+		float height = 0.0f; // meters, from its first button's top to its last's bottom
+		float top_y = 0.0f; // its first button's centre, meters above the screen's centre
+	};
+	static constexpr int NUM_GROUPS = 2;
+	// Redraws the group button is in.
+	void DrawButton(const Button& button);
+	void DrawGroup(int group);
 	// The 3D mode button as the setting is (it can change on the settings page too).
 	void UpdateModeButton();
+	void UpdatePauseButton();
 	// What the button does, as its tooltip says it.
 	std::string TooltipText(int button) const;
 	// Shows the tooltip of button (ButtonId) beside it, or hides it (-1).
@@ -146,6 +166,7 @@ private:
 	std::unique_ptr<GameListMenu> m_game_list;
 	OverlayLayer m_panel; // whichever menu is open
 	std::array<Button, NUM_BUTTONS> m_buttons;
+	std::array<ButtonGroup, NUM_GROUPS> m_groups;
 	std::array<Pointer, 2> m_pointers;
 	OverlayLayer m_cursor;
 	OverlayLayer m_beam;
@@ -168,5 +189,6 @@ private:
 	bool m_pauses_game = true;
 	bool m_has_game = false;
 	bool m_gun_on = false;
+	bool m_user_paused = false; // with the pause button: stays paused when a menu closes
 	int m_guns = 1;
 };

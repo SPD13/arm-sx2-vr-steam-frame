@@ -51,7 +51,7 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ## In the headset
 
-Round buttons sit just outside the screen, on its right side from level with its top down, so they never cover the game:
+Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, and pause and power at the bottom:
 
 | Button | Does |
 |---|---|
@@ -60,6 +60,8 @@ Round buttons sit just outside the screen, on its right side from level with its
 | ▣ Cube / ■ square (below it) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
 | ⌖ Crosshair (after a gap) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
+| ⏸ Pause (bottom, above power) | Pauses or resumes the game; lit (a play icon) while paused. Menus opened meanwhile leave it paused, and another game starts unpaused |
+| ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit** |
 
 - **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
 - **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.

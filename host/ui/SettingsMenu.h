@@ -32,6 +32,8 @@ public:
 
 	// Reads the emulator's settings and save slots again, for a menu that is being opened.
 	void Refresh();
+	// After Refresh: show only the quit confirmation (the power button); dismissing it closes the menu.
+	void ShowQuitDialog();
 	// Which controller layout the Controls page shows.
 	void SetFrameControllers(bool frame) { m_frame_controllers = frame; }
 	// The controllers as they are this frame, for mapping a control (call before Update).
@@ -129,6 +131,7 @@ private:
 
 	Page m_page = Page::Display;
 	Dialog m_dialog = Dialog::None;
+	bool m_dialog_only = false; // ShowQuitDialog: no settings around the dialog
 	bool m_frame_controllers = true;
 	bool m_needs_draw = true;
 	bool m_close_requested = false;

@@ -115,6 +115,10 @@ bool XrApp::CreateInstance()
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
+	XrSystemProperties system_props{XR_TYPE_SYSTEM_PROPERTIES};
+	if (XR_SUCCEEDED(xrGetSystemProperties(m_instance, m_system, &system_props)))
+		Console.WriteLnFmt("XR: system {}, up to {} layers", system_props.systemName,
+			system_props.graphicsProperties.maxLayerCount);
 
 	auto pfnGetRequirements =
 		GetXrFunction<PFN_xrGetVulkanGraphicsRequirementsKHR>(m_instance, "xrGetVulkanGraphicsRequirementsKHR");
@@ -518,9 +522,29 @@ void XrApp::EndFrame(const Frame& frame, const XrCompositionLayerBaseHeader* con
 	std::lock_guard lock(GraphicsQueueMutex());
 	if (const XrResult res = xrEndFrame(m_session, &info); XR_FAILED(res))
 	{
-		static int reported = 0;
-		if (reported++ < 10)
+		// The first few in full, with each quad's pose (an invalid pose fails the whole frame), then a
+		// count now and then.
+		static int failures = 0;
+		failures++;
+		if (failures <= 3)
+		{
 			Console.ErrorFmt("XR: xrEndFrame failed ({}) with {} layers", static_cast<int>(res), info.layerCount);
+			for (uint32_t i = 0; i < info.layerCount; i++)
+			{
+				if (layers[i]->type != XR_TYPE_COMPOSITION_LAYER_QUAD)
+				{
+					Console.ErrorFmt("XR:   layer {}: type {}", i, static_cast<int>(layers[i]->type));
+					continue;
+				}
+				const auto* q = reinterpret_cast<const XrCompositionLayerQuad*>(layers[i]);
+				const XrPosef& p = q->pose;
+				Console.ErrorFmt("XR:   layer {}: quad q ({:.3f} {:.3f} {:.3f} {:.3f}) at ({:.3f} {:.3f} {:.3f}), {:.3f} x {:.3f} m",
+					i, p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w, p.position.x, p.position.y,
+					p.position.z, q->size.width, q->size.height);
+			}
+		}
+		else if (failures % 100 == 0)
+			Console.ErrorFmt("XR: xrEndFrame failed {} times ({} now)", failures, static_cast<int>(res));
 	}
 }
 

@@ -480,6 +480,7 @@ int main(int argc, char* argv[])
 		if (const std::string serial = Emu::GetSerial(); serial != profile_serial)
 		{
 			profile_serial = serial;
+			menu.OnGameChanged();
 			web.SetProtectedFile(Emu::GetRunningGamePath());
 			// The CPU thread plugged the guns in or out as the game started (Emu::SetGunsPolicy).
 			gun_mode = !serial.empty() && gun_games.IsOn(serial);
