@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARMSX2 Installer</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<style>
+:root {
+   --bg: #070d24;
+   --card: #0f1a3c;
+   --card-edge: #23336a;
+   --text: #eef3ff;
+   --muted: #9aa8d0;
+   --accent: #5cc8ff;
+   --accent-text: #04142b;
+   --ok: #3ddc84;
+   --fail: #ff5a4e;
+   --wait: #ffb347;
+   --help-bg: #16234c;
+   --input-bg: #060b1e;
+   --focus: #5cc8ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif; }
+header {
+   position: relative; height: 150px; overflow: hidden;
+   background: #0a1640 url(hero.jpg) right center / cover no-repeat;
+   display: flex; align-items: center; padding: 0 24px;
+}
+header img.logo { height: 96px; filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
+header .tag {
+   margin-left: 16px; align-self: flex-end; margin-bottom: 22px;
+   font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 12px;
+   color: #fff; background: rgba(0,0,0,.45); padding: 4px 10px; border-radius: 999px;
+}
+main { padding: 18px 20px 28px; max-width: 760px; margin: 0 auto; }
+section.card {
+   background: var(--card); border: 1px solid var(--card-edge); border-radius: 14px;
+   padding: 18px 20px; margin-bottom: 16px; transition: opacity .2s;
+}
+section.card.disabled { opacity: .45; pointer-events: none; }
+h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+h2 .num {
+   width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
+   display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: none;
+}
+h2 .num.done { background: var(--ok); color: #062b16; }
+p.intro { margin: 4px 0 14px; color: var(--muted); }
+b { color: var(--text); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); flex: 1 1 200px; }
+input[type=text], input[type=password] {
+   background: var(--input-bg); color: var(--text); border: 1px solid var(--card-edge); border-radius: 8px;
+   padding: 9px 11px; font: inherit; width: 100%;
+}
+input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button {
+   font: inherit; font-weight: 600; border-radius: 8px; border: 0; padding: 10px 18px; cursor: pointer;
+   background: var(--accent); color: var(--accent-text);
+}
+button:disabled { opacity: .5; cursor: default; }
+button.secondary { background: transparent; color: var(--text); border: 1px solid var(--card-edge); }
+button.danger { background: var(--fail); color: #fff; }
+button.big { font-size: 17px; padding: 12px 26px; }
+a.link, button.link { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-weight: normal; }
+.frames { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.chip {
+   font-weight: 500; font-size: 13px; padding: 5px 12px; border-radius: 999px;
+   background: var(--help-bg); color: var(--text); border: 1px solid var(--card-edge);
+}
+.chip.selected { border-color: var(--accent); }
+ul.checks { list-style: none; margin: 16px 0 0; padding: 0; }
+ul.checks > li { display: grid; grid-template-columns: 26px 1fr; gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--card-edge); }
+ul.checks > li:first-child { border-top: 0; }
+.icon { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-top: 1px; }
+.icon.idle { border: 2px solid var(--card-edge); }
+.icon.ok { background: var(--ok); color: #062b16; }
+.icon.fail { background: var(--fail); color: #fff; }
+.icon.wait { background: var(--wait); color: #2b1600; }
+.icon.running { border: 3px solid var(--card-edge); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.check-title { font-weight: 600; }
+.check-detail { color: var(--muted); font-size: 13.5px; grid-column: 2; }
+.help {
+   grid-column: 2; margin-top: 8px; background: var(--help-bg); border-left: 3px solid var(--fail);
+   border-radius: 6px; padding: 10px 14px;
+}
+.help.wait { border-left-color: var(--wait); }
+.help ul { margin: 0; padding-left: 18px; }
+.help li { margin: 3px 0; }
+.help .actions { margin-top: 10px; }
+.status-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 6px 0 16px; }
+.status-grid .k { color: var(--muted); }
+.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; margin-left: 6px; white-space: nowrap; }
+.badge.ok { background: rgba(61,220,132,.15); color: var(--ok); }
+.badge.update { background: var(--accent); color: var(--accent-text); }
+.progress { height: 10px; background: var(--input-bg); border-radius: 999px; overflow: hidden; margin: 8px 0 4px; }
+.progress > div { height: 100%; background: linear-gradient(90deg, #8a5cff, var(--accent)); width: 0; transition: width .3s; }
+.progress.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+.progress-text { font-size: 13px; color: var(--muted); }
+ol.job { list-style: none; margin: 14px 0 0; padding: 0; }
+ol.job li.step { font-weight: 600; margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+ol.job li.note { color: var(--muted); font-size: 13.5px; padding-left: 30px; word-break: break-word; }
+ol.job li.error { color: var(--fail); font-size: 13.5px; padding-left: 30px; }
+ol.job .icon { width: 20px; height: 20px; font-size: 12px; }
+.banner { border-radius: 10px; padding: 14px 16px; margin-top: 16px; }
+.banner.ok { background: rgba(61,220,132,.12); border: 1px solid rgba(61,220,132,.5); }
+.banner.fail { background: rgba(255,90,78,.12); border: 1px solid rgba(255,90,78,.5); }
+.banner h3 { margin: 0 0 6px; font-size: 16px; }
+.banner ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.banner li { margin: 4px 0; }
+.uninstall { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--card-edge); font-size: 13.5px; }
+.uninstall .confirm { margin-top: 10px; background: var(--help-bg); border-radius: 8px; padding: 12px 14px; }
+.uninstall label { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; color: var(--muted); }
+footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 0 20px 20px; }
+footer a { color: var(--muted); }
+footer .credit { margin-top: 4px; }
+.hidden { display: none !important; }
+@media (prefers-reduced-motion: reduce) { .icon.running, .progress.indeterminate > div { animation: none; } }
+</style>
+</head>
+<body>
+<header>
+   <img class="logo" src="logo.png" alt="ARMSX2, Steam Frame Edition">
+   <span class="tag">Installer</span>
+</header>
+<main>
+   <section class="card" id="step1">
+      <h2><span class="num" id="num1">1</span> Connect to your Steam Frame</h2>
+      <p class="intro">On the Frame, turn on <b>Settings &gt; System &gt; Enable Developer Mode</b>, then in the <b>Developer</b>
+         section choose <b>Set User Password</b>. Keep the headset on so it stays awake.</p>
+      <div class="frames" id="frames"></div>
+      <form class="row" id="connect-form" autocomplete="off">
+         <label class="field">Frame address
+            <input type="text" id="address" spellcheck="false" placeholder="frame.local or 192.168.1.42">
+         </label>
+         <label class="field">Frame password
+            <input type="password" id="password" placeholder="Set in Developer Mode">
+         </label>
+         <button type="submit" id="connect">Connect</button>
+      </form>
+      <ul class="checks" id="checks"></ul>
+   </section>
+
+   <section class="card disabled" id="step2">
+      <h2><span class="num" id="num2">2</span> Install or update the game</h2>
+      <div class="status-grid">
+         <span class="k">On the Frame</span><span id="installed">-</span>
+         <span class="k">Latest version</span><span id="latest">-</span>
+      </div>
+      <button class="big" id="install">Install</button>
+      <div id="job"></div>
+      <div class="uninstall" id="uninstall-box">
+         <button class="link" id="uninstall-open">Uninstall the game from the Frame...</button>
+         <div class="confirm hidden" id="uninstall-confirm">
+            Remove the game, its library entry and artwork from the Frame? Your games, BIOS files, memory cards, save states
+            and texture packs are kept.
+            <label><input type="checkbox" id="uninstall-settings"> Also delete its settings, controller mapping, caches and logs</label>
+            <div class="row">
+               <button class="danger" id="uninstall-go">Uninstall</button>
+               <button class="secondary" id="uninstall-cancel">Cancel</button>
+            </div>
+         </div>
+      </div>
+   </section>
+</main>
+<footer>
+   ARMSX2: Steam Frame Edition - free software, not affiliated with Valve, Sony or the ARMSX2 and PCSX2 teams.
+   <a href="https://github.com/SPD13/ps2-volumetric" target="_blank" rel="noopener">Project page</a>
+   <span id="version"></span>
+   <span id="quit-box" class="hidden"> - <button class="link" id="quit">Quit the installer</button></span>
+   <div class="credit">Built by SPD13 (<a href="http://spd13.us" target="_blank" rel="noopener">spd13.us</a>)</div>
+</footer>
+
+<script>
+"use strict";
+const token = location.hash.slice(1);
+const $ = (id) => document.getElementById(id);
+let state = null;
+let addressEdited = false;
+let shownAddress = null;
+
+function esc(s) {
+   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+// **bold** in the installer's help texts
+function rich(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"); }
+
+async function api(path, body) {
+   const response = await fetch("/api/" + path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { "X-Token": token, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+   });
+   if (!response.ok) throw new Error(response.status);
+   return response.status === 204 ? null : response.json();
+}
+
+const icons = { ok: "&#10003;", fail: "!", wait: "?", idle: "", running: "" };
+
+function renderFrames(s) {
+   const box = $("frames");
+   if (s.discovering) { box.innerHTML = "Looking for Frames on the network..."; return; }
+   if (!s.frames || s.frames.length === 0) {
+      box.innerHTML = 'No Frame found automatically. <button class="link" data-action="discover">Search again</button>';
+      return;
+   }
+   const current = $("address").value.trim().toLowerCase();
+   box.innerHTML = "Found: " + s.frames.map((f) => {
+      const address = f.host || f.address;
+      const selected = current === address.toLowerCase() || current === f.address;
+      return `<button class="chip${selected ? " selected" : ""}" data-frame="${esc(address)}">${esc(f.name)} (${esc(f.address)})</button>`;
+   }).join(" ") + ' <button class="link" data-action="discover">Search again</button>';
+}
+
+function renderChecks(s) {
+   $("checks").innerHTML = s.checks.map((c) => {
+      let html = `<li><span class="icon ${c.status}">${icons[c.status] || ""}</span>
+         <span class="check-title">${esc(c.title)}</span>`;
+      if (c.detail) html += `<span class="check-detail">${esc(c.detail)}</span>`;
+      if ((c.status === "fail" || c.status === "wait") && c.help && c.help.length) {
+         html += `<div class="help ${c.status}"><ul>${c.help.map((h) => `<li>${rich(h)}</li>`).join("")}</ul>`;
+         if (c.action === "trust-key") html += `<div class="actions"><button data-action="trust-key">Trust the Frame's new key</button></div>`;
+         html += `</div>`;
+      }
+      return html + "</li>";
+   }).join("");
+   const failed = s.checks.some((c) => c.status === "fail");
+   $("connect").textContent = s.checking ? "Checking..." : failed ? "Check again" : "Connect";
+   $("connect").disabled = s.checking || (s.job && s.job.running);
+   $("num1").className = "num" + (s.ready ? " done" : "");
+   $("num1").innerHTML = s.ready ? "&#10003;" : "1";
+}
+
+function renderStep2(s) {
+   const job = s.job;
+   const running = !!(job && job.running);
+   $("step2").classList.toggle("disabled", !s.ready && !running);
+   const inst = s.installed;
+   const latest = s.latest;
+   const upToDate = inst.present && inst.version && latest.version && inst.version === latest.version;
+   const badge = !inst.present || latest.loading || latest.error || !latest.version ? ""
+      : upToDate ? ' <span class="badge ok">Up to date</span>' : ' <span class="badge update">Update available</span>';
+   $("installed").innerHTML = !inst.known ? "-" : !inst.present ? "Not installed yet"
+      : "Installed" + (inst.version ? ", version " + esc(inst.version) : " (an earlier version)") + badge;
+
+   if (latest.loading) $("latest").textContent = "Looking on GitHub...";
+   else if (latest.error) $("latest").innerHTML = `<span style="color:var(--fail)">${esc(latest.error)}</span> <button class="link" data-action="latest">Try again</button>`;
+   else $("latest").innerHTML = `${esc(latest.version)}, ${latest.local ? "file from" : "published"} ${esc(latest.date)} (${Math.round(latest.size / 1e6)} MB)`;
+
+   const button = $("install");
+   const same = inst.present && inst.version && inst.version === latest.version;
+   button.textContent = running && job.kind === "install" ? "Installing..." : !inst.present ? "Install" : same ? "Reinstall" : "Update to " + (latest.version || "the latest version");
+   button.disabled = running || !s.ready || !!latest.error || latest.loading;
+   $("uninstall-box").classList.toggle("hidden", !inst.present && !(running && job.kind === "uninstall"));
+   $("uninstall-go").disabled = running;
+   $("num2").className = "num" + (job && !job.running && !job.failed && job.kind === "install" ? " done" : "");
+   $("num2").innerHTML = $("num2").className.includes("done") ? "&#10003;" : "2";
+   renderJob(s);
+}
+
+function renderJob(s) {
+   const job = s.job;
+   if (!job) { $("job").innerHTML = ""; return; }
+   let html = "";
+   if (job.running && job.progress >= 0) {
+      html += `<div class="progress"><div style="width:${(job.progress * 100).toFixed(1)}%"></div></div>
+         <div class="progress-text">${esc(job.progressText)}</div>`;
+   } else if (job.running) {
+      html += `<div class="progress indeterminate"><div></div></div>`;
+   }
+   // Each step is done once the next one starts; the last one is running, done or failed with the job
+   const steps = [];
+   for (const line of job.lines) {
+      if (line.kind === "step" || steps.length === 0) steps.push({ title: line.kind === "step" ? line.text : "", lines: [] });
+      if (line.kind !== "step") steps[steps.length - 1].lines.push(line);
+   }
+   // The installer's closing notes ("On the Frame: Library > ...") are in the banner below
+   const lastStep = steps[steps.length - 1];
+   if (lastStep && lastStep.title === "Done" && !job.failed) lastStep.lines = [];
+   html += '<ol class="job">' + steps.map((step, i) => {
+      const last = i === steps.length - 1;
+      const status = !last ? "ok" : job.running ? "running" : job.failed ? "fail" : "ok";
+      return (step.title ? `<li class="step"><span class="icon ${status}">${icons[status]}</span>${esc(step.title)}</li>` : "")
+         + step.lines.map((l) => `<li class="${l.kind}">${esc(l.text)}</li>`).join("");
+   }).join("") + "</ol>";
+
+   if (!job.running && job.failed) {
+      html += `<div class="banner fail"><h3>It did not work</h3>${rich(job.message)}
+         <ul><li>To ask for help, send the installer's log: ${esc(s.logPath)}</li></ul></div>`;
+   } else if (!job.running && job.kind === "install") {
+      html += `<div class="banner ok"><h3>Installed! Put the headset on and play.</h3>
+         On the Frame: <b>Library &gt; Non-Steam &gt; ${esc(s.libraryName)}</b>.
+         <ul>
+            <li>You need a PS2 BIOS dump of your own; none is included. Add it and your games from a phone or computer: in
+               the headset, open <b>Settings &gt; Wi-Fi Transfer</b>, switch it on and open the address it shows.</li>
+            <li>The library artwork shows once Steam has restarted (restarting the headset does it).</li>
+         </ul></div>`;
+   } else if (!job.running && job.kind === "uninstall") {
+      html += `<div class="banner ok"><h3>The game was removed from the Frame.</h3>Your games, BIOS files, memory cards, save states and texture packs are still there.</div>`;
+   }
+   $("job").innerHTML = html;
+}
+
+function render(s) {
+   state = s;
+   // The address field follows the installer (the Frame it found) until the user types in it
+   if (!addressEdited && s.address !== shownAddress) { $("address").value = s.address; shownAddress = s.address; }
+   renderFrames(s);
+   renderChecks(s);
+   renderStep2(s);
+   $("quit-box").classList.toggle("hidden", !s.browser);
+   $("version").textContent = "- installer " + s.version;
+}
+
+async function poll() {
+   try { render(await api("state")); } catch (e) { /* the installer quit, or is starting */ }
+   setTimeout(poll, 400);
+}
+
+function connect() {
+   const password = $("password").value;
+   api("connect", { address: $("address").value, password });
+}
+
+$("connect-form").addEventListener("submit", (e) => { e.preventDefault(); connect(); });
+$("address").addEventListener("input", () => { addressEdited = true; });
+$("install").addEventListener("click", () => api("install", {}));
+$("uninstall-open").addEventListener("click", () => $("uninstall-confirm").classList.remove("hidden"));
+$("uninstall-cancel").addEventListener("click", () => $("uninstall-confirm").classList.add("hidden"));
+$("uninstall-go").addEventListener("click", () => {
+   $("uninstall-confirm").classList.add("hidden");
+   api("uninstall", { settings: $("uninstall-settings").checked });
+   $("uninstall-settings").checked = false;
+});
+$("quit").addEventListener("click", async () => {
+   await api("quit", {}).catch(() => {});
+   document.body.innerHTML = '<main><section class="card"><h2>The installer has quit.</h2><p class="intro">You can close this tab.</p></section></main>';
+});
+document.addEventListener("click", (e) => {
+   // The app windows cannot open new tabs: the installer opens the footer's links in the default browser
+   const link = e.target.closest("a[target=_blank]");
+   if (link && !state?.browser) {
+      e.preventDefault();
+      api("open", { url: link.href });
+      return;
+   }
+   const target = e.target.closest("[data-frame], [data-action]");
+   if (!target) return;
+   if (target.dataset.frame) {
+      $("address").value = target.dataset.frame;
+      addressEdited = true;
+      connect();
+   } else if (target.dataset.action === "discover") api("discover", {});
+   else if (target.dataset.action === "latest") api("latest", {});
+   else if (target.dataset.action === "trust-key") api("trust-key", { password: $("password").value });
+});
+poll();
+</script>
+</body>
+</html>

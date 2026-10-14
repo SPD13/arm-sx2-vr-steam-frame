@@ -44,6 +44,10 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 `run-frame.sh` starts `ps2v` inside the Steam Linux Runtime 4 ARM64 (install it from the Steam library) and logs to `~/.local/share/ps2v/logs/ps2v.log`. The emulator's own log is `~/.local/share/ps2v/logs/emulog.txt`.
 
+### Install in the Steam library
+
+The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. Players use the installer app for Windows, macOS and Linux. It finds the Frame on the network, signs in, and installs or updates the latest GitHub release in one click. For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and installs that build with the same steps, as **ARMSX2 - Steam Frame Edition (dev)**. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
+
 ### First run
 
 1. Put the headset on: the screen appears ahead of you, facing the room's forward direction (SteamVR's recenter sets it), and with no game given, the game list opens.
