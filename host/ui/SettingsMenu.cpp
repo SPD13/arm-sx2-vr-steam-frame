@@ -820,6 +820,22 @@ void SettingsMenu::RunControls()
 	}
 	if (!m_controls_guncon)
 		return;
+	// The free cell below the second column: the beam, for both guns (the Light Gun page's Beam
+	// setting: off leaves the dot, as its Dot choice does).
+	const Rect beam_cell{CONTENT_X + col_w + gap, top + 6.0f * (row_h + row_gap), col_w, row_h};
+	vr = m_settings.Get();
+	bool beam = vr.gun_beam < 0.5f;
+	if (m_gui.Drawing())
+	{
+		m_gui.Draw().FillRect(beam_cell, Theme::nav, 12.0f);
+		m_gui.Text(beam_cell.x + 18.0f, std::round(beam_cell.y + 0.5f * (beam_cell.h - m_gui.TextFont().LineHeight(Theme::body_size))),
+			"Gun Beam", Theme::body_size);
+	}
+	if (m_gui.Toggle(GuiId("gun_beam_toggle"), beam_cell.Inset(10.0f, 0.0f), &beam))
+	{
+		vr.gun_beam = beam ? 0.0f : 1.0f;
+		SetVr(vr);
+	}
 	const float below = top + 7.0f * (row_h + row_gap);
 	m_gui.Text(CONTENT_X, below + 6.0f,
 		"* in both guns' sets: with two guns, gun 2 has it. Pedal presses the Light Gun page's pedal button.",
