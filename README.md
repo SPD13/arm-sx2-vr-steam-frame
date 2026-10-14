@@ -46,7 +46,7 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ### Install in the Steam library
 
-The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. Players use the installer app for Windows, macOS and Linux. It finds the Frame on the network, signs in, and installs or updates the latest GitHub release in one click. For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and installs that build with the same steps, as **ARMSX2 - Steam Frame Edition (dev)**. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
+The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. Players use the installer app for Windows, macOS and Linux. It finds the Frame on the network, signs in, and installs or updates the latest GitHub release in one click. For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
 
 ### First run
 
