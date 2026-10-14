@@ -405,6 +405,7 @@ int main(int argc, char* argv[])
 
 	using Clock = std::chrono::steady_clock;
 	Clock::time_point next_eye_log = Clock::now() + std::chrono::seconds(5);
+	Clock::time_point next_grid_log{}; // --depth-trace: the guns' depth grid
 
 	// Hands the settings to what keeps a copy of them.
 	const auto apply_settings = [&] {
@@ -958,7 +959,25 @@ int main(int argc, char* argv[])
 			}
 			// The guns' depth, in volumetric mode (with multiview, a layer per eye).
 			if (vr.stereo && gun_mode && emu_frame.depth_image)
+			{
 				gun_depth.Process(emu_frame, emu_frame.right_image != VK_NULL_HANDLE);
+				// --depth-trace: what the guns' depth grid holds, every few seconds.
+				const GunDepthGrid* grid = GSVolumetric::IsTraceEnabled() ? gun_depth.Latest() : nullptr;
+				if (grid && Clock::now() >= next_grid_log)
+				{
+					next_grid_log = Clock::now() + std::chrono::seconds(3);
+					std::vector<float> z;
+					for (const float v : grid->znorm)
+						if (v >= 0.0f)
+							z.push_back(v);
+					std::sort(z.begin(), z.end());
+					const auto at = [&z](float q) { return z.empty() ? -1.0f : z[static_cast<size_t>(q * (z.size() - 1))]; };
+					const size_t near = static_cast<size_t>(std::count_if(z.begin(), z.end(), [&](float v) { return v >= vr.stereo_convergence; }));
+					Console.WriteLnFmt("Light gun: depth grid {} cells, Znorm min {:.4f} p10 {:.4f} median {:.4f} p90 {:.4f} max {:.4f}, "
+						"{} at or nearer than the glass ({}), depth scale {:.1f}", z.size(), at(0.0f), at(0.1f), at(0.5f), at(0.9f),
+						at(1.0f), near, vr.stereo_convergence, emu_frame.depth_scale);
+				}
+			}
 			if (emu_frame.right_image)
 			{
 				// Multiview: both eyes in one frame.
