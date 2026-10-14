@@ -177,6 +177,7 @@ The gamepad button opens the list of games in the games folder (`roms/`), with f
 | Favorites | starred games | title | serial · size |
 
 - **Favourites.** Click the ☆ next to a game to star it (it turns gold); click again to remove it. Kept in `favorites.txt`.
+- **HD.** A game with an HD texture pack installed (see [Texture packs](#texture-packs)) has an **HD** badge after its title.
 - **Starting a game.** Click its row. If another game is running, a popup asks first, since progress since the last save is lost. Clicking the running game just resumes it.
 - **Restarting.** The running game's row has a **Restart** button: after a confirmation (its current state and play since the last save are lost) the console resets and the game starts over. Time Crisis then shows its GunCon 2 calibration screen again.
 - **Starting without a game.** `ps2v` without a disc image starts with no game and opens the list. A game that fails to start brings the list back with the reason.

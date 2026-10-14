@@ -17,6 +17,7 @@
 #include <ctime>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,6 +33,8 @@ namespace TexturePacks
 	};
 	// The packs in the textures folder root, by serial.
 	std::vector<Pack> List(const std::string& root);
+	// The serials whose pack holds at least one texture (quicker than List: it stops at the first).
+	std::set<std::string> Serials(const std::string& root);
 	// Deletes the game's pack (its replacements folder; texture dumps beside it stay).
 	bool Remove(const std::string& root, const std::string& serial, std::string* error);
 	// Finishes deleting what an interrupted Remove left.

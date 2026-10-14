@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The game list the games button opens: tabs for all games, the recently added ones, the recently
-// played ones, the most played ones and the favourites, one row per game with a star that marks it as a favourite.
+// played ones, the most played ones and the favourites, one row per game with a star that marks it as a favourite
+// and an HD badge when it has a texture pack.
 // Clicking a row starts the game, after asking when another one is running; the running game's row
 // resumes it, and its Restart button starts it over, after asking. With no game or no BIOS yet (the
 // first run), it says how to add them instead, with a button to the Wi-Fi transfer settings. Like SettingsMenu it draws on a
@@ -76,6 +77,8 @@ private:
 	Gui m_gui;
 
 	std::vector<Game> m_games;
+	std::set<std::string> m_hd_serials; // games with a texture pack (an HD badge)
+	void ReadTexturePacks();
 	unsigned m_games_version = ~0u;
 	bool m_refreshing = false;
 	bool m_has_bios = true;

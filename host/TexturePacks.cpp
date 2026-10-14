@@ -83,6 +83,30 @@ std::vector<TexturePacks::Pack> TexturePacks::List(const std::string& root)
 	return packs;
 }
 
+std::set<std::string> TexturePacks::Serials(const std::string& root)
+{
+	std::set<std::string> serials;
+	std::error_code ec;
+	for (const fs::directory_entry& game : fs::directory_iterator(root, ec))
+	{
+		const std::string serial = game.path().filename().string();
+		const fs::path replacements = game.path() / REPLACEMENTS;
+		if (serial.empty() || serial[0] == '.' || !fs::is_directory(replacements, ec))
+			continue;
+		for (auto it = fs::recursive_directory_iterator(replacements, ec); !ec && it != fs::recursive_directory_iterator();
+			 it.increment(ec))
+		{
+			if (it->is_regular_file(ec) && IsTextureFile(it->path().filename().string()))
+			{
+				serials.insert(serial);
+				break;
+			}
+		}
+		ec.clear();
+	}
+	return serials;
+}
+
 bool TexturePacks::Remove(const std::string& root, const std::string& serial, std::string* error)
 {
 	const fs::path game = fs::path(root) / serial;

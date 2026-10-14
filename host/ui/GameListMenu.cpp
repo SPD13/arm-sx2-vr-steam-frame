@@ -3,6 +3,8 @@
 
 #include "GameListMenu.h"
 
+#include "TexturePacks.h"
+
 #include "fmt/format.h"
 
 #include <algorithm>
@@ -113,9 +115,20 @@ void GameListMenu::SaveFavorites() const
 	std::filesystem::rename(temp, m_favorites_path, ec);
 }
 
+void GameListMenu::ReadTexturePacks()
+{
+	std::set<std::string> serials = TexturePacks::Serials(Emu::GetTexturesFolder());
+	if (serials != m_hd_serials)
+	{
+		m_hd_serials = std::move(serials);
+		m_needs_draw = true;
+	}
+}
+
 void GameListMenu::Refresh()
 {
 	Emu::RefreshGames();
+	ReadTexturePacks();
 	m_confirm = nullptr;
 	m_needs_draw = true;
 }
@@ -185,6 +198,7 @@ bool GameListMenu::Update(const GuiInput& input)
 			std::string key = Canonical(info.path);
 			m_games.push_back({std::move(info), std::move(key)});
 		}
+		ReadTexturePacks();
 		m_needs_draw = true;
 	}
 	if (const bool refreshing = Emu::IsRefreshingGames(); refreshing != m_refreshing)
@@ -359,7 +373,19 @@ void GameListMenu::RunList()
 			// Title and details; at the right, what a click does.
 			const float text_x = star.Right() + 14.0f;
 			const float text_w = (running ? restart.x - 12.0f : row.Right() - badge_w - 24.0f) - text_x;
-			m_gui.Text(text_x, row.y + 14.0f, m_gui.Elide(game.info.title, Theme::label_size, text_w), Theme::label_size);
+			// The title, and an HD badge after it when the game has a texture pack.
+			const bool hd = !game.info.serial.empty() && m_hd_serials.count(game.info.serial) != 0;
+			constexpr float hd_w = 52.0f, hd_h = 30.0f, hd_gap = 12.0f;
+			const std::string title = m_gui.Elide(game.info.title, Theme::label_size, text_w - (hd ? hd_w + hd_gap : 0.0f));
+			m_gui.Text(text_x, row.y + 14.0f, title, Theme::label_size);
+			if (hd)
+			{
+				const float line = m_gui.TextFont().LineHeight(Theme::label_size);
+				const Rect pill{text_x + m_gui.TextWidth(title, Theme::label_size) + hd_gap,
+					row.y + 14.0f + std::round(0.5f * (line - hd_h)), hd_w, hd_h};
+				m_gui.Draw().FillRect(pill, star_on, 0.5f * hd_h); // gold, as a favourite's star
+				m_gui.TextCentered(pill, "HD", Theme::small_size, Theme::panel);
+			}
 			std::string details;
 			// On Recently Added, when it arrived even for the running game: its badge says it runs.
 			if (m_tab == Tab::RecentlyAdded)
