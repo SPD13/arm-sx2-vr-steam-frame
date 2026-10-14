@@ -80,7 +80,7 @@ The Windows project files (`pcsx2.vcxproj`) do not list our files. We build only
 **Procedure** (in `external/armsx2`):
 
 ```sh
-git fetch upstream origin
+git fetch --multiple upstream origin
 git switch ps2v && git pull --ff-only origin ps2v
 git switch -c sync/$(date +%F)
 
