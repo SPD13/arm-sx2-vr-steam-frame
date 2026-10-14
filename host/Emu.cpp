@@ -45,7 +45,10 @@
 #include "pcsx2/CDVD/CDVDcommon.h"
 #include "pcsx2/GS.h"
 #include "GS/GSVolumetric.h"
+#include "pcsx2/GameDatabase.h"
 #include "pcsx2/GameList.h"
+#include "GS/Renderers/Common/GSRenderer.h"
+#include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/INISettingsInterface.h"
 #include "pcsx2/ImGui/FullscreenUI.h"
@@ -561,6 +564,9 @@ Emu::CoreSettings Emu::GetCoreSettings()
 	settings.texture_filtering = s_base_settings->GetIntValue("EmuCore/GS", "filter", static_cast<int>(BiFiltering::PS2));
 	settings.volume = static_cast<int>(s_base_settings->GetUIntValue("SPU2/Output", "StandardVolume", 100));
 	settings.muted = s_base_settings->GetBoolValue("SPU2/Output", "OutputMuted", false);
+	settings.texture_packs = s_base_settings->GetBoolValue("EmuCore/GS", "LoadTextureReplacements", false);
+	settings.texture_packs_async = s_base_settings->GetBoolValue("EmuCore/GS", "LoadTextureReplacementsAsync", true);
+	settings.texture_packs_precache = s_base_settings->GetBoolValue("EmuCore/GS", "PrecacheTextureReplacements", false);
 	return settings;
 }
 
@@ -574,6 +580,9 @@ void Emu::SetCoreSettings(const CoreSettings& settings)
 		s_base_settings->SetIntValue("EmuCore/GS", "filter", settings.texture_filtering);
 		s_base_settings->SetUIntValue("SPU2/Output", "StandardVolume", static_cast<u32>(settings.volume));
 		s_base_settings->SetBoolValue("SPU2/Output", "OutputMuted", settings.muted);
+		s_base_settings->SetBoolValue("EmuCore/GS", "LoadTextureReplacements", settings.texture_packs);
+		s_base_settings->SetBoolValue("EmuCore/GS", "LoadTextureReplacementsAsync", settings.texture_packs_async);
+		s_base_settings->SetBoolValue("EmuCore/GS", "PrecacheTextureReplacements", settings.texture_packs_precache);
 		Host::CommitBaseSettingChanges();
 	}
 	// A slider sends a change per frame: queue one apply at a time, which reads the latest values.
@@ -677,6 +686,56 @@ const std::vector<std::string>& Emu::GetGameExtensions()
 	static const std::vector<std::string> extensions = {
 		".iso", ".chd", ".cso", ".zso", ".gz", ".bin", ".cue", ".img", ".mdf", ".mds", ".nrg", ".elf"};
 	return extensions;
+}
+
+std::string Emu::GetTexturesFolder()
+{
+	return EmuFolders::Textures;
+}
+
+std::string Emu::GetGameTitle(const std::string& serial)
+{
+	if (serial.empty())
+		return {};
+	{
+		std::lock_guard lock(s_games_mutex);
+		for (const GameInfo& game : s_games)
+		{
+			if (game.serial == serial && !game.title.empty())
+				return game.title;
+		}
+	}
+	const GameDatabaseSchema::GameEntry* entry = GameDatabase::findGame(serial);
+	if (!entry)
+		return {};
+	// The English title when the database has one: the menu's font is Latin only.
+	return entry->name_en.empty() ? entry->name : entry->name_en;
+}
+
+void Emu::TexturePackChanged(const std::string& serial, bool added)
+{
+	if (added)
+	{
+		CoreSettings settings = GetCoreSettings();
+		if (!settings.texture_packs)
+		{
+			Console.WriteLn("Texture packs: turned on for the pack just added.");
+			settings.texture_packs = true;
+			SetCoreSettings(settings); // turning them on loads the running game's pack
+			return;
+		}
+	}
+	Host::RunOnCPUThread([serial]() {
+		if (!MTGS::IsOpen() || VMManager::GetDiscSerial() != serial || !EmuConfig.GS.LoadTextureReplacements)
+			return;
+		// As the core's Reload Texture Replacements hotkey does.
+		MTGS::RunOnGSThread([]() {
+			if (!g_gs_renderer)
+				return;
+			GSTextureReplacements::ReloadReplacementMap();
+			g_gs_renderer->PurgeTextureCache(true, false, true);
+		});
+	});
 }
 
 void Emu::RefreshGames()

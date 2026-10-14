@@ -11,10 +11,10 @@
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
 // show; pointing at a button and pulling the trigger opens its panel in front of the screen and
 // pauses the game. A tooltip beside the button the pointer is on says what it does. Its trigger
-// clicks, and the thumbsticks scroll the game list. A click away from the panel, its close button,
-// or starting a game close it. The game list (the welcome screen when no game runs) keeps the gear
-// and the power button beside it, so the Wi-Fi transfer and quitting stay at hand; settings opened
-// from it go back to it when they close while no game runs.
+// clicks, and the thumbsticks scroll the game list and the texture pack list. A click away from the
+// panel, its close button, or starting a game close it. The game list (the welcome screen when no
+// game runs) keeps the gear and the power button beside it, so the Wi-Fi transfer and quitting stay
+// at hand; settings opened from it go back to it when they close while no game runs.
 //
 // A hand holding a light gun points with the gun's muzzle instead, and draws its own beam
 // (GunRenderer): the menu then only says where the ray meets the menu, if it does.

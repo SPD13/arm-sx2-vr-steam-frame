@@ -46,6 +46,13 @@ namespace Emu
 	// The folder games are listed from (and Wi-Fi transfer uploads to), and the files it lists.
 	std::string GetGamesFolder();
 	const std::vector<std::string>& GetGameExtensions();
+	// The core's texture pack folder: textures/<serial>/replacements (see TexturePacks.h).
+	std::string GetTexturesFolder();
+	// A game's title from its serial: the game list's, else the game database's; empty if unknown. Any thread.
+	std::string GetGameTitle(const std::string& serial);
+	// The texture pack of a game was added to (turns texture packs on, as ARMSX2 does when it
+	// installs one) or removed; the running game's is loaded again. Any thread.
+	void TexturePackChanged(const std::string& serial, bool added);
 
 	struct GameInfo
 	{
@@ -83,6 +90,10 @@ namespace Emu
 		int texture_filtering = 2; // BiFiltering: 0 nearest, 1 bilinear forced, 2 bilinear as the PS2 asks
 		int volume = 100; // percent
 		bool muted = false;
+		// Texture packs (LoadTextureReplacements, LoadTextureReplacementsAsync, PrecacheTextureReplacements).
+		bool texture_packs = false;
+		bool texture_packs_async = true; // the game runs on while textures load
+		bool texture_packs_precache = false; // the whole pack is loaded into memory as the game starts
 	};
 	CoreSettings GetCoreSettings();
 	// Saves them and has the CPU thread apply them.
