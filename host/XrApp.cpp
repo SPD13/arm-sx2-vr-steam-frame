@@ -461,7 +461,6 @@ bool XrApp::PollEvents()
 			case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED:
 			{
 				const auto& changed = reinterpret_cast<const XrEventDataSessionStateChanged&>(event);
-				m_focus_gained |= changed.state == XR_SESSION_STATE_FOCUSED;
 				m_session_state = changed.state;
 				Console.WriteLnFmt("XR: session state {}", static_cast<int>(m_session_state));
 				if (m_session_state == XR_SESSION_STATE_READY)
@@ -480,6 +479,16 @@ bool XrApp::PollEvents()
 				else if (m_session_state == XR_SESSION_STATE_EXITING || m_session_state == XR_SESSION_STATE_LOSS_PENDING)
 				{
 					m_exit_requested = true;
+				}
+				break;
+			}
+			case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING:
+			{
+				const auto& change = reinterpret_cast<const XrEventDataReferenceSpaceChangePending&>(event);
+				if (change.referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL)
+				{
+					m_local_space_change = std::max<XrTime>(change.changeTime, 1);
+					Console.WriteLnFmt("XR: the LOCAL space moves at {}", change.changeTime);
 				}
 				break;
 			}
@@ -632,7 +641,7 @@ bool XrApp::LocateEyes(XrTime time, XrView views[2]) const
 	       (state.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT);
 }
 
-bool XrApp::LocateHead(XrTime time, XrPosef* pose) const
+bool XrApp::LocateHead(XrTime time, XrPosef* pose, bool* tracked) const
 {
 	XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
 	if (XR_FAILED(xrLocateSpace(m_view_space, m_local_space, time, &location)))
@@ -641,6 +650,11 @@ bool XrApp::LocateHead(XrTime time, XrPosef* pose) const
 	if ((location.locationFlags & needed) != needed)
 		return false;
 	*pose = location.pose;
+	if (tracked)
+	{
+		constexpr XrSpaceLocationFlags both = XR_SPACE_LOCATION_POSITION_TRACKED_BIT | XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+		*tracked = (location.locationFlags & both) == both;
+	}
 	return true;
 }
 

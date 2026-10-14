@@ -45,7 +45,7 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ### First run
 
-1. Put the headset on: the screen appears in front of you, and with no game given, the game list opens.
+1. Put the headset on: the screen appears ahead of you, facing the room's forward direction (SteamVR's recenter sets it), and with no game given, the game list opens.
 2. You need your own PS2 BIOS dump. Open **Settings › Wi-Fi Transfer**, switch it on, open the address it shows in a browser on your computer or phone, and upload the BIOS in the **BIOS** tab. The emulator picks the first BIOS it finds in the folder.
 3. Upload games in the **ROMs** tab. They appear in the game list.
 
@@ -80,7 +80,7 @@ A navigation bar on the left lists the categories, with **Exit** last.
 |---|---|---|
 | Screen size | 1.0 – 4.0 m wide | Applies at once. Saved in `VR.ini`. |
 | Screen distance | 1.0 – 5.0 m | The screen slides along its axis. Saved in `VR.ini`. |
-| Recenter | button | Places the screen straight ahead. |
+| Recenter | button | Places the screen straight ahead of where you look. |
 
 ### 3D
 

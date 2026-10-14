@@ -634,11 +634,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			m_settings_menu->SetControllerState(input.controller);
 			if (m_settings_menu->Update(gui) || just_opened)
 				m_panel.Upload(m_settings_menu->GetCanvas());
-			if (m_settings_menu->TakeRecenterRequest())
-			{
-				result.recenter = true;
-				m_reanchor = true;
-			}
+			result.recenter = m_settings_menu->TakeRecenterRequest(); // the panel follows (Reanchor)
 			result.gun_mode = m_settings_menu->TakeGunModeRequest();
 			result.gun_action = m_settings_menu->TakeGunAction();
 			close = m_settings_menu->TakeCloseRequest();

@@ -22,6 +22,7 @@
 #include <array>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Serialises every use of the shared graphics queue: GS submits (via VKLibretro's lock_queue),
@@ -50,14 +51,10 @@ public:
 	// Handles runtime events. Returns false once the app should exit.
 	bool PollEvents();
 	bool IsSessionRunning() const { return m_session_running; }
-	// Whether the session became FOCUSED since the last call: the headset was put on, or the
-	// system dashboard closed.
-	bool TakeFocusGained()
-	{
-		const bool gained = m_focus_gained;
-		m_focus_gained = false;
-		return gained;
-	}
+	bool IsFocused() const { return m_session_state == XR_SESSION_STATE_FOCUSED; }
+	// When the runtime moves the LOCAL space (a system recenter), the time the move takes effect;
+	// 0 when it did not move since the last call.
+	XrTime TakeLocalSpaceChange() { return std::exchange(m_local_space_change, 0); }
 
 	struct Frame
 	{
@@ -74,8 +71,9 @@ public:
 	};
 	Input ReadInput();
 
-	// Head pose in the LOCAL space at the given time, if tracked.
-	bool LocateHead(XrTime time, XrPosef* pose) const;
+	// Head pose in the LOCAL space at the given time, if valid. *tracked tells whether the runtime
+	// tracks it now: a valid pose can be the last one it knew.
+	bool LocateHead(XrTime time, XrPosef* pose, bool* tracked = nullptr) const;
 	// Both eyes' views in the LOCAL space at the given time, if tracked.
 	bool LocateEyes(XrTime time, XrView views[2]) const;
 	// A controller's aim pose (0 left, 1 right) in the LOCAL space: its ray points along -Z.
@@ -108,7 +106,7 @@ private:
 	XrSpace m_view_space = XR_NULL_HANDLE;
 	XrSessionState m_session_state = XR_SESSION_STATE_UNKNOWN;
 	bool m_session_running = false;
-	bool m_focus_gained = false;
+	XrTime m_local_space_change = 0;
 	bool m_exit_requested = false;
 	bool m_has_frame_controller_ext = false;
 	bool m_profile_has_dpad = false;

@@ -214,6 +214,13 @@ static retro_hw_render_interface_vulkan s_queue_interface = [] {
 	return iface;
 }();
 
+// Places the screen ahead of the head along the room's forward (the LOCAL space's -Z, which the
+// runtime's own recenter sets), at eye height, facing back, whichever way the head looks.
+static XrPosef ScreenPoseRoomForward(const XrVector3f& head, float distance)
+{
+	return {{0.0f, 0.0f, 0.0f, 1.0f}, {head.x, head.y, head.z - distance}};
+}
+
 // Places the screen straight ahead of the head (yaw only), at eye height, facing the viewer.
 static XrPosef ScreenPoseInFrontOf(const XrPosef& head, float distance)
 {
@@ -391,7 +398,14 @@ int main(int argc, char* argv[])
 	VrSettings applied = vr;
 	unsigned applied_version = settings.Version();
 
-	bool screen_placed = false;
+	bool screen_placed = false; // shown, once placed the first time
+	// The screen waits to be placed until the head is tracked live (see the frame loop).
+	bool place_pending = true;
+	const char* place_reason = "first";
+	bool place_facing_head = false; // a recenter: in front of the head, not along the room's forward
+	XrTime place_not_before = 0; // a moved LOCAL space: not before the move
+	std::optional<XrPosef> last_head; // the head pose of the frame before, while placing
+	int frozen_head_frames = 0;
 	XrPosef screen_pose_now{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -vr.screen_distance}};
 	const auto place_screen = [&](const XrPosef& pose) {
 		screen_pose_now = pose;
@@ -501,20 +515,53 @@ int main(int argc, char* argv[])
 		const Clock::time_point t_begun = Clock::now();
 		const XrApp::Input input = xr.ReadInput();
 
-		XrPosef head;
-		// In front of the head whenever the app gains focus (the headset was put on: before that the
-		// head pose is wherever it lies; or the dashboard closed), and on request.
-		if (xr.TakeFocusGained())
-			screen_placed = false;
-		const bool recenter = pad_recenter || menu_recenter;
-		menu_recenter = pad_recenter = false;
-		if ((!screen_placed || recenter) && xr.LocateHead(frame.display_time, &head))
+		// Along the room's forward when the screen first appears and when the runtime moves the LOCAL
+		// space (its own recenter); in front of the head on request.
+		const auto request_placement = [&](const char* reason, bool facing_head) {
+			place_pending = true;
+			place_reason = reason;
+			place_facing_head = facing_head;
+			last_head.reset();
+			frozen_head_frames = 0;
+		};
+		if (const XrTime change = xr.TakeLocalSpaceChange())
 		{
-			place_screen(ScreenPoseInFrontOf(head, vr.screen_distance));
-			Console.WriteLnFmt("Screen placed ({}): head ({:.3f} {:.3f} {:.3f}) q ({:.3f} {:.3f} {:.3f} {:.3f})",
-				recenter ? "recenter" : "first", head.position.x, head.position.y, head.position.z,
-				head.orientation.x, head.orientation.y, head.orientation.z, head.orientation.w);
-			screen_placed = true;
+			request_placement("LOCAL space moved", false);
+			place_not_before = change;
+		}
+		if (pad_recenter || menu_recenter)
+			request_placement("recenter", true);
+		menu_recenter = pad_recenter = false;
+		// Only from a head the runtime tracks live. At start it reports a valid pose that is the last
+		// one it knew (on the Frame: the same pose to the bit for the first second, the headset
+		// pitched 80 degrees), and the screen placed from that faces anywhere. A tracked head moves
+		// a little from one predicted frame to the next; a frozen pose does not. Until the session has
+		// focus the headset may not be worn either.
+		XrPosef head;
+		bool head_tracked = false;
+		if (place_pending && xr.IsFocused() && frame.display_time >= place_not_before &&
+			xr.LocateHead(frame.display_time, &head, &head_tracked))
+		{
+			const bool live = head_tracked && last_head && std::memcmp(&head, &*last_head, sizeof(head)) != 0;
+			last_head = head;
+			// Not live after 3 s or so: placed anyway, from the LOCAL origin (at eye height where the
+			// runtime last recentered) or the head as it is.
+			if (!live && ++frozen_head_frames == 270)
+				Console.WarningFmt("Screen: the head is not tracked live (tracked {}), placed anyway", head_tracked);
+			if (live || frozen_head_frames >= 270)
+			{
+				if (place_facing_head)
+					place_screen(ScreenPoseInFrontOf(head, vr.screen_distance));
+				else
+					place_screen(ScreenPoseRoomForward(live ? head.position : XrVector3f{}, vr.screen_distance));
+				Console.WriteLnFmt("Screen placed ({}, {}): head ({:.3f} {:.3f} {:.3f}) q ({:.3f} {:.3f} {:.3f} {:.3f}), after {} frame(s)",
+					place_reason, place_facing_head ? "facing the head" : "room forward", head.position.x,
+					head.position.y, head.position.z, head.orientation.x, head.orientation.y, head.orientation.z,
+					head.orientation.w, frozen_head_frames + 1);
+				screen_placed = true;
+				place_pending = false;
+				menu.Reanchor();
+			}
 		}
 
 		// The light guns: which hands hold one, and where the guns are. Gun 1 is in the gun hand,

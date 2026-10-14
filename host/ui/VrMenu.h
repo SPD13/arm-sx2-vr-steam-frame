@@ -76,6 +76,8 @@ public:
 
 	// Opens the game list (at start, when no game was given).
 	void OpenGameList();
+	// The screen was placed again: an open panel moves with it.
+	void Reanchor() { m_reanchor = true; }
 
 	// Its layers, each always in the same slot (null when hidden): the panel, the two button groups, the
 	// tooltip, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
