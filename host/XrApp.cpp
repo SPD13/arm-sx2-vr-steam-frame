@@ -120,6 +120,17 @@ bool XrApp::CreateInstance()
 		Console.WriteLnFmt("XR: system {}, up to {} layers", system_props.systemName,
 			system_props.graphicsProperties.maxLayerCount);
 
+	uint32_t blend_count = 0;
+	if (XR_SUCCEEDED(xrEnumerateEnvironmentBlendModes(
+			m_instance, m_system, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &blend_count, nullptr)))
+	{
+		std::vector<XrEnvironmentBlendMode> modes(blend_count);
+		xrEnumerateEnvironmentBlendModes(
+			m_instance, m_system, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, blend_count, &blend_count, modes.data());
+		m_alpha_blend = std::find(modes.begin(), modes.end(), XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND) != modes.end();
+	}
+	Console.WriteLnFmt("XR: passthrough (alpha-blend environment mode) {}", m_alpha_blend ? "offered" : "not offered");
+
 	auto pfnGetRequirements =
 		GetXrFunction<PFN_xrGetVulkanGraphicsRequirementsKHR>(m_instance, "xrGetVulkanGraphicsRequirementsKHR");
 	auto pfnGetInstanceExtensions =
@@ -521,11 +532,37 @@ XrApp::Frame XrApp::BeginFrame()
 	return frame;
 }
 
-void XrApp::EndFrame(const Frame& frame, const XrCompositionLayerBaseHeader* const* layers, uint32_t layer_count)
+const XrCompositionLayerBaseHeader* XrApp::BackLayer(XrTime time, const XrSwapchainSubImage& clear)
+{
+	if (XrView views[2]; LocateEyes(time, views))
+	{
+		for (int eye = 0; eye < 2; eye++)
+		{
+			m_back_views[eye] = {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW};
+			m_back_views[eye].pose = views[eye].pose;
+			m_back_views[eye].fov = views[eye].fov;
+		}
+		m_back_views_valid = true;
+	}
+	if (!m_back_views_valid)
+		return nullptr;
+	for (XrCompositionLayerProjectionView& view : m_back_views)
+		view.subImage = clear;
+	m_back_layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+	m_back_layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+	m_back_layer.space = m_local_space;
+	m_back_layer.viewCount = 2;
+	m_back_layer.views = m_back_views.data();
+	return reinterpret_cast<const XrCompositionLayerBaseHeader*>(&m_back_layer);
+}
+
+void XrApp::EndFrame(const Frame& frame, const XrCompositionLayerBaseHeader* const* layers, uint32_t layer_count,
+	bool passthrough)
 {
 	XrFrameEndInfo info{XR_TYPE_FRAME_END_INFO};
 	info.displayTime = frame.display_time;
-	info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+	info.environmentBlendMode =
+		passthrough && m_alpha_blend ? XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND : XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
 	info.layerCount = frame.should_render ? layer_count : 0;
 	info.layers = layers;
 	std::lock_guard lock(GraphicsQueueMutex());

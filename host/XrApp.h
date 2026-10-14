@@ -62,7 +62,16 @@ public:
 		bool should_render = false;
 	};
 	Frame BeginFrame();
-	void EndFrame(const Frame& frame, const XrCompositionLayerBaseHeader* const* layers, uint32_t layer_count);
+	// passthrough: the room shows through where the layers are transparent (SupportsPassthrough).
+	void EndFrame(const Frame& frame, const XrCompositionLayerBaseHeader* const* layers, uint32_t layer_count,
+		bool passthrough = false);
+
+	// Passthrough: SteamVR offers the room seen through the headset's cameras as the alpha-blend
+	// environment mode, and shows it only through a projection layer. BackLayer is that layer, fully
+	// transparent: `clear` (a transparent image) at both eyes' views, the last ones known when the eyes
+	// are not located this frame; null before they were ever located. It goes first in the list.
+	bool SupportsPassthrough() const { return m_alpha_blend; }
+	const XrCompositionLayerBaseHeader* BackLayer(XrTime time, const XrSwapchainSubImage& clear);
 
 	struct Input
 	{
@@ -110,6 +119,10 @@ private:
 	bool m_exit_requested = false;
 	bool m_has_frame_controller_ext = false;
 	bool m_profile_has_dpad = false;
+	bool m_alpha_blend = false; // the runtime offers XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND
+	bool m_back_views_valid = false;
+	std::array<XrCompositionLayerProjectionView, 2> m_back_views{};
+	XrCompositionLayerProjection m_back_layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
 
 	VkInstance m_vk_instance = VK_NULL_HANDLE;
 	std::string m_vk_device_extension_storage;

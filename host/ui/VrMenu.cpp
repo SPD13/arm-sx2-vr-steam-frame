@@ -40,6 +40,8 @@ namespace
 	constexpr float TOOLTIP_TEXT_SIZE = 32.0f;
 	constexpr float TOOLTIP_PAD_PX = 20.0f;
 	constexpr float TOOLTIP_GAP = 0.02f; // between a button and its tooltip
+	// Between the Wi-Fi line and the notice below it, in the atlas and below the screen alike.
+	constexpr int NOTICE_GAP_PX = 21;
 	// The Wi-Fi line below the screen: smaller than a tooltip.
 	constexpr int WEB_LINE_H_PX = 48;
 	constexpr float WEB_LINE_TEXT_SIZE = 24.0f;
@@ -55,6 +57,8 @@ namespace
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
 	constexpr uint32_t VOLUMETRIC_ICON = 0xf1b2; // cube
 	constexpr uint32_t FLAT_ICON = 0xf0c8; // square
+	constexpr uint32_t PASSTHROUGH_ICON = 0xf06e; // eye
+	constexpr uint32_t VOID_ICON = 0xf070; // eye-slash
 	constexpr uint32_t GUN_MODE_ICON = 0xe19b; // gun
 	constexpr uint32_t ONE_GUN_ICON = 0xf007; // user
 	constexpr uint32_t TWO_GUNS_ICON = 0xf500; // user-group: two people
@@ -133,8 +137,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	// The groups' layouts: each button's place below its group's first. At the top, the light gun's
 	// two come after a gap below the game list.
 	const float spacing = BUTTON_SIZE + BUTTON_GAP;
-	static constexpr int group_of[NUM_BUTTONS] = {0, 0, 1, 0, 0, 2, 2}; // GEAR ... POWER
-	static constexpr float slot_of[NUM_BUTTONS] = {0, 1, 0, 2, 3, 0, 1}; // in spacings
+	static constexpr int group_of[NUM_BUTTONS] = {0, 0, 1, 1, 0, 0, 2, 2}; // GEAR ... POWER
+	static constexpr float slot_of[NUM_BUTTONS] = {0, 1, 0, 1, 2, 3, 0, 1}; // in spacings
 	for (int b = 0; b < NUM_BUTTONS; b++)
 	{
 		Button& button = m_buttons[b];
@@ -142,8 +146,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		button.offset = slot_of[b] * spacing + (b == GUN_MODE || b == GUNS ? BUTTON_GROUP_GAP : 0.0f);
 		m_groups[button.group].height = std::max(m_groups[button.group].height, button.offset + BUTTON_SIZE);
 	}
-	// The atlas: the button groups side by side; right of them the tooltip, the notice and the Wi-Fi
-	// line one above the other, then the beam, the dot and the pad; the messages below all of it.
+	// The atlas: the button groups side by side; right of them the tooltip, the Wi-Fi line and the
+	// notice one above the other, then the beam, the dot and the pad; the messages below all of it.
 	const auto place = [](OverlayLayer::Part& part, int x, int y, int w, int h) {
 		part.rect = {{x, y}, {w, h}};
 		part.size = {w * METERS_PER_PX, h * METERS_PER_PX};
@@ -158,8 +162,10 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		x += BUTTON_PX + ATLAS_GUTTER_PX;
 	}
 	int y = place(m_tooltip, x, 0, TOOLTIP_W_PX, TOOLTIP_H_PX);
-	y = place(m_notice, x, y, TOOLTIP_W_PX, TOOLTIP_H_PX);
-	y = place(m_web_line, x, y, TOOLTIP_W_PX, WEB_LINE_H_PX);
+	const int below_y = y;
+	place(m_web_line, x, below_y, TOOLTIP_W_PX, WEB_LINE_H_PX);
+	y = place(m_notice, x, below_y + WEB_LINE_H_PX + NOTICE_GAP_PX, TOOLTIP_W_PX, TOOLTIP_H_PX);
+	place(m_below, x, below_y, TOOLTIP_W_PX, WEB_LINE_H_PX + NOTICE_GAP_PX + TOOLTIP_H_PX);
 	place(m_beam, x, y, BEAM_W_PX, BEAM_H_PX);
 	place(m_cursor, x + BEAM_W_PX + ATLAS_GUTTER_PX, y, CURSOR_PX, CURSOR_PX);
 	y = place(m_pad, x + BEAM_W_PX + CURSOR_PX + 2 * ATLAS_GUTTER_PX, y, 4, 4) - 4 + CURSOR_PX;
@@ -205,6 +211,9 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_buttons[GAMES].icon = GAMES_ICON;
 	m_buttons[MODE_3D].lit = m_settings.Get().stereo;
 	m_buttons[MODE_3D].icon = m_buttons[MODE_3D].lit ? VOLUMETRIC_ICON : FLAT_ICON;
+	m_buttons[PASSTHROUGH].disabled = !xr.SupportsPassthrough();
+	m_buttons[PASSTHROUGH].lit = m_settings.Get().passthrough && xr.SupportsPassthrough();
+	m_buttons[PASSTHROUGH].icon = m_buttons[PASSTHROUGH].lit ? PASSTHROUGH_ICON : VOID_ICON;
 	m_buttons[GUN_MODE].icon = GUN_MODE_ICON;
 	m_buttons[GUNS].icon = m_guns > 1 ? TWO_GUNS_ICON : ONE_GUN_ICON;
 	m_buttons[GUN_MODE].lit = m_gun_on;
@@ -301,6 +310,10 @@ std::string VrMenu::TooltipText(int button) const
 			return m_open == Panel::Games && m_has_game ? "Back to the game" : "Game list";
 		case MODE_3D:
 			return m_settings.Get().stereo ? "3D: volumetric" : "3D: flat";
+		case PASSTHROUGH:
+			if (!m_xr->SupportsPassthrough())
+				return "Passthrough (SteamVR offers none here)";
+			return m_settings.Get().passthrough ? "Passthrough: your room" : "Passthrough: off (dark void)";
 		case GUN_MODE:
 			if (!m_has_game)
 				return "Light gun mode (start a game first)";
@@ -356,6 +369,17 @@ void VrMenu::UpdateModeButton()
 		return;
 	button.lit = volumetric;
 	button.icon = volumetric ? VOLUMETRIC_ICON : FLAT_ICON;
+	DrawButton(button);
+}
+
+void VrMenu::UpdatePassthroughButton()
+{
+	Button& button = m_buttons[PASSTHROUGH];
+	const bool on = m_settings.Get().passthrough && m_xr->SupportsPassthrough();
+	if (button.lit == on)
+		return;
+	button.lit = on;
+	button.icon = on ? PASSTHROUGH_ICON : VOID_ICON;
 	DrawButton(button);
 }
 
@@ -549,6 +573,7 @@ void VrMenu::Open(Panel panel)
 	if (panel == Panel::Settings)
 	{
 		m_settings_menu->SetFrameControllers(m_xr->HasFrameControllers());
+		m_settings_menu->SetPassthroughAvailable(m_xr->SupportsPassthrough());
 		m_settings_menu->Refresh();
 	}
 	else
@@ -634,10 +659,15 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	m_screen_height = screen_height;
 	UpdateWebLine();
 	UpdateMessages();
-	// The notice below the screen, and below the Wi-Fi line when it shows.
-	const float notice_top = m_web_line_text.empty() ? -0.5f * screen_height : m_web_line_y - 0.5f * m_web_line.size.height;
+	// The notice below the screen, and below the Wi-Fi line when it shows: then both are one quad,
+	// from the Wi-Fi line's top.
+	const float web_line_top = m_web_line_y + 0.5f * m_web_line.size.height;
+	const float notice_top = m_web_line_text.empty() ? -0.5f * screen_height - TOOLTIP_GAP :
+	                                                   web_line_top - (WEB_LINE_H_PX + NOTICE_GAP_PX) * METERS_PER_PX;
 	m_notice.pose = screen;
-	m_notice.pose.position = Transform(screen, {0.0f, notice_top - TOOLTIP_GAP - 0.5f * m_notice.size.height, 0.0f});
+	m_notice.pose.position = Transform(screen, {0.0f, notice_top - 0.5f * m_notice.size.height, 0.0f});
+	m_below.pose = screen;
+	m_below.pose.position = Transform(screen, {0.0f, web_line_top - 0.5f * m_below.size.height, 0.0f});
 	m_pointers = pointers;
 
 	// A game from the list that would not start: back to the list, which says why.
@@ -666,6 +696,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	for (Button& button : m_buttons)
 		button.y = m_groups[button.group].top_y - button.offset;
 	UpdateModeButton();
+	UpdatePassthroughButton();
 	if (m_open != Panel::None && m_reanchor)
 		AnchorPanel();
 	m_reanchor = false;
@@ -790,6 +821,15 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 				vr.stereo = !vr.stereo;
 				m_settings.Set(vr);
 				UpdateModeButton();
+				m_swallow[hand] = true;
+			}
+			else if (hovered == PASSTHROUGH)
+			{
+				VrSettings vr = m_settings.Get();
+				vr.passthrough = !vr.passthrough;
+				m_settings.Set(vr);
+				Console.WriteLnFmt("Menu: passthrough {}", vr.passthrough ? "on" : "off");
+				UpdatePassthroughButton();
 				m_swallow[hand] = true;
 			}
 			else if (hovered == PAUSE)
@@ -938,8 +978,8 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 7 + NUM_GROUPS,
-		"the panel, the button groups, the tooltip, the notice, the Wi-Fi line, the messages, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 6 + NUM_GROUPS,
+		"the panel, the button groups, the tooltip, below the screen, the messages, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
@@ -961,16 +1001,19 @@ void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 	}
 	if (m_show_tooltip)
 		slots[1 + NUM_GROUPS] = m_atlas.Layer(m_tooltip);
-	if (std::chrono::steady_clock::now() < m_notice_until)
+	const bool notice = std::chrono::steady_clock::now() < m_notice_until;
+	if (notice && !m_web_line_text.empty())
+		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_below);
+	else if (notice)
 		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_notice);
-	if (!m_web_line_text.empty())
-		slots[3 + NUM_GROUPS] = m_atlas.Layer(m_web_line);
+	else if (!m_web_line_text.empty())
+		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_web_line);
 	if (!m_messages_text.empty())
-		slots[4 + NUM_GROUPS] = m_atlas.Layer(m_messages);
+		slots[3 + NUM_GROUPS] = m_atlas.Layer(m_messages);
 	if (m_show_pointer)
-		slots[5 + NUM_GROUPS] = m_atlas.Layer(m_beam);
+		slots[4 + NUM_GROUPS] = m_atlas.Layer(m_beam);
 	if (m_show_cursor)
-		slots[6 + NUM_GROUPS] = m_atlas.Layer(m_cursor);
+		slots[5 + NUM_GROUPS] = m_atlas.Layer(m_cursor);
 }
 
 bool VrMenu::GetPadLayer(XrCompositionLayerQuad* quad)

@@ -56,7 +56,7 @@ The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition
 
 ## In the headset
 
-Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, the 3D button at mid height, and pause and power at the bottom:
+Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, the 3D and passthrough buttons at mid height, and pause and power at the bottom:
 
 | Button | Does |
 |---|---|
@@ -65,6 +65,7 @@ Round buttons sit just outside the screen, on its right side, so they never cove
 | 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
 | ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
+| 👁 Eye (below the cube) | Switches [passthrough](#display) at once: your room around the screen (eye, lit) or the dark void (crossed-out eye). Greyed when SteamVR offers no passthrough |
 | ⏸ Pause (bottom, above power) | Pauses or resumes the game; lit (a play icon) while paused. Menus opened meanwhile leave it paused, and another game starts unpaused |
 | ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit** |
 
@@ -87,6 +88,7 @@ A navigation bar on the left lists the categories, with **Exit** last.
 |---|---|---|
 | Screen size | 1.0 – 4.0 m wide | Applies at once. Saved in `VR.ini`. |
 | Screen distance | 1.0 – 5.0 m | The screen slides along its axis. Saved in `VR.ini`. |
+| Passthrough | on · off | Shows your room, through the headset's cameras, around the screen instead of the dark void (default on). Applies at once, as the eye button beside the screen. Your last choice, here or with the button, is saved in `VR.ini` (`[Mode] passthrough`) and kept at the next start. |
 | Recenter | button | Places the screen straight ahead of where you look. |
 
 ### 3D

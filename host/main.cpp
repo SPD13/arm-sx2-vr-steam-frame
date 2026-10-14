@@ -503,6 +503,8 @@ int main(int argc, char* argv[])
 			apply_gun_depth();
 			if (vr.stereo != applied.stereo)
 				Console.WriteLnFmt("3D: {}", vr.stereo ? "volumetric" : "flat");
+			if (vr.passthrough != applied.passthrough)
+				Console.WriteLnFmt("Passthrough: {}", vr.passthrough ? "on" : "off");
 			// A new distance moves the screen along its axis; a new width moves the panels beside it.
 			if (screen_placed && (vr.screen_distance != applied.screen_distance || vr.screen_width != applied.screen_width))
 				place_screen(PushScreen(screen_pose_now, vr.screen_distance - applied.screen_distance));
@@ -1003,6 +1005,7 @@ int main(int argc, char* argv[])
 		// quad standing in when it is hidden (see pads).
 		enum Slot
 		{
+			SLOT_BACK, // passthrough's transparent projection layer, behind everything (XrApp::BackLayer)
 			SLOT_SCREEN, // the screen: the left eye's (volumetric) or both eyes'
 			SLOT_SCREEN_RIGHT, // volumetric: the right eye's
 			SLOT_MENU, // VrMenu::NUM_LAYER_SLOTS of them
@@ -1011,6 +1014,11 @@ int main(int argc, char* argv[])
 		};
 		static_assert(NUM_SLOTS <= std::tuple_size_v<decltype(pads)>, "a pad per slot");
 		std::array<const XrCompositionLayerBaseHeader*, NUM_SLOTS> slots{};
+		// Passthrough: where SteamVR offers it, its layer is there with passthrough off too (the void
+		// then shows through it), so that switching it moves no layer in the list. Its image is the
+		// menu's invisible pad.
+		if (XrCompositionLayerQuad clear; xr.SupportsPassthrough() && menu.GetPadLayer(&clear))
+			slots[SLOT_BACK] = xr.BackLayer(frame.display_time, clear.subImage);
 		{
 			// Volumetric: each eye its own picture. Flat (no parallax: both are the same), or while one
 			// eye's frames have stopped: one picture for both eyes.
@@ -1064,7 +1072,7 @@ int main(int argc, char* argv[])
 				layers[layer_count++] = slots[i];
 		}
 		const Clock::time_point t_rendered = Clock::now();
-		xr.EndFrame(frame, layers, layer_count);
+		xr.EndFrame(frame, layers, layer_count, vr.passthrough && slots[SLOT_BACK] != nullptr);
 		{
 			const auto ms = [](Clock::time_point a, Clock::time_point b) {
 				return std::chrono::duration<float, std::milli>(b - a).count();

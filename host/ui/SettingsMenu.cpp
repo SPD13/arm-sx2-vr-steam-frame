@@ -400,6 +400,20 @@ void SettingsMenu::RunDisplay()
 		1.0f, 4.0f, 0.1f, fmt::format("{:.1f} m", vr.screen_width));
 	changed |= m_gui.Slider(GuiId("screen_distance"), Row("Screen distance", "How far in front of you the screen stands."),
 		&vr.screen_distance, 1.0f, 5.0f, 0.1f, fmt::format("{:.1f} m", vr.screen_distance));
+	m_gui.SetDisabled(!m_passthrough_available);
+	bool passthrough = vr.passthrough && m_passthrough_available;
+	if (m_gui.Toggle(GuiId("passthrough"),
+			Row("Passthrough", "Shows your room around the screen instead of the dark void. The eye button below "
+							   "the cube does the same.",
+				52.0f, !m_passthrough_available),
+			&passthrough))
+	{
+		vr.passthrough = passthrough;
+		changed = true;
+	}
+	m_gui.SetDisabled(false);
+	if (!m_passthrough_available)
+		Note("SteamVR offers no passthrough here.", Theme::text_muted);
 	if (changed)
 		SetVr(vr);
 

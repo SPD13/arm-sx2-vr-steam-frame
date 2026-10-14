@@ -29,6 +29,9 @@ struct VrSettings
 	// Mode: volumetric (geometric stereo: the GS draws the game from where each eye is, parallax by
 	// Z), or flat (the same picture for both eyes). The GS always draws both eyes, so it switches live.
 	bool stereo = true;
+	// What surrounds the screen: the room through the headset's cameras (passthrough), or the dark void.
+	// The last choice is kept in VR.ini for the next start.
+	bool passthrough = true;
 	// Geometric stereo
 	float stereo_depth = 3.0f; // meters behind the screen for the farthest geometry
 	float stereo_convergence = 0.12f; // normalised Z on the screen plane

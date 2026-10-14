@@ -5,7 +5,9 @@
 // down: a gear for the SettingsMenu, a gamepad for the GameListMenu, then after a gap the light
 // gun's two: light gun mode on or off (a gun, lit while on) and one or two guns (one or two
 // people, only while light gun mode is on). At mid height, the 3D mode (volumetric, a lit cube, or
-// flat, a square; switched at once with a click). At the bottom, level with the screen's bottom edge: pause (lit while the
+// flat, a square; switched at once with a click) and, below it, passthrough (the room around the
+// screen, a lit eye, or the dark void, a crossed-out eye; greyed where SteamVR offers no
+// passthrough). At the bottom, level with the screen's bottom edge: pause (lit while the
 // user paused the game; menus opened and closed meanwhile leave it paused) and, below it, a red
 // power button that quits after a confirmation. One controller is the pointer: the one that pulled its trigger last (the
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
@@ -88,10 +90,11 @@ public:
 	void Reanchor() { m_reanchor = true; }
 
 	// Its layers, each always in the same slot (null when hidden): the panel, the three button groups, the
-	// tooltip, the notice below the screen, the Wi-Fi line below the screen, the emulator's messages
-	// above the screen, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
-	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 10;
+	// tooltip, what shows below the screen (the Wi-Fi line, the notice, or both in one quad), the
+	// emulator's messages above the screen, the pointer's beam and its dot. SteamVR shows quad layers as
+	// overlays matched by their place in the layer list, so a layer that moved in the list was shown for
+	// a frame where another had been.
+	static constexpr int NUM_LAYER_SLOTS = 9;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 	// An invisible quad, to stand in for a hidden layer and keep the others in their place in the
 	// list (see main.cpp). False until Create.
@@ -136,6 +139,7 @@ private:
 		GEAR,
 		GAMES,
 		MODE_3D,
+		PASSTHROUGH,
 		GUN_MODE,
 		GUNS,
 		PAUSE,
@@ -143,7 +147,8 @@ private:
 		NUM_BUTTONS
 	};
 	// Buttons share a quad layer per group (there are only 16 layers): the top ones (the gear, the
-	// game list and the light gun's), the 3D button, and the bottom ones (pause and power).
+	// game list and the light gun's), the middle ones (3D and passthrough), and the bottom ones (pause
+	// and power).
 	struct ButtonGroup
 	{
 		OverlayLayer::Part part;
@@ -157,6 +162,8 @@ private:
 	void DrawGroup(int group);
 	// The 3D mode button as the setting is (it can change on the settings page too).
 	void UpdateModeButton();
+	// The passthrough button as the setting is, greyed where the runtime has no passthrough.
+	void UpdatePassthroughButton();
 	void UpdatePauseButton();
 	// What the button does, as its tooltip says it.
 	std::string TooltipText(int button) const;
@@ -213,6 +220,9 @@ private:
 	float m_web_line_y = 0.0f; // its centre, meters above the screen's centre
 	OverlayLayer::Part m_notice;
 	Canvas m_notice_canvas;
+	// The Wi-Fi line and the notice below it in one quad, when both show: they lie in the atlas as they
+	// do below the screen (a layer fewer, for passthrough's).
+	OverlayLayer::Part m_below;
 	std::chrono::steady_clock::time_point m_notice_until{};
 	// The emulator's messages (Emu::GetMessages), stacked above the screen: outside the game's
 	// picture, where the light gun's sensor does not see them.

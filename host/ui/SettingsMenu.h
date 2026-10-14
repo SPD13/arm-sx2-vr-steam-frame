@@ -39,6 +39,8 @@ public:
 	void ShowTransferPage();
 	// Which controller layout the Controls page shows.
 	void SetFrameControllers(bool frame) { m_frame_controllers = frame; }
+	// Whether the runtime offers passthrough, for the Display page.
+	void SetPassthroughAvailable(bool available) { m_passthrough_available = available; }
 	// The controllers as they are this frame, for mapping a control (call before Update).
 	void SetControllerState(const ControllerState& state) { m_controller = state; }
 	// While mapping a control, the triggers are inputs to map, not clicks: no click, no closing.
@@ -145,6 +147,7 @@ private:
 	Dialog m_dialog = Dialog::None;
 	bool m_dialog_only = false; // ShowQuitDialog: no settings around the dialog
 	bool m_frame_controllers = true;
+	bool m_passthrough_available = true;
 	bool m_needs_draw = true;
 	bool m_close_requested = false;
 	bool m_recenter_requested = false;
