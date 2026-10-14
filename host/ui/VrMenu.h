@@ -86,9 +86,9 @@ public:
 	void Reanchor() { m_reanchor = true; }
 
 	// Its layers, each always in the same slot (null when hidden): the panel, the three button groups, the
-	// tooltip, the notice below the screen, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
+	// tooltip, the notice below the screen, the Wi-Fi line below the screen, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
 	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 8;
+	static constexpr int NUM_LAYER_SLOTS = 9;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
@@ -187,6 +187,15 @@ private:
 	OverlayLayer m_tooltip;
 	Canvas m_tooltip_canvas;
 	std::string m_tooltip_text; // what m_tooltip shows
+	// While Wi-Fi transfer runs, a line below the screen with its address; a click opens its page.
+	void UpdateWebLine();
+	OverlayLayer m_web_line;
+	Canvas m_web_line_canvas;
+	std::string m_web_line_text; // what it shows, empty while hidden
+	bool m_web_line_hovered = false; // the pointer is on it
+	bool m_web_line_drawn_hovered = false; // as drawn
+	float m_web_line_width = 0.0f; // the pill's, meters
+	float m_web_line_y = 0.0f; // its centre, meters above the screen's centre
 	OverlayLayer m_notice;
 	Canvas m_notice_canvas;
 	std::chrono::steady_clock::time_point m_notice_until{};

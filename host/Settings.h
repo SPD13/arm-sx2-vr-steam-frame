@@ -33,6 +33,7 @@ struct VrSettings
 	float stereo_depth = 3.0f; // meters behind the screen for the farthest geometry
 	float stereo_convergence = 0.12f; // normalised Z on the screen plane
 	// Wi-Fi transfer
+	bool web_enabled = false; // on when the app last closed: started again at launch
 	bool web_require_code = true; // the page asks for a 6-digit code shown in the menu
 	// Controllers
 	bool show_controllers = true; // the hands without a light gun show SteamVR's controller models

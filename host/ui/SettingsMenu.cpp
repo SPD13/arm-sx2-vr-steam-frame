@@ -630,6 +630,10 @@ void SettingsMenu::RunTransfer()
 		else
 			m_web.Stop();
 		m_web_status = m_web.GetStatus();
+		// Remembered: on again at the next launch.
+		VrSettings remembered = m_settings.Get();
+		remembered.web_enabled = on;
+		SetVr(remembered);
 	}
 	if (!on && !web.error.empty())
 		Note(web.error, Theme::danger);

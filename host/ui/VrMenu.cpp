@@ -39,6 +39,9 @@ namespace
 	constexpr float TOOLTIP_TEXT_SIZE = 32.0f;
 	constexpr float TOOLTIP_PAD_PX = 20.0f;
 	constexpr float TOOLTIP_GAP = 0.02f; // between a button and its tooltip
+	// The Wi-Fi line below the screen: smaller than a tooltip.
+	constexpr int WEB_LINE_H_PX = 48;
+	constexpr float WEB_LINE_TEXT_SIZE = 24.0f;
 	constexpr float METERS_PER_PX = BUTTON_SIZE / static_cast<float>(BUTTON_PX);
 	constexpr float BUTTON_GROUP_GAP = 0.05f; // more between the menu buttons and the light gun's
 	constexpr uint32_t GEAR_ICON = 0xf013;
@@ -110,7 +113,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		!buttons_made || !m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
 		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX) ||
 		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX) ||
-		!m_notice.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX))
+		!m_notice.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX) ||
+		!m_web_line.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, WEB_LINE_H_PX))
 	{
 		Destroy();
 		return false;
@@ -166,6 +170,8 @@ void VrMenu::Destroy()
 	m_show_tooltip = false;
 	m_tooltip.Destroy();
 	m_notice.Destroy();
+	m_web_line.Destroy();
+	m_web_line_text.clear();
 	m_beam.Destroy();
 	m_cursor.Destroy();
 	for (ButtonGroup& group : m_groups)
@@ -315,6 +321,41 @@ void VrMenu::OnGameChanged()
 	UpdatePauseButton();
 }
 
+void VrMenu::UpdateWebLine()
+{
+	const WebServer::Status web = m_web.GetStatus();
+	const std::string text = web.running && !web.url.empty() ? "Wi-Fi server ON at " + web.url : std::string();
+	const bool hovered = !text.empty() && m_web_line_hovered;
+	if (text != m_web_line_text || (hovered != m_web_line_drawn_hovered && !text.empty()))
+	{
+		m_web_line_text = text;
+		m_web_line_drawn_hovered = hovered;
+		if (!text.empty())
+		{
+			// A pill as wide as the text, centred in the layer; lit while pointed at.
+			Canvas& c = m_web_line_canvas;
+			c.Resize(TOOLTIP_W_PX, WEB_LINE_H_PX);
+			c.Clear();
+			const float text_w = m_text.Measure(text, WEB_LINE_TEXT_SIZE);
+			const float pill_w = std::min(text_w + 2.0f * TOOLTIP_PAD_PX, static_cast<float>(TOOLTIP_W_PX));
+			const Rect pill{0.5f * (TOOLTIP_W_PX - pill_w), 0.0f, pill_w, static_cast<float>(WEB_LINE_H_PX)};
+			c.FillRect(pill, hovered ? Theme::accent : Theme::panel.WithAlpha(0.85f), 0.5f * WEB_LINE_H_PX);
+			c.StrokeRect(pill, hovered ? Theme::accent_hover : Theme::border, 0.5f * WEB_LINE_H_PX, 2.0f);
+			c.SetClip(pill.Inset(TOOLTIP_PAD_PX, 0.0f));
+			c.DrawText(m_text, WEB_LINE_TEXT_SIZE, pill.x + TOOLTIP_PAD_PX,
+				0.5f * (WEB_LINE_H_PX - m_text.LineHeight(WEB_LINE_TEXT_SIZE)), text, Theme::text);
+			c.ResetClip();
+			m_web_line.Upload(c);
+			m_web_line.SetSize(TOOLTIP_W_PX * METERS_PER_PX, WEB_LINE_H_PX * METERS_PER_PX);
+			m_web_line_width = pill_w * METERS_PER_PX;
+		}
+	}
+	m_web_line_y = -0.5f * m_screen_height - TOOLTIP_GAP - 0.5f * WEB_LINE_H_PX * METERS_PER_PX;
+	XrPosef pose = m_screen;
+	pose.position = Transform(m_screen, {0.0f, m_web_line_y, 0.0f});
+	m_web_line.SetPose(pose);
+}
+
 void VrMenu::ShowNotice(std::string text, float seconds)
 {
 	if (!m_created)
@@ -334,9 +375,6 @@ void VrMenu::ShowNotice(std::string text, float seconds)
 	c.ResetClip();
 	m_notice.Upload(c);
 	m_notice.SetSize(TOOLTIP_W_PX * METERS_PER_PX, TOOLTIP_H_PX * METERS_PER_PX);
-	XrPosef pose = m_screen;
-	pose.position = Transform(m_screen, {0.0f, -0.5f * m_screen_height - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
-	m_notice.SetPose(pose);
 	m_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(seconds * 1000.0f));
 	Console.WriteLnFmt("Menu: notice \"{}\"", text);
 }
@@ -487,10 +525,13 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	m_screen = screen;
 	m_screen_width = screen_width;
 	m_screen_height = screen_height;
+	UpdateWebLine();
 	if (m_notice.HasImage())
 	{
+		// Below the screen, and below the Wi-Fi line when it shows.
+		const float top = m_web_line_text.empty() ? -0.5f * screen_height : m_web_line_y - 0.5f * m_web_line.Size().height;
 		XrPosef pose = screen;
-		pose.position = Transform(screen, {0.0f, -0.5f * screen_height - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
+		pose.position = Transform(screen, {0.0f, top - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
 		m_notice.SetPose(pose);
 	}
 	m_pointers = pointers;
@@ -585,6 +626,16 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		on_button[h] = nearest >= 0 && distance < reach ? nearest : -1;
 		m_on_button[h] = on_button[h];
 	}
+	// The Wi-Fi line below the screen, taken like a button.
+	bool on_web[2] = {};
+	for (int h = 0; h < 2; h++)
+	{
+		const Hit& hit = button_hits[h];
+		on_web[h] = !m_web_line_text.empty() && on_button[h] < 0 && pointers[h].valid && hit.hit &&
+		            !(m_open != Panel::None && pointing[h]) && std::abs(hit.x) <= 0.5f * m_web_line_width &&
+		            std::abs(hit.y - m_web_line_y) <= 0.5f * WEB_LINE_H_PX * METERS_PER_PX;
+	}
+	m_web_line_hovered = false;
 
 	bool just_opened = false;
 	if (m_open == Panel::None || m_open == Panel::Games)
@@ -602,11 +653,12 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		}
 		// Disabled buttons too: their tooltip says why.
 		ShowTooltip(hovered, button_x);
+		m_web_line_hovered = on_web[hand];
 		// Only on the buttons themselves: a trigger aimed off the screen still reaches the game (light
 		// gun games reload that way).
 		for (int h = 0; h < 2; h++)
 		{
-			if (on_button[h] >= 0)
+			if (on_button[h] >= 0 || on_web[h])
 			{
 				result.block_trigger[h] = true;
 				result.on_ui[h] = true;
@@ -656,6 +708,18 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 				pointing[hand] = on_panel(hits[hand]);
 				on_button[hand] = -1;
 			}
+		}
+		else if (on_web[hand] && pressed[hand] && !m_swallow[hand])
+		{
+			// The Wi-Fi line: the settings, on the Wi-Fi Transfer page.
+			const bool from_games = m_open == Panel::Games;
+			Open(Panel::Settings);
+			m_back_to_games = from_games;
+			m_settings_menu->ShowTransferPage();
+			m_web_line_hovered = false;
+			just_opened = true;
+			hits[hand] = HitPlane(m_panel.Pose(), aim[hand]);
+			pointing[hand] = on_panel(hits[hand]);
 		}
 		else if (m_open == Panel::None && pointing[hand] && pointers[hand].valid)
 			PlacePointer(time, hand, aim[hand], hits[hand], screen.orientation);
@@ -767,7 +831,8 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 5 + NUM_GROUPS, "the panel, the button groups, the tooltip, the notice, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 6 + NUM_GROUPS,
+		"the panel, the button groups, the tooltip, the notice, the Wi-Fi line, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
@@ -783,8 +848,10 @@ void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 		slots[1 + NUM_GROUPS] = m_tooltip.Layer();
 	if (m_notice.HasImage() && std::chrono::steady_clock::now() < m_notice_until)
 		slots[2 + NUM_GROUPS] = m_notice.Layer();
+	if (!m_web_line_text.empty() && m_web_line.HasImage())
+		slots[3 + NUM_GROUPS] = m_web_line.Layer();
 	if (m_show_pointer)
-		slots[3 + NUM_GROUPS] = m_beam.Layer();
+		slots[4 + NUM_GROUPS] = m_beam.Layer();
 	if (m_show_cursor)
-		slots[4 + NUM_GROUPS] = m_cursor.Layer();
+		slots[5 + NUM_GROUPS] = m_cursor.Layer();
 }

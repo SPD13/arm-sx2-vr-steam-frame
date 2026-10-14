@@ -193,6 +193,8 @@ Manage the BIOS, game and texture pack folders from any computer or phone on the
 2. In a browser: open the address shown (port 8080, or the next free one up to 8089) and enter the code if asked.
 3. Pick the **BIOS**, **ROMs** or **Texture Packs** tab.
 
+While it runs, a line below the screen says **Wi-Fi server ON at http://…**; clicking it opens the Wi-Fi Transfer page (for the code, or to switch it off). It stays on across launches: on when the app closed, it starts again the next time (`web_enabled` in `VR.ini`).
+
 The page shows the files in that folder (name, size, date added) and the space left on the headset. You can:
 
 - **Upload**: choose files, or drag them onto the page. Several files go one after another, each with a progress bar and its speed. A file with a name that is already there asks before replacing it; a file that would not fit is refused before it is sent.
@@ -330,7 +332,8 @@ Values are read in this order, each overriding the one before: built-in defaults
 | `[Mode]` | `stereo` | true | true volumetric, false flat | `--flat` | live |
 | `[Stereo]` | `stereo_depth` | 3.0 | 0 – 20 m | `--stereo-depth` | live |
 | | `stereo_convergence` | 0.12 | 0.01 – 1 | `--stereo-conv` | live |
-| `[Web]` | `web_require_code` | true | | | live |
+| `[Web]` | `web_enabled` | false | | | at launch (Wi-Fi transfer on when the app last closed) |
+| | `web_require_code` | true | | | live |
 | `[Controllers]` | `show_controllers` | true | | | live |
 | `[LightGun]` | `gun_players` | 1 | 1 – 2 | | live |
 | | `gun_left_hand` | false | | | live |

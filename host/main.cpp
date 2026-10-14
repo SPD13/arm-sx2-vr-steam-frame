@@ -315,6 +315,9 @@ int main(int argc, char* argv[])
 		&Emu::GetSerial,
 		&Emu::TexturePackChanged,
 	});
+	// On again if it was on when the app last closed.
+	if (settings.Get().web_enabled)
+		web.Start(settings.Get().web_require_code);
 
 	// What the controllers do in the game, set in Settings › Controls.
 	ControlMap controls;
