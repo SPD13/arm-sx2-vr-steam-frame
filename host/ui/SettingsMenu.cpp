@@ -763,7 +763,7 @@ void SettingsMenu::RunControls()
 	VrSettings vr = m_settings.Get();
 	if (m_gui.Toggle(GuiId("show_controllers"), show, &vr.show_controllers))
 		SetVr(vr);
-	m_gui.Text(show.x, std::round(show.y + 0.5f * (show.h - m_gui.TextFont().LineHeight(Theme::body_size))), "Show controllers",
+	m_gui.Text(show.x, std::round(show.y + 0.5f * (show.h - m_gui.TextFont().LineHeight(Theme::body_size))), "Show VR Controllers",
 		Theme::body_size);
 	const std::string_view controllers = m_frame_controllers ? "Steam Frame controllers" : "Touch layout";
 	m_gui.TextWrapped(CONTENT_X, m_y + 56.0f, show.x - 32.0f - CONTENT_X,
