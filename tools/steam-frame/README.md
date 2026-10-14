@@ -1,6 +1,6 @@
 # Steam Frame install and releases
 
-ARMSX2 - Steam Frame Edition installs on the Frame as a Steam devkit title. The game sits in `~/devkit-game/<gameid>/`, and Steam starts it inside the Steam Linux Runtime 4.0 ARM64. In the library it shows as **ARMSX2 - Steam Frame Edition**, with the artwork and icon from `assets/steam/` (see `tools/steam-art/README.md`). It works the same way as the Visual Pinball X and CitraVR Steam Frame ports: Valve's devkit scripts register the title, and the Steam client names it and sets its icon.
+ARMSX2 - Steam Frame Edition installs on the Frame as a Steam devkit title. The game sits in `~/devkit-game/<gameid>/`, and its `run.sh` starts it inside the Steam Linux Runtime 4.0 ARM64, which must be installed from the Steam library. In the library it shows as **ARMSX2 - Steam Frame Edition**, with the artwork and icon from `assets/steam/` (see `tools/steam-art/README.md`). It works the same way as the Visual Pinball X and CitraVR Steam Frame ports: Valve's devkit scripts register the title, and the Steam client names it and sets its icon.
 
 ## For players: the installer app
 
@@ -28,7 +28,7 @@ The installer's log is in the user cache folder, under `armsx2-frame-installer/i
 | `stage-release.sh` | the Frame | Assembles the release folder: the game with debug info stripped, the install tools, the artwork, Valve's devkit scripts, `LICENSE` and `SOURCE.md`. |
 | `frame-install.sh` | the Frame | The install steps, run from the release folder by the installer and by `deploy-to-frame.sh`. |
 | `frame-uninstall.sh` | the Frame | The uninstall steps, embedded in the installer app at build time. |
-| `run.sh` | the Frame | What Steam starts. It runs `ps2v` and writes its output to `~/.local/share/ps2v/logs/ps2v.log`. |
+| `run.sh` | the Frame | What Steam starts. It runs `ps2v` inside the Steam Linux Runtime 4.0 ARM64 (Steam does not apply a devkit title's compatibility tool) and writes its output to `~/.local/share/ps2v/logs/ps2v.log`. |
 | `install-library-art.py`, `set-library-name.py` | the Frame | Copy the artwork into Steam's grid folder. Name the title and set its icon through the Steam client. |
 
 `FRAME_HOST` (default `steamos@frame.local`) and `FRAME_DIR` (default `ps2-volumetric/repo`) select the Frame, as for `tools/sync-frame.sh`. Valve's devkit scripts (MIT) are cloned into `build/steamos-devkit` on first use.

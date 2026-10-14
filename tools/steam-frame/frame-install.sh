@@ -2,7 +2,7 @@
 # ARMSX2 - Steam Frame Edition: the install steps that run on the Frame. The installer app sends the release archive over ssh,
 # unpacked into a folder next to this script, then runs it; deploy-to-frame.sh runs it on a folder staged from the Frame's own
 # build, so every developer deploy also tests the user's install. It installs Valve's devkit scripts and the game folder, registers the game in the Steam library (a devkit title that
-# Steam starts inside the Steam Linux Runtime 4.0 ARM64), then names it and installs its artwork and icon.
+# run.sh starts inside the Steam Linux Runtime 4.0 ARM64), then names it and installs its artwork and icon.
 #
 #   frame-install.sh --bundle DIR [--gameid ID] [--name-base64 NAME] [--no-art]
 #
@@ -17,7 +17,9 @@ BUNDLE=
 GAMEID=ARMSX2
 NAME='ARMSX2 - Steam Frame Edition'
 ART=1
-RUNTIME=SteamLinuxRuntime_4-arm64   # "Steam Linux Runtime 4.0 ARM64", which the game is built for (tools/build-frame.sh)
+# "Steam Linux Runtime 4.0 ARM64", which the game is built for (tools/build-frame.sh). Steam does not apply a devkit title's
+# compatibility tool, so the game's run.sh enters this runtime itself; the setting is kept for a Steam that does.
+RUNTIME=SteamLinuxRuntime_4-arm64
 SHARE=~/.local/share/armsx2-frame   # the tools and artwork shared by every installed copy (another --gameid)
 while (( $# )); do
    case $1 in
@@ -41,7 +43,7 @@ trap 'rm -rf "$BUNDLE"' EXIT
 [[ $(uname -m) == aarch64 ]] || die "this is a $(uname -m) machine, not a Steam Frame"
 note "Steam Frame found"
 test -d ~/.local/share/Steam/steamapps/common/$RUNTIME \
-   || note "WARNING: 'Steam Linux Runtime 4.0 ARM64' is not installed yet; Steam downloads it the first time the game starts"
+   || note "WARNING: 'Steam Linux Runtime 4.0 ARM64' is missing: install it from the Steam library, or the game cannot start"
 
 step "Valve's devkit scripts"
 rm -rf ~/devkit-utils
