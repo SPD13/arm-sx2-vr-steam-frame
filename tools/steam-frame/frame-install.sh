@@ -95,6 +95,5 @@ fi
 
 step "Done"
 note "On the Frame: Library > Non-Steam > \"$LIBRARY_NAME\"."
-note "The artwork shows once Steam has restarted (restarting the headset does it)."
 note "BIOS and games: in the game, open Settings > Wi-Fi Transfer, switch it on, and open the address it shows from a"
 note "phone or computer. A PS2 BIOS dump of your own is needed to play."
