@@ -232,6 +232,9 @@ bool Emu::InitializeConfig(const Options& options)
 		auto lock = Host::GetSettingsLock();
 		// Vulkan is the only renderer that can hand frames to the XR compositor.
 		s_base_settings->SetIntValue("EmuCore/GS", "Renderer", static_cast<int>(GSRendererType::VK));
+		// The OSD messages (warnings at boot...) are 12 px at 100%, unreadable on the screen in the
+		// headset: 30 px on the 1280x960 surface.
+		s_base_settings->SetFloatValue("EmuCore/GS", "OsdScale", 250.0f);
 		// The Frame controllers also show up as an SDL gamepad (28de:11e0); OpenXR owns them.
 		s_base_settings->SetBoolValue("InputSources", "SDL", options.sdl_pad);
 		if (options.sdl_pad)
