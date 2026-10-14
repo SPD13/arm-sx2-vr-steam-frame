@@ -26,18 +26,12 @@ struct VrSettings
 	// Screen
 	float screen_width = 2.4f; // meters
 	float screen_distance = 2.2f; // meters in front of the head
-	// Mode, fixed when the app starts
-	bool flat = false; // a flat screen (a quad layer) instead of the volumetric window
-	bool stereo = false; // geometric stereo: the GS draws the game from where each eye is
-	// Volumetric window (depth-map reprojection)
-	float depth_range = 0.3f; // meters behind the screen for the farthest depth
-	float pop_out = 0.0f; // share of the range in front of the screen
-	bool hud_overlay = true; // flat HUD on the screen plane over the scene
-	bool edge_fill = false; // background layer behind depth edges
+	// Mode: volumetric (geometric stereo: the GS draws the game from where each eye is, parallax by
+	// Z), or flat (the same picture for both eyes). The GS always draws both eyes, so it switches live.
+	bool stereo = true;
 	// Geometric stereo
-	float stereo_depth = 1.0f; // meters behind the screen for the farthest geometry
-	float stereo_convergence = 1.0f; // Q (or normalised Z in Z mode) on the screen plane
-	bool stereo_z_mode = false; // drive the parallax by Z instead of Q
+	float stereo_depth = 3.0f; // meters behind the screen for the farthest geometry
+	float stereo_convergence = 0.12f; // normalised Z on the screen plane
 	// Wi-Fi transfer
 	bool web_require_code = true; // the page asks for a 6-digit code shown in the menu
 	// Light gun (whether it is on is per game, in lightgun.ini: see GunGames)

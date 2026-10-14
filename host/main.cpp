@@ -12,12 +12,9 @@
 // Teardown runs the other way: the session goes before the GS destroys the device.
 
 #include "Controls.h"
-#include "DepthView.h"
 #include "Emu.h"
-#include "Profile.h"
 #include "ScreenLayer.h"
 #include "Settings.h"
-#include "VolumetricWindow.h"
 #include "XrApp.h"
 #include "XrMath.h"
 #include "gun/GunAim.h"
@@ -62,12 +59,7 @@
 // Debugging views and dumps, from the command line only. The user's settings are in VrSettings.
 struct DebugOptions
 {
-	std::string eye_dump_dir; // when set, write what both eyes see there every 10 s
-	bool eye_panels = false; // show each eye's render on a flat panel instead of in the eyes
-	bool stereo_alternate = false; // --stereo-alternate: the frame-alternating prototype instead of multiview
-	bool depth_panel = false; // depth debug view beside the screen
-	std::string depth_dump_dir; // when set, dump depth + colour PNGs there every 10 s
-	int depth_log_ms = 5000; // interval of the "Depth:" log line
+	int depth_log_ms = 5000; // interval of the "Stereo: eye" log lines
 	bool no_menu_pause = false; // --no-menu-pause: the game keeps running while a menu is open
 	// --gun-script: shots gun 1 fires by itself, for testing without the headset.
 	struct GunShot
@@ -126,30 +118,18 @@ static void PrintUsage(const char* argv0)
 		"  --upscale N            Internal resolution multiplier (1-8)\n"
 		"  --screen-width M       Virtual screen width in meters (default 2.4)\n"
 		"  --screen-distance M    Virtual screen distance in meters (default 2.2)\n"
-		"  --flat                 Flat screen instead of the volumetric window\n"
-		"  --depth-range M        How far behind the screen the scene goes (default 0.3)\n"
-		"  --edge-fill            Fill depth edges with a background layer instead of stretching\n"
-		"  --eye-dump DIR         Write both eyes' images to DIR every 10 seconds\n"
-		"  --eye-panels           Show what each eye renders on two flat panels, side by side\n"
-		"  --stereo               Geometric stereo: the GS draws every frame for both eyes (multiview),\n"
-		"                         from where each eye is in front of the screen (window parallax)\n"
-		"  --stereo-alternate     With --stereo, draw alternate frames for each eye instead (prototype)\n"
-		"  --stereo-depth M       How far behind the screen the farthest geometry appears (default 1.0)\n"
-		"  --stereo-conv F        Convergence: Q (or normalised Z with --stereo-z) on the screen plane (default 1)\n"
-		"  --stereo-z             Drive the parallax by Z instead of Q\n"
-		"  --pop-out F            Share of that depth in front of the screen (default 0)\n"
-		"  --depth-panel          Show the depth debug view beside the screen\n"
-		"  --no-hud-overlay       Leave the HUD painted on the scene instead of flat on the screen plane\n"
+		"  --flat                 Start in flat 2D instead of volumetric 3D (the menu switches it live)\n"
+		"  --stereo-depth M       How far behind the screen the farthest geometry appears (default 3)\n"
+		"  --stereo-conv F        Normalised Z on the screen plane (default 0.12)\n"
 		"  --sdl-pad              Drive pad 1 from the first SDL gamepad (testing)\n"
 		"  --load-state FILE      Start from a save state (SIGUSR1 saves debug/state.p2s, SIGUSR2 a snapshot)\n"
 		"  --depth-trace          Log which colour/depth targets the 3D draws use\n"
-		"  --depth-log-ms N       Log the depth statistics every N ms (default 5000)\n"
-		"  --depth-dump DIR       Write depth and colour PNGs to DIR every 10 seconds\n"
+		"  --depth-log-ms N       Log where the eyes are every N ms (default 5000)\n"
 		"  --no-menu-pause        Keep the game running while a menu is open\n"
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
 		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
 		"                         with the pedal held for shots from a second before the first (testing)\n"
-		"The screen, window and stereo options are saved settings too (VR.ini in the settings folder,\n"
+		"The screen and 3D options are saved settings too (VR.ini in the settings folder,\n"
 		"read again when edited); on the command line they apply to this run only.\n"
 		"In the headset: both sticks clicked recenters the screen.\n",
 		argv0);
@@ -183,33 +163,11 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 		else if (!std::strcmp(arg, "--depth-log-ms") && has_value)
 			debug->depth_log_ms = std::max(100, std::atoi(argv[++i]));
 		else if (!std::strcmp(arg, "--flat"))
-			set("flat", "true");
-		else if (!std::strcmp(arg, "--depth-range") && has_value)
-			set("depth_range", argv[++i]);
-		else if (!std::strcmp(arg, "--pop-out") && has_value)
-			set("pop_out", argv[++i]);
-		else if (!std::strcmp(arg, "--depth-panel"))
-			debug->depth_panel = true;
-		else if (!std::strcmp(arg, "--no-hud-overlay"))
-			set("hud_overlay", "false");
-		else if (!std::strcmp(arg, "--edge-fill"))
-			set("edge_fill", "true");
-		else if (!std::strcmp(arg, "--eye-dump") && has_value)
-			debug->eye_dump_dir = argv[++i];
-		else if (!std::strcmp(arg, "--eye-panels"))
-			debug->eye_panels = true;
-		else if (!std::strcmp(arg, "--stereo"))
-			set("stereo", "true");
-		else if (!std::strcmp(arg, "--stereo-alternate"))
-			debug->stereo_alternate = true;
+			set("stereo", "false");
 		else if (!std::strcmp(arg, "--stereo-depth") && has_value)
 			set("stereo_depth", argv[++i]);
 		else if (!std::strcmp(arg, "--stereo-conv") && has_value)
 			set("stereo_convergence", argv[++i]);
-		else if (!std::strcmp(arg, "--stereo-z"))
-			set("stereo_z_mode", "true");
-		else if (!std::strcmp(arg, "--depth-dump") && has_value)
-			debug->depth_dump_dir = argv[++i];
 		else if (!std::strcmp(arg, "--no-menu-pause"))
 			debug->no_menu_pause = true;
 		else if (!std::strcmp(arg, "--gun-script") && has_value)
@@ -274,20 +232,6 @@ static XrPosef ScreenPoseInFrontOf(const XrPosef& head, float distance)
 	return pose;
 }
 
-// A panel beside the screen, `offset` meters to its right in the screen's plane, turned to face a
-// viewer `distance` in front of the screen.
-static XrPosef PanelBeside(const XrPosef& screen, float offset, float distance)
-{
-	const XrQuaternionf& q = screen.orientation; // yaw only, see ScreenPoseInFrontOf
-	const float yaw = 2.0f * std::atan2(q.y, q.w);
-	const float turn = std::atan2(-offset, distance);
-	XrPosef pose;
-	pose.orientation = {0.0f, std::sin((yaw + turn) * 0.5f), 0.0f, std::cos((yaw + turn) * 0.5f)};
-	pose.position = {screen.position.x + std::cos(yaw) * offset, screen.position.y,
-		screen.position.z - std::sin(yaw) * offset};
-	return pose;
-}
-
 // The screen moved `delta` meters further away along its axis, as when its distance changes.
 static XrPosef PushScreen(const XrPosef& screen, float delta)
 {
@@ -299,12 +243,14 @@ static XrPosef PushScreen(const XrPosef& screen, float delta)
 	return pose;
 }
 
-static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr, bool enabled, bool multiview)
+// The GS always draws both eyes (multiview), with the parallax driven by Z; flat mode just gives
+// both eyes no parallax (see the eye views in the frame loop).
+static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr)
 {
 	GSVolumetric::StereoSettings stereo;
-	stereo.enabled = enabled;
-	stereo.multiview = multiview;
-	stereo.z_mode = vr.stereo_z_mode;
+	stereo.enabled = true;
+	stereo.multiview = true;
+	stereo.z_mode = true;
 	stereo.convergence = vr.stereo_convergence;
 	return stereo;
 }
@@ -357,11 +303,6 @@ int main(int argc, char* argv[])
 	});
 
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
-	// The mode is fixed for the run. The stereo prototype shows the GS's own per-eye frames on a
-	// flat screen.
-	const bool stereo = vr.stereo;
-	const bool flat = vr.flat || stereo;
-	const bool multiview = !debug_options.stereo_alternate; // both eyes every frame; the prototype alternates
 
 	Error error;
 	if (!Vulkan::LoadVulkanLibrary(&error))
@@ -376,15 +317,10 @@ int main(int argc, char* argv[])
 		return EXIT_FAILURE;
 	VKLibretro::SetHWRenderInterface(&s_queue_interface);
 	VKLibretro::Active = true;
-	GSVolumetric::SetEnabled(!stereo);
-	GSVolumetric::SetStereo(GSStereo(vr, stereo, multiview));
-	if (stereo)
-		Console.WriteLnFmt("Stereo: {}, {} mode, depth {} m, convergence {}", multiview ? "multiview" : "alternating frames",
-			vr.stereo_z_mode ? "Z" : "Q", vr.stereo_depth, vr.stereo_convergence);
-	if (!debug_options.depth_dump_dir.empty())
-		FileSystem::EnsureDirectoryExists(debug_options.depth_dump_dir.c_str(), true);
-	if (!debug_options.eye_dump_dir.empty())
-		FileSystem::EnsureDirectoryExists(debug_options.eye_dump_dir.c_str(), true);
+	GSVolumetric::SetEnabled(false); // depth, only for the light guns (see apply_gun_depth)
+	GSVolumetric::SetStereo(GSStereo(vr));
+	Console.WriteLnFmt("3D: starts {}, depth {} m, convergence {}", vr.stereo ? "volumetric" : "flat", vr.stereo_depth,
+		vr.stereo_convergence);
 
 	Emu::Start(emu_options);
 	if (!Emu::WaitForGS())
@@ -399,30 +335,16 @@ int main(int argc, char* argv[])
 	GunRenderer gun_renderer;
 	GunDepth gun_depth;
 	ScreenLayer screen;
-	ScreenLayer screen_right; // with --stereo, the right eye's frames; screen then shows the left eye's
-	ScreenLayer depth_panel;
-	std::array<ScreenLayer, 2> eye_panels;
-	DepthView depth_view;
-	VolumetricWindow window;
-	VrMenu menu(settings, web, controls, stereo, flat);
+	ScreenLayer screen_right; // volumetric: the right eye's picture; screen then shows the left eye's
+	VrMenu menu(settings, web, controls);
 	const VkDevice device = gs->GetDevice();
 	const VkQueue queue = gs->GetGraphicsQueue();
 	const uint32_t queue_family = gs->GetGraphicsQueueFamilyIndex();
 	if (!xr.CreateSession(device, queue_family) || !screen.Create(xr, device, queue, queue_family) ||
-		(stereo && !screen_right.Create(xr, device, queue, queue_family)) ||
-		!depth_panel.Create(xr, device, queue, queue_family) ||
-		!depth_view.Create(device, gs->GetPhysicalDevice(), queue, queue_family) ||
-		(debug_options.eye_panels && (!eye_panels[0].Create(xr, device, queue, queue_family) ||
-										  !eye_panels[1].Create(xr, device, queue, queue_family))) ||
-		(!flat && !window.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family)))
+		!screen_right.Create(xr, device, queue, queue_family))
 	{
 		Emu::RequestShutdown();
 		menu.Destroy();
-		for (ScreenLayer& panel : eye_panels)
-			panel.Destroy();
-		window.Destroy();
-		depth_view.Destroy();
-		depth_panel.Destroy();
 		screen_right.Destroy();
 		screen.Destroy();
 		xr.DestroySession();
@@ -436,7 +358,7 @@ int main(int argc, char* argv[])
 	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
 			Path::Combine(EmuFolders::AppRoot, "assets" FS_OSPATH_SEPARATOR_STR "lightgun.glb")))
 		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
-	if (stereo && !gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
+	if (!gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no depth; shots land on the screen glass.");
 	// An invisible quad for the layer slots that are empty this frame, so that every layer keeps its
 	// place in the layer list. SteamVR shows quad layers as overlays matched by their place in the
@@ -453,40 +375,17 @@ int main(int argc, char* argv[])
 		layer_pad.SetPose({{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, -50.0f, 0.0f}});
 	}
 	std::array<XrCompositionLayerQuad, 24> pads{}; // one per layer slot (see below)
-	if (stereo)
-	{
-		screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
-		screen_right.SetEyeVisibility(XR_EYE_VISIBILITY_RIGHT);
-	}
-	VolumetricWindow::Settings window_settings;
-	window.SetCaptureEyes(debug_options.eye_panels);
-	constexpr float eye_panel_width = 1.4f;
-	for (ScreenLayer& panel : eye_panels)
-		panel.SetWidth(eye_panel_width);
-	constexpr float depth_panel_width = 1.2f;
-	depth_panel.SetWidth(depth_panel_width);
+	screen_right.SetEyeVisibility(XR_EYE_VISIBILITY_RIGHT);
 
 	using Clock = std::chrono::steady_clock;
-	Clock::time_point next_stats_log = Clock::now() + std::chrono::seconds(5);
-	Clock::time_point next_eye_log = next_stats_log; // apart: no game frames come while paused or on the game list
-	Clock::time_point next_dump = Clock::now() + std::chrono::seconds(10);
-	int dump_index = 0;
-	Clock::time_point next_eye_dump = Clock::now() + std::chrono::seconds(10);
-	int eye_dump_index = 0;
+	Clock::time_point next_eye_log = Clock::now() + std::chrono::seconds(5);
 
 	// Hands the settings to what keeps a copy of them.
 	const auto apply_settings = [&] {
 		screen.SetWidth(vr.screen_width);
 		screen_right.SetWidth(vr.screen_width);
-		window_settings.width = vr.screen_width;
-		window_settings.depth_range = vr.depth_range;
-		window_settings.pop_out = vr.pop_out;
-		window_settings.hud_overlay = vr.hud_overlay;
-		window_settings.edge_fill = vr.edge_fill;
-		window_settings.viewer_distance = vr.screen_distance;
-		window.SetSettings(window_settings);
 		// The GS thread reads these per draw: a change can land in the middle of a frame.
-		GSVolumetric::SetStereo(GSStereo(vr, stereo, multiview));
+		GSVolumetric::SetStereo(GSStereo(vr));
 	};
 	apply_settings();
 	VrSettings applied = vr;
@@ -494,20 +393,14 @@ int main(int argc, char* argv[])
 
 	bool screen_placed = false;
 	XrPosef screen_pose_now{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -vr.screen_distance}};
-	// Puts the screen at pose, and the debug panels beside it.
 	const auto place_screen = [&](const XrPosef& pose) {
 		screen_pose_now = pose;
 		screen.SetPose(pose);
 		screen_right.SetPose(pose);
-		window.SetScreen(pose, window_settings);
-		depth_panel.SetPose(PanelBeside(pose, 0.5f * (vr.screen_width + depth_panel_width) + 0.15f, vr.screen_distance));
-		// Eye panels: left eye's render left of centre, right eye's right of it.
-		eye_panels[0].SetPose(PanelBeside(pose, -0.5f * eye_panel_width - 0.05f, vr.screen_distance));
-		eye_panels[1].SetPose(PanelBeside(pose, 0.5f * eye_panel_width + 0.05f, vr.screen_distance));
 	};
 
 	std::string profile_serial;
-	// --stereo: when one eye's frames stop coming (a movie shown at half the frame rate lands on the
+	// When one eye's frames stop coming (a movie shown at half the frame rate lands on the
 	// same eye every time), both eyes see the other's for a while.
 	std::array<Clock::time_point, 2> last_eye_frame{};
 	float screen_aspect = 4.0f / 3.0f;
@@ -536,11 +429,8 @@ int main(int argc, char* argv[])
 	// The presented frame, as the light guns aim at it.
 	float frame_size[2] = {1280.0f, 960.0f};
 	float frame_draw_rect[4] = {0.0f, 0.0f, 1280.0f, 960.0f};
-	// Depth for the guns in stereo: only while light gun mode is on (it costs copies on the GS).
-	const auto apply_gun_depth = [&] {
-		if (stereo)
-			GSVolumetric::SetEnabled(gun_mode);
-	};
+	// Depth for the guns, in volumetric mode: only while light gun mode is on (it costs copies on the GS).
+	const auto apply_gun_depth = [&] { GSVolumetric::SetEnabled(gun_mode && vr.stereo); };
 	const auto set_gun_mode = [&](bool on) {
 		if (on == gun_mode)
 			return;
@@ -570,6 +460,9 @@ int main(int argc, char* argv[])
 					Console.WriteLnFmt("VR settings: {} takes effect at the next start", info.key);
 			}
 			apply_settings();
+			apply_gun_depth();
+			if (vr.stereo != applied.stereo)
+				Console.WriteLnFmt("3D: {}", vr.stereo ? "volumetric" : "flat");
 			// A new distance moves the screen along its axis; a new width moves the panels beside it.
 			if (screen_placed && (vr.screen_distance != applied.screen_distance || vr.screen_width != applied.screen_width))
 				place_screen(PushScreen(screen_pose_now, vr.screen_distance - applied.screen_distance));
@@ -588,10 +481,6 @@ int main(int argc, char* argv[])
 		{
 			profile_serial = serial;
 			web.SetProtectedFile(Emu::GetRunningGamePath());
-			const GameProfile profile = LoadGameProfile(serial);
-			window_settings.hud_rects = profile.hud_rects;
-			window_settings.hud_rect_flat = profile.hud_rect_flat;
-			window.SetSettings(window_settings);
 			// The CPU thread plugged the guns in or out as the game started (Emu::SetGunsPolicy).
 			gun_mode = !serial.empty() && gun_games.IsOn(serial);
 			gun_chosen = gun_games.IsChosen(serial);
@@ -755,28 +644,18 @@ int main(int argc, char* argv[])
 			if (!emu_options.sdl_pad)
 				Emu::SetPad({}); // the guns are in the hands: the pad stays still
 
-			// Where the guns aim: the screen as shown, and in stereo the depth they shoot into.
+			// Where the guns aim: the screen as shown, and in volumetric mode the depth they shoot into.
 			GunScreen gun_screen;
 			gun_screen.pose = screen_pose_now;
 			gun_screen.width = vr.screen_width;
 			gun_screen.height = vr.screen_width / screen_aspect;
 			std::copy(std::begin(frame_draw_rect), std::end(frame_draw_rect), gun_screen.draw_rect);
-			if (flat)
-			{
-				gun_screen.view[2] = frame_size[0];
-				gun_screen.view[3] = frame_size[1];
-			}
-			else
-			{
-				// The volumetric window shows the picture only, at its own aspect.
-				std::copy(std::begin(frame_draw_rect), std::end(frame_draw_rect), gun_screen.view);
-				gun_screen.height = vr.screen_width * (frame_draw_rect[3] - frame_draw_rect[1]) /
-				                    std::max(frame_draw_rect[2] - frame_draw_rect[0], 1.0f);
-			}
+			gun_screen.view[2] = frame_size[0];
+			gun_screen.view[3] = frame_size[1];
 			GunStereo gun_stereo;
 			const GunDepthGrid* depth_grid = nullptr;
 			XrView eye_views[2];
-			if (stereo && vr.stereo_z_mode && xr.LocateEyes(frame.display_time, eye_views))
+			if (vr.stereo && xr.LocateEyes(frame.display_time, eye_views))
 			{
 				gun_stereo.z_mode = true;
 				gun_stereo.convergence = vr.stereo_convergence;
@@ -912,8 +791,13 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		// --stereo: where each eye is in front of the screen, for the GS's window parallax.
-		if (stereo && screen_placed)
+		// Where each eye is in front of the screen, for the GS's window parallax; none in flat mode.
+		if (!vr.stereo)
+		{
+			for (int i = 0; i < 2; i++)
+				GSVolumetric::SetEyeView(i, 0.0f, 0.0f, 0.0f);
+		}
+		else if (screen_placed)
 		{
 			XrView views[2];
 			if (xr.LocateEyes(frame.display_time, views))
@@ -969,10 +853,10 @@ int main(int argc, char* argv[])
 				frame_draw_rect[2] = has_rect ? r[2] : frame_size[0];
 				frame_draw_rect[3] = has_rect ? r[3] : frame_size[1];
 			}
-			// Stereo: the guns' depth (with multiview, a layer per eye).
-			if (stereo && gun_mode && emu_frame.depth_image)
+			// The guns' depth, in volumetric mode (with multiview, a layer per eye).
+			if (vr.stereo && gun_mode && emu_frame.depth_image)
 				gun_depth.Process(emu_frame, emu_frame.right_image != VK_NULL_HANDLE);
-			if (stereo && emu_frame.right_image)
+			if (emu_frame.right_image)
 			{
 				// Multiview: both eyes in one frame.
 				screen.Update(emu_frame);
@@ -982,37 +866,12 @@ int main(int argc, char* argv[])
 				screen_right.Update(right_frame);
 				last_eye_frame[0] = last_eye_frame[1] = Clock::now();
 			}
-			else if (stereo && emu_frame.stereo_eye == 1)
+			else if (emu_frame.stereo_eye == 1)
 				screen_right.Update(emu_frame);
-			else if (flat)
+			else
 				screen.Update(emu_frame);
 			if (emu_frame.stereo_eye >= 0)
 				last_eye_frame[emu_frame.stereo_eye] = Clock::now();
-			const Clock::time_point now = Clock::now();
-			if (!debug_options.depth_dump_dir.empty() && now >= next_dump && emu_frame.depth_image)
-			{
-				depth_view.RequestDump(fmt::format("{}/frame{:03d}", debug_options.depth_dump_dir, dump_index++));
-				next_dump = now + std::chrono::seconds(10);
-			}
-			VKLibretro::Frame depth_frame;
-			// In stereo the depth is only there for the light guns (and can have a layer per eye).
-			const bool has_depth = !stereo && depth_view.Process(emu_frame, &depth_frame);
-			if (has_depth && debug_options.depth_panel)
-				depth_panel.Update(depth_frame);
-			if (!flat)
-				window.SetFrame(emu_frame, has_depth);
-			if (now >= next_stats_log)
-			{
-				next_stats_log = now + std::chrono::milliseconds(debug_options.depth_log_ms);
-				if (!emu_frame.depth_image)
-					Console.WriteLn("Depth: none this frame");
-				else if (const auto stats = depth_view.LastStats())
-					Console.WriteLnFmt("Depth: coverage {:.0f}%, HUD {:.0f}%{}, range {:.6f}..{:.6f} -> {:.6f}..{:.6f}, "
-									   "canvas {}x{}, scale {:.1f}",
-						stats->coverage * 100.0f, stats->hud * 100.0f, emu_frame.prehud_view ? "" : " (no pre-HUD copy)",
-						stats->zmin, stats->zmax, stats->lo, stats->hi, emu_frame.depth_width, emu_frame.depth_height,
-						emu_frame.depth_scale);
-			}
 		}
 
 		const Clock::time_point t_emu_done = Clock::now();
@@ -1020,23 +879,21 @@ int main(int argc, char* argv[])
 		// quad standing in when it is hidden (see layer_pad).
 		enum Slot
 		{
-			SLOT_SCREEN, // the screen (in stereo, the left eye's or both eyes'), or the volumetric window
-			SLOT_SCREEN_RIGHT, // in stereo, the right eye's screen
-			SLOT_DEPTH_PANEL,
-			SLOT_EYE_PANEL_0,
-			SLOT_EYE_PANEL_1,
+			SLOT_SCREEN, // the screen: the left eye's (volumetric) or both eyes'
+			SLOT_SCREEN_RIGHT, // volumetric: the right eye's
 			SLOT_MENU, // VrMenu::NUM_LAYER_SLOTS of them
 			SLOT_GUNS = SLOT_MENU + VrMenu::NUM_LAYER_SLOTS, // GunRenderer::NUM_LAYERS of them, last: over everything
 			NUM_SLOTS = SLOT_GUNS + GunRenderer::NUM_LAYERS
 		};
 		static_assert(NUM_SLOTS <= std::tuple_size_v<decltype(pads)>, "a pad per slot");
 		std::array<const XrCompositionLayerBaseHeader*, NUM_SLOTS> slots{};
-		if (flat && stereo)
 		{
+			// Volumetric: each eye its own picture. Flat (no parallax: both are the same), or while one
+			// eye's frames have stopped: one picture for both eyes.
 			const Clock::time_point now = Clock::now();
 			const bool left_live = screen.HasImage() && now - last_eye_frame[0] < std::chrono::milliseconds(150);
 			const bool right_live = screen_right.HasImage() && now - last_eye_frame[1] < std::chrono::milliseconds(150);
-			if (left_live && right_live)
+			if (vr.stereo && left_live && right_live)
 			{
 				screen.SetEyeVisibility(XR_EYE_VISIBILITY_LEFT);
 				screen_right.SetEyeVisibility(XR_EYE_VISIBILITY_RIGHT);
@@ -1048,36 +905,6 @@ int main(int argc, char* argv[])
 				only->SetEyeVisibility(XR_EYE_VISIBILITY_BOTH);
 				slots[SLOT_SCREEN] = only->Layer();
 			}
-		}
-		else if (flat)
-		{
-			if (screen.HasImage())
-				slots[SLOT_SCREEN] = screen.Layer();
-		}
-		else if (frame.should_render && window.HasFrame())
-		{
-			if (!debug_options.eye_dump_dir.empty() && Clock::now() >= next_eye_dump)
-			{
-				window.RequestEyeDump(fmt::format("{}/eyes{:03d}", debug_options.eye_dump_dir, eye_dump_index++));
-				next_eye_dump = Clock::now() + std::chrono::seconds(10);
-			}
-			const XrCompositionLayerBaseHeader* layer = window.Render(frame.display_time, depth_view.NormalizedView(),
-				depth_view.BackgroundView(), depth_view.GridWidth(), depth_view.GridHeight());
-			if (layer && !debug_options.eye_panels)
-				slots[SLOT_SCREEN] = layer;
-			for (int i = 0; layer && debug_options.eye_panels && i < 2; i++)
-			{
-				VKLibretro::Frame eye_image;
-				if (window.GetEyeImage(i, &eye_image))
-					eye_panels[i].Update(eye_image);
-			}
-		}
-		if (debug_options.depth_panel && depth_panel.HasImage())
-			slots[SLOT_DEPTH_PANEL] = depth_panel.Layer();
-		for (int i = 0; i < 2; i++)
-		{
-			if (debug_options.eye_panels && eye_panels[i].HasImage())
-				slots[SLOT_EYE_PANEL_0 + i] = eye_panels[i].Layer();
 		}
 		if (screen_placed)
 			menu.GetLayers(&slots[SLOT_MENU]);
@@ -1122,7 +949,7 @@ int main(int argc, char* argv[])
 		if (static int frames_logged = 0; frame.should_render && frames_logged < 3)
 		{
 			frames_logged++;
-			Console.WriteLnFmt("Frame: {} layer(s), window has frame: {}", layer_count, window.HasFrame());
+			Console.WriteLnFmt("Frame: {} layer(s)", layer_count);
 		}
 	}
 
@@ -1134,11 +961,6 @@ int main(int argc, char* argv[])
 	gun_renderer.Destroy();
 	layer_pad.Destroy();
 	menu.Destroy();
-	for (ScreenLayer& panel : eye_panels)
-		panel.Destroy();
-	window.Destroy();
-	depth_view.Destroy();
-	depth_panel.Destroy();
 	screen_right.Destroy();
 	screen.Destroy();
 	xr.DestroySession();

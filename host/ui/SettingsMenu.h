@@ -27,10 +27,8 @@ public:
 	static constexpr int WIDTH = 1200;
 	static constexpr int HEIGHT = 800;
 
-	// running_stereo / running_flat: the 3D mode this run started in (changing it needs a restart).
 	// web: the Wi-Fi transfer server the menu switches on and off; controls: the controller mapping.
-	SettingsMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo, bool running_flat,
-		Font& text, Font& icons);
+	SettingsMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, Font& text, Font& icons);
 
 	// Reads the emulator's settings and save slots again, for a menu that is being opened.
 	void Refresh();
@@ -126,8 +124,6 @@ private:
 	WebServer& m_web;
 	ControlMap& m_controls;
 	WebServer::Status m_web_status;
-	bool m_running_stereo;
-	bool m_running_flat;
 	Canvas m_canvas;
 	Gui m_gui;
 

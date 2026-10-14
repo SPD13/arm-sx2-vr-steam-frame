@@ -14,18 +14,12 @@
 #include <array>
 #include <cstdio>
 
-static constexpr std::array<VrSettingInfo, 19> s_settings = {{
+static constexpr std::array<VrSettingInfo, 13> s_settings = {{
 	{"Screen", "screen_width", &VrSettings::screen_width, nullptr, 0.3f, 10.0f, false},
 	{"Screen", "screen_distance", &VrSettings::screen_distance, nullptr, 0.3f, 10.0f, false},
-	{"Mode", "flat", nullptr, &VrSettings::flat, 0.0f, 0.0f, true},
-	{"Mode", "stereo", nullptr, &VrSettings::stereo, 0.0f, 0.0f, true},
-	{"Window", "depth_range", &VrSettings::depth_range, nullptr, 0.0f, 5.0f, false},
-	{"Window", "pop_out", &VrSettings::pop_out, nullptr, 0.0f, 1.0f, false},
-	{"Window", "hud_overlay", nullptr, &VrSettings::hud_overlay, 0.0f, 0.0f, false},
-	{"Window", "edge_fill", nullptr, &VrSettings::edge_fill, 0.0f, 0.0f, false},
+	{"Mode", "stereo", nullptr, &VrSettings::stereo, 0.0f, 0.0f, false},
 	{"Stereo", "stereo_depth", &VrSettings::stereo_depth, nullptr, 0.0f, 20.0f, false},
-	{"Stereo", "stereo_convergence", &VrSettings::stereo_convergence, nullptr, 0.001f, 100.0f, false},
-	{"Stereo", "stereo_z_mode", nullptr, &VrSettings::stereo_z_mode, 0.0f, 0.0f, false},
+	{"Stereo", "stereo_convergence", &VrSettings::stereo_convergence, nullptr, 0.01f, 1.0f, false},
 	{"Web", "web_require_code", nullptr, &VrSettings::web_require_code, 0.0f, 0.0f, false},
 	{"LightGun", "gun_players", &VrSettings::gun_players, nullptr, 1.0f, 2.0f, false},
 	{"LightGun", "gun_left_hand", nullptr, &VrSettings::gun_left_hand, 0.0f, 0.0f, false},

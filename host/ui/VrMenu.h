@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The menus in the headset. Round buttons sit just outside the screen's right edge, from its top
-// down: a gear for the SettingsMenu, a gamepad for the GameListMenu, then the light gun's two: light
+// down: a gear for the SettingsMenu, a gamepad for the GameListMenu, the 3D mode (volumetric, a lit
+// cube, or flat, a square; switched at once with a click), then the light gun's two: light
 // gun mode on or off (a crosshair, lit while on) and one or two guns (one or two people, only while
 // light gun mode is on). One controller is the pointer: the one that pulled its trigger last (the
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
@@ -32,8 +33,7 @@
 class VrMenu
 {
 public:
-	// running_stereo / running_flat: the mode this run started in, for the 3D page.
-	VrMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo, bool running_flat);
+	VrMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls);
 	~VrMenu();
 
 	// Loads the fonts and creates the layers. On failure the menus stay off.
@@ -73,10 +73,10 @@ public:
 	// Opens the game list (at start, when no game was given).
 	void OpenGameList();
 
-	// Its layers, each always in the same slot (null when hidden): the panel, the four buttons, the
+	// Its layers, each always in the same slot (null when hidden): the panel, the five buttons, the
 	// tooltip, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
 	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 8;
+	static constexpr int NUM_LAYER_SLOTS = 9;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
@@ -115,11 +115,14 @@ private:
 	{
 		GEAR,
 		GAMES,
+		MODE_3D,
 		GUN_MODE,
 		GUNS,
 		NUM_BUTTONS
 	};
 	void DrawButton(Button& button);
+	// The 3D mode button as the setting is (it can change on the settings page too).
+	void UpdateModeButton();
 	// What the button does, as its tooltip says it.
 	std::string TooltipText(int button) const;
 	// Shows the tooltip of button (ButtonId) beside it, or hides it (-1).
@@ -134,8 +137,6 @@ private:
 	VrSettingsStore& m_settings;
 	WebServer& m_web;
 	ControlMap& m_controls;
-	bool m_running_stereo;
-	bool m_running_flat;
 	XrApp* m_xr = nullptr;
 	bool m_created = false;
 

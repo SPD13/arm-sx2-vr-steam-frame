@@ -57,11 +57,12 @@ Round buttons sit just outside the screen, on its right side from level with its
 |---|---|
 | ⚙ Gear | Opens the [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
+| ▣ Cube / ■ square (below it) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
 | ⌖ Crosshair (after a gap) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
 
 - **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
-- **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the two buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
+- **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
 - **Pausing.** Opening a menu pauses the game; closing it resumes.
 - **Closing a menu.** Its ✕ button, or a click anywhere off the panel. Starting or loading a game closes it too.
 - **Scrolling** the game list: either thumbstick, or drag its scroll bar.
@@ -83,12 +84,11 @@ A navigation bar on the left lists the categories, with **Exit** last.
 
 | Option | Values | Notes |
 |---|---|---|
-| 3D effect | Off · Portal | **Portal** draws the game from each eye, so the world sits behind the screen like a window. **Off** shows a flat picture. Applies at the next start. |
-| Depth | 0 – 5 m | How far behind the screen the farthest scenery appears. |
-| Depth source *(advanced)* | Perspective · Depth buffer | What tells how far each object is (Q or Z). Try the other one when a game looks flat or wrong. |
-| Screen plane *(advanced)* | 0.1 – 5 (Perspective), 0.01 – 1 (Depth buffer) | Which scene depth sits on the screen glass. Set it so the nearest objects just touch the glass. Time Crisis II: Depth buffer, 0.12, depth 3 m. |
+| 3D mode | Flat · Volumetric | **Volumetric** draws the game from each eye, so the world sits behind the screen like a window. **Flat** shows a flat picture. Applies at once, as the cube button beside the screen. |
+| Depth | 0 – 5 m | How far behind the screen the farthest scenery appears (default 3 m). |
+| Screen plane *(advanced)* | 0.01 – 1 | Which depth in the scene (the game's normalised Z) sits on the screen glass. Set it so the nearest objects just touch the glass. Default 0.12, for Time Crisis II. |
 
-The depth-map "volumetric window" mode (`flat = false`, `stereo = false`) is kept for comparison only and is not offered in the menu; it stays available through `VR.ini` and the command line.
+These are the only two modes. The emulator always draws both eyes (multiview); Flat gives them no parallax and shows the same picture to both, which is why it can switch without a restart.
 
 ### Graphics
 
@@ -234,7 +234,7 @@ Grips and triggers are analog: mapped to L1, R1, L2 or R2 they keep their pressu
 
 In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports), drawn in the hand in the colour you chose. Its trigger and side buttons move as you press them.
 
-- **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Portal mode with the *Depth buffer* source, it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it. Otherwise it stops on the screen glass.
+- **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Volumetric mode it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it. Otherwise it stops on the screen glass.
 - **Shooting** off the picture is a reload, as with the real gun.
 - **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
 - **Recoil.** Each shot gives a short pulse in the controller.
@@ -288,15 +288,9 @@ Values are read in this order, each overriding the one before: built-in defaults
 |---|---|---|---|---|---|
 | `[Screen]` | `screen_width` | 2.4 | 0.3 – 10 m | `--screen-width` | live |
 | | `screen_distance` | 2.2 | 0.3 – 10 m | `--screen-distance` | live |
-| `[Mode]` | `stereo` | false | | `--stereo` | next start |
-| | `flat` | false | | `--flat` | next start |
-| `[Window]` | `depth_range` | 0.3 | 0 – 5 m | `--depth-range` | live |
-| | `pop_out` | 0 | 0 – 1 | `--pop-out` | live |
-| | `hud_overlay` | true | | `--no-hud-overlay` | live |
-| | `edge_fill` | false | | `--edge-fill` | live |
-| `[Stereo]` | `stereo_depth` | 1.0 | 0 – 20 m | `--stereo-depth` | live |
-| | `stereo_convergence` | 1.0 | 0.001 – 100 | `--stereo-conv` | live |
-| | `stereo_z_mode` | false | | `--stereo-z` | live |
+| `[Mode]` | `stereo` | true | true volumetric, false flat | `--flat` | live |
+| `[Stereo]` | `stereo_depth` | 3.0 | 0 – 20 m | `--stereo-depth` | live |
+| | `stereo_convergence` | 0.12 | 0.01 – 1 | `--stereo-conv` | live |
 | `[Web]` | `web_require_code` | true | | | live |
 | `[LightGun]` | `gun_players` | 1 | 1 – 2 | | live |
 | | `gun_left_hand` | false | | | live |
@@ -306,7 +300,7 @@ Values are read in this order, each overriding the one before: built-in defaults
 | | `gun_pitch` | 0 | −45 – 45° | | live |
 | | `gun_color` | `#8c8c91` | `#rrggbb` | | live |
 
-Numbers outside their range are clamped. `[Window]` settings belong to the depth-map window mode (`stereo = false`, `flat = false`); `[Stereo]` ones to the Portal mode (`stereo = true`, which always shows a flat screen per eye).
+Numbers outside their range are clamped. `[Stereo]` settings apply in volumetric mode.
 
 ## Command line
 
@@ -322,21 +316,16 @@ Without a disc image, the game list opens.
 | `--no-fast-boot` | Run the BIOS intro before the game |
 | `--upscale N` | Internal resolution multiplier, 1 – 8 (saved to `PCSX2.ini`) |
 | `--screen-width M`, `--screen-distance M` | Screen size and distance, for this run |
-| `--flat`, `--stereo`, `--stereo-depth M`, `--stereo-conv F`, `--stereo-z` | 3D mode and stereo settings, for this run |
-| `--depth-range M`, `--pop-out F`, `--edge-fill`, `--no-hud-overlay` | Depth-map window settings, for this run |
+| `--flat`, `--stereo-depth M`, `--stereo-conv F` | Start in flat mode; volumetric depth and screen plane, for this run |
 | `--sdl-pad` | Drive pad 1 from the first SDL gamepad (testing without the headset) |
 
 Debugging only:
 
 | Option | |
 |---|---|
-| `--depth-panel` | Show the depth debug view beside the screen |
-| `--eye-panels` | Show what each eye renders on two flat panels |
-| `--eye-dump DIR`, `--depth-dump DIR` | Write eye images, or depth and colour PNGs, to `DIR` every 10 seconds |
-| `--stereo-alternate` | With `--stereo`, the frame-alternating prototype (each eye at 30 Hz) instead of multiview |
 | `--no-menu-pause` | Keep the game running while a menu is open |
-| `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot |
-| `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws; how often to log depth statistics |
+| `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot and both eyes' pictures |
+| `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws; how often to log where the eyes are |
 | `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen, `T:a`, `T:b`, `T:c`, `T:start`, `T:cal` tap that gun button (`cal`: the calibration shot, at the centre); comma separated, e.g. `20:0.5:0.5,22:off`. For aimed shots the pedal is held from a second before the first one |
 
 ## How it works
@@ -347,24 +336,25 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 |---|---|---|
 | Settings | `Settings.{h,cpp}` | `VrSettingsStore`: a table of settings layered from defaults, `VR.ini` and the command line, saved after a change settles, reloaded when the file is edited. `main.cpp` applies changes live. |
 | Menus | `ui/` | Drawn on the CPU (`Canvas`, `Font` with stb_truetype, `Gui`, an immediate-mode widget set) and shown as alpha-blended OpenXR quad layers (`OverlayLayer`). PCSX2's ImGui context is a process-wide global that its GS threads drive, so the XR thread cannot run an ImGui frame of its own. A full menu redraw takes under half a millisecond and only happens when something visible changes. |
-| Menu in the headset | `ui/VrMenu.{h,cpp}` | The two buttons, the panel, the pointer (controller aim poses), pausing, and keeping menu clicks from the game. |
+| Menu in the headset | `ui/VrMenu.{h,cpp}` | The buttons beside the screen and their tooltips, the panel, the pointer (controller aim poses), pausing, and keeping menu clicks from the game. |
 | Pages | `ui/SettingsMenu.{h,cpp}`, `ui/GameListMenu.{h,cpp}` | The settings categories, and the game list. |
 | Controllers | `XrApp.{h,cpp}`, `Controls.{h,cpp}` | `XrApp` reports the controllers as they are (one OpenXR action per button, grip, trigger and stick); `ControlMap` turns that into the DualShock 2 state. |
 | Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. |
-| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on a quad layer last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` places that quad between the eye and the guns and keeps its orientation while they fit, since a quad that turned with the head made the guns stutter; `GunAim` finds where a beam lands (the glass, or in Portal Z mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
+| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
 | Emulator | `Emu.{h,cpp}` | The CPU thread, PCSX2's host callbacks, and what the menus need: pause, settings, save states, the game list, switching games. Switching runs on the CPU thread, and resuming from a menu is skipped while a switch is under way so it cannot cancel it. |
 
 ## Known limitations
 
 - **Only partly tested in the headset.** The menu buttons, pointer and game list were checked on the Steam Frame; the other features were tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
 - If the runtime rejects the controllers' aim pose, the gamepad still works but menus cannot be pointed at. The log says "no aim pose …; the menu pointer is unavailable."
-- In Portal mode, both eyes may show the same picture while a menu has the game paused.
+- In volumetric mode, both eyes may show the same picture while a menu has the game paused.
+- Flat mode still has the emulator draw both eyes, so it costs as much GPU time as volumetric.
 - Changing the internal resolution or texture filtering mid-game uses PCSX2's normal settings path, but has not been tried with the stereo changes to the renderer.
 - The controller actions were renamed for mapping, so any SteamVR-side rebinding made for this app starts over.
 - Wi-Fi transfer is plain HTTP, and whether SteamOS lets port 8080 through has not been checked.
 - The game list cannot rescan while a game runs (see [Game list](#game-list)).
-- **The light gun is untested in the headset.** Things to check there: how the gun sits in the hand (Gun angle), whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), and the cost of the depth copies it turns on in Portal mode.
-- The beam only goes into the window with the *Depth buffer* source; with *Perspective*, and in the depth-map window mode, it stops on the glass.
+- **The light gun is untested in the headset.** Things to check there: how the gun sits in the hand (Gun angle), whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), and the cost of the depth copies it turns on in volumetric mode.
+- In flat mode the beam stops on the glass.
 
 ## License
 

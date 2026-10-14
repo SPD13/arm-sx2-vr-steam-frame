@@ -29,20 +29,7 @@ static bool ParseProfile(const std::string& path, GameProfile* profile)
 		key.erase(0, key.find_first_not_of(" \t"));
 		key.erase(key.find_last_not_of(" \t") + 1);
 		std::istringstream value(line.substr(eq + 1));
-		if (key == "hud_rect")
-		{
-			std::array<float, 4> r{};
-			if (value >> r[0] >> r[1] >> r[2] >> r[3])
-			{
-				std::string flag;
-				value >> flag;
-				profile->hud_rects.push_back(r);
-				profile->hud_rect_flat.push_back(flag == "flat");
-			}
-			else
-				Console.WarningFmt("Profile {}:{}: hud_rect needs four numbers", path, number);
-		}
-		else if (key == "lightgun")
+		if (key == "lightgun")
 			value >> profile->lightgun;
 		else
 			Console.WarningFmt("Profile {}:{}: unknown key '{}'", path, number, key);
@@ -59,7 +46,7 @@ GameProfile LoadGameProfile(const std::string& serial)
 	{
 		if (ParseProfile(Path::Combine(dir, serial + ".ini"), &profile))
 		{
-			Console.WriteLnFmt("Profile for {}: {} ({} HUD areas)", serial, profile.path, profile.hud_rects.size());
+			Console.WriteLnFmt("Profile for {}: {}", serial, profile.path);
 			return profile;
 		}
 	}

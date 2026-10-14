@@ -10,10 +10,6 @@ add_executable(ps2v
 	Controls.h
 	Profile.cpp
 	Profile.h
-	DepthView.cpp
-	DepthView.h
-	VolumetricWindow.cpp
-	VolumetricWindow.h
 	Emu.cpp
 	Emu.h
 	ScreenLayer.cpp
@@ -66,8 +62,6 @@ target_sources(ps2v PRIVATE "${PS2V_WEB_PAGE}")
 # Shaders become SPIR-V arrays in generated headers: shaders/name.stage -> name.stage.h, array name_stage.
 set(PS2V_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(PS2V_SHADERS
-	depth_stats.comp depth_hist.comp depth_range.comp depth_normalize.comp depth_hud.comp depth_background.comp depth_view.comp
-	window.vert window.frag
 	gun_depth.comp gun_depth_layered.comp gun.vert gun.frag gun_beam.vert gun_beam.frag)
 file(GLOB PS2V_SHADER_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.glsl")
 foreach(shader ${PS2V_SHADERS})

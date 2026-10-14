@@ -43,6 +43,8 @@ namespace
 	constexpr float BUTTON_GROUP_GAP = 0.05f; // more between the menu buttons and the light gun's
 	constexpr uint32_t GEAR_ICON = 0xf013;
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
+	constexpr uint32_t VOLUMETRIC_ICON = 0xf1b2; // cube
+	constexpr uint32_t FLAT_ICON = 0xf0c8; // square
 	constexpr uint32_t GUN_MODE_ICON = 0xf05b; // crosshairs
 	constexpr uint32_t ONE_GUN_ICON = 0xf007; // user
 	constexpr uint32_t TWO_GUNS_ICON = 0xf0c0; // users
@@ -52,12 +54,10 @@ namespace
 static_assert(SettingsMenu::WIDTH == GameListMenu::WIDTH && SettingsMenu::HEIGHT == GameListMenu::HEIGHT,
 	"the menus share one panel layer");
 
-VrMenu::VrMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo, bool running_flat)
+VrMenu::VrMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls)
 	: m_settings(settings)
 	, m_web(web)
 	, m_controls(controls)
-	, m_running_stereo(running_stereo)
-	, m_running_flat(running_flat)
 {
 }
 
@@ -94,7 +94,7 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		Destroy();
 		return false;
 	}
-	m_settings_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_controls, m_running_stereo, m_running_flat, m_text, m_icons);
+	m_settings_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_controls, m_text, m_icons);
 	m_game_list = std::make_unique<GameListMenu>(Path::Combine(EmuFolders::Settings, "favorites.txt"), m_text, m_icons);
 
 	// The pointer's dot: white with a dark rim, so it shows on light and dark pictures alike.
@@ -121,6 +121,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 
 	m_buttons[GEAR].icon = GEAR_ICON;
 	m_buttons[GAMES].icon = GAMES_ICON;
+	m_buttons[MODE_3D].lit = m_settings.Get().stereo;
+	m_buttons[MODE_3D].icon = m_buttons[MODE_3D].lit ? VOLUMETRIC_ICON : FLAT_ICON;
 	m_buttons[GUN_MODE].icon = GUN_MODE_ICON;
 	m_buttons[GUNS].icon = m_guns > 1 ? TWO_GUNS_ICON : ONE_GUN_ICON;
 	m_buttons[GUN_MODE].lit = m_gun_on;
@@ -187,6 +189,8 @@ std::string VrMenu::TooltipText(int button) const
 			return "Settings";
 		case GAMES:
 			return "Game list";
+		case MODE_3D:
+			return m_settings.Get().stereo ? "3D: volumetric" : "3D: flat";
 		case GUN_MODE:
 			if (!m_has_game)
 				return "Light gun mode (start a game first)";
@@ -227,6 +231,17 @@ void VrMenu::ShowTooltip(int button, float button_x)
 	pose.position = Transform(m_screen,
 		{button_x + 0.5f * BUTTON_SIZE + TOOLTIP_GAP + 0.5f * m_tooltip.Size().width, m_buttons[button].y, 0.0f});
 	m_tooltip.SetPose(pose);
+}
+
+void VrMenu::UpdateModeButton()
+{
+	Button& button = m_buttons[MODE_3D];
+	const bool volumetric = m_settings.Get().stereo;
+	if (button.lit == volumetric)
+		return;
+	button.lit = volumetric;
+	button.icon = volumetric ? VOLUMETRIC_ICON : FLAT_ICON;
+	DrawButton(button);
 }
 
 void VrMenu::SetGunState(bool has_game, bool on, bool chosen, int guns)
@@ -372,7 +387,8 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	const float button_x = 0.5f * screen_width + BUTTON_MARGIN + 0.5f * BUTTON_SIZE;
 	m_buttons[GEAR].y = 0.5f * screen_height - 0.5f * BUTTON_SIZE;
 	m_buttons[GAMES].y = m_buttons[GEAR].y - spacing;
-	m_buttons[GUN_MODE].y = m_buttons[GAMES].y - spacing - BUTTON_GROUP_GAP;
+	m_buttons[MODE_3D].y = m_buttons[GAMES].y - spacing;
+	m_buttons[GUN_MODE].y = m_buttons[MODE_3D].y - spacing - BUTTON_GROUP_GAP;
 	m_buttons[GUNS].y = m_buttons[GUN_MODE].y - spacing;
 	for (Button& button : m_buttons)
 	{
@@ -380,6 +396,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		pose.position = Transform(screen, {button_x, button.y, 0.0f});
 		button.layer.SetPose(pose);
 	}
+	UpdateModeButton();
 	if (m_open != Panel::None && m_reanchor)
 		AnchorPanel();
 	m_reanchor = false;
@@ -476,6 +493,14 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			else if (hovered == GUNS)
 			{
 				result.toggle_guns = true;
+				m_swallow[hand] = true;
+			}
+			else if (hovered == MODE_3D)
+			{
+				VrSettings vr = m_settings.Get();
+				vr.stereo = !vr.stereo;
+				m_settings.Set(vr);
+				UpdateModeButton();
 				m_swallow[hand] = true;
 			}
 			else
@@ -575,6 +600,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
+	static_assert(NUM_LAYER_SLOTS == 4 + NUM_BUTTONS, "the panel, the buttons, the tooltip, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
@@ -587,9 +613,9 @@ void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 			slots[1 + b] = m_buttons[b].layer.Layer();
 	}
 	if (m_show_tooltip && m_open == Panel::None && m_tooltip.HasImage())
-		slots[5] = m_tooltip.Layer();
+		slots[1 + NUM_BUTTONS] = m_tooltip.Layer();
 	if (m_show_pointer)
-		slots[6] = m_beam.Layer();
+		slots[2 + NUM_BUTTONS] = m_beam.Layer();
 	if (m_show_cursor)
-		slots[7] = m_cursor.Layer();
+		slots[3 + NUM_BUTTONS] = m_cursor.Layer();
 }

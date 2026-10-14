@@ -54,13 +54,11 @@ namespace
 		{0x2F5FD0, "Blue"}, {0x2E9E4F, "Green"}, {0xE8892B, "Orange"}, {0x7B45C8, "Purple"}};
 } // namespace
 
-SettingsMenu::SettingsMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, bool running_stereo,
-	bool running_flat, Font& text, Font& icons)
+SettingsMenu::SettingsMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, Font& text,
+	Font& icons)
 	: m_settings(settings)
 	, m_web(web)
 	, m_controls(controls)
-	, m_running_stereo(running_stereo)
-	, m_running_flat(running_flat)
 	, m_gui(text, icons)
 {
 	m_canvas.Resize(WIDTH, HEIGHT);
@@ -295,44 +293,29 @@ void SettingsMenu::RunStereo()
 	VrSettings vr = m_settings.Get();
 	bool changed = false;
 
-	static constexpr std::array<std::string_view, 2> modes = {"Off", "Portal"};
+	static constexpr std::array<std::string_view, 2> modes = {"Flat", "Volumetric"};
 	int mode = vr.stereo ? 1 : 0;
 	if (m_gui.Segmented(GuiId("stereo"),
-			Row("3D effect", "Portal draws the game for each eye, so the world sits behind the screen like a window. "
-							 "Off shows a flat picture.", 52.0f, true),
+			Row("3D mode", "Volumetric draws the game for each eye, so the world sits behind the screen like a "
+						   "window. Flat shows a flat picture. The cube button beside the screen switches it too.",
+				52.0f),
 			modes, &mode))
 	{
 		vr.stereo = mode == 1;
-		if (!vr.stereo)
-			vr.flat = true;
 		changed = true;
 	}
-	if (vr.stereo != m_running_stereo || (!vr.stereo && vr.flat != m_running_flat))
-		Note("Applies the next time the emulator starts.", Theme::accent);
 
 	changed |= m_gui.Slider(GuiId("stereo_depth"),
 		Row("Depth", "How far behind the screen the farthest scenery appears."), &vr.stereo_depth, 0.0f, 5.0f, 0.1f,
 		fmt::format("{:.1f} m", vr.stereo_depth));
 
 	Section("ADVANCED");
-	static constexpr std::array<std::string_view, 2> sources = {"Perspective", "Depth buffer"};
-	int source = vr.stereo_z_mode ? 1 : 0;
-	if (m_gui.Segmented(GuiId("stereo_z_mode"),
-			Row("Depth source", "What tells how far away each object is. Try the other one when the 3D looks flat or "
-								"wrong in a game."),
-			sources, &source))
-	{
-		vr.stereo_z_mode = source == 1;
-		changed = true;
-	}
-	// The screen plane's units differ by source: Q (1/w) for perspective, normalised Z otherwise.
-	const float lo = vr.stereo_z_mode ? 0.01f : 0.1f, hi = vr.stereo_z_mode ? 1.0f : 5.0f;
-	const float step = vr.stereo_z_mode ? 0.005f : 0.05f;
-	float convergence = std::clamp(vr.stereo_convergence, lo, hi);
+	// In the game's normalised Z (the depth buffer).
+	float convergence = vr.stereo_convergence;
 	if (m_gui.Slider(GuiId("stereo_convergence"),
 			Row("Screen plane", "Which depth in the scene sits on the screen glass. Set it so the nearest objects "
 								"just touch the glass."),
-			&convergence, lo, hi, step, vr.stereo_z_mode ? fmt::format("{:.3f}", convergence) : fmt::format("{:.2f}", convergence)))
+			&convergence, 0.01f, 1.0f, 0.005f, fmt::format("{:.3f}", convergence)))
 	{
 		vr.stereo_convergence = convergence;
 		changed = true;
