@@ -102,6 +102,9 @@ select { max-width: 280px; }
 .upload.done .bar > div { background: var(--ok); }
 .upload.failed .state { color: var(--danger); }
 .upload.failed .bar > div { background: var(--danger); }
+.upload .error { color: var(--danger); font-size: 13px; margin-top: 7px; overflow-wrap: anywhere; }
+.upload .dismiss { flex: none; border: none; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; }
+.upload .dismiss:hover { color: var(--text); }
 
 /* Files */
 .files { overflow: hidden; }
@@ -498,9 +501,26 @@ function addFiles(files) {
 
 function finish(entry, ok, text) {
 	entry.item.classList.add(ok ? "done" : "failed");
-	entry.item.querySelector(".state").textContent = text;
-	if (ok) entry.item.querySelector(".bar > div").style.width = "100%";
-	setTimeout(() => entry.item.remove(), ok ? 4000 : 10000);
+	const state = entry.item.querySelector(".state");
+	if (ok || text === "Skipped") {
+		state.textContent = text;
+		if (ok) entry.item.querySelector(".bar > div").style.width = "100%";
+		setTimeout(() => entry.item.remove(), ok ? 4000 : 10000);
+		return;
+	}
+	// A failure stays, its reason in full under the bar, until dismissed.
+	state.textContent = "Failed";
+	const reason = document.createElement("div");
+	reason.className = "error";
+	reason.textContent = text;
+	entry.item.append(reason);
+	const dismiss = document.createElement("button");
+	dismiss.className = "dismiss";
+	dismiss.textContent = "×";
+	dismiss.title = "Dismiss";
+	dismiss.setAttribute("aria-label", "Dismiss");
+	dismiss.addEventListener("click", () => entry.item.remove());
+	entry.item.querySelector(".row").append(dismiss);
 }
 
 function progress(entry, fraction, text) {

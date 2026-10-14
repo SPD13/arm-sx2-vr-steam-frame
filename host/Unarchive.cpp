@@ -22,6 +22,13 @@ namespace
 		void operator()(archive* a) const { archive_read_free(a); }
 	};
 
+	// The last part of an entry's path, for messages.
+	std::string FileName(const std::string& path)
+	{
+		const size_t cut = path.find_last_of("/\\");
+		return cut == std::string::npos ? path : path.substr(cut + 1);
+	}
+
 	// Relative, '/' separated, and staying inside the folder.
 	bool IsSafeRelativePath(std::string_view path)
 	{
@@ -83,7 +90,6 @@ bool Unarchive::Extract(const std::string& path, const std::string& out_dir, con
 	std::error_code ec;
 	std::filesystem::create_directories(out_dir, ec);
 	const uint64_t archive_size = std::max<uint64_t>(std::filesystem::file_size(path, ec), 1);
-	std::vector<char> buf(1 << 20);
 	uint64_t written = 0;
 	archive_entry* header = nullptr;
 	for (;;)
@@ -135,22 +141,35 @@ bool Unarchive::Extract(const std::string& path, const std::string& out_dir, con
 			*error = "Could not write " + decision.path + " on the headset.";
 			return false;
 		}
+		// The data as the reader's own blocks, as bsdtar reads it: libarchive 3.8.9's RAR5 reader
+		// loses its place in some archives when read through archive_read_data instead ("Unsupported
+		// block header size"; a Time Crisis 3 texture pack, entry 3153 of 3381). A block can start past
+		// the end of the last one (a hole in a sparse file): the seek leaves zeros there.
 		uint64_t size = 0;
 		bool ok = true;
 		for (;;)
 		{
-			const la_ssize_t n = archive_read_data(a.get(), buf.data(), buf.size());
-			if (n == 0)
+			const void* block = nullptr;
+			size_t n = 0;
+			la_int64_t offset = 0;
+			const int r = archive_read_data_block(a.get(), &block, &n, &offset);
+			if (r == ARCHIVE_EOF)
 				break;
-			if (n < 0)
+			if (r != ARCHIVE_OK && r != ARCHIVE_WARN)
 			{
 				const char* why = archive_error_string(a.get());
-				*error = "Could not unpack " + entry.name + (why ? std::string(": ") + why : std::string("."));
+				*error = "Could not unpack " + FileName(entry.name) + (why ? std::string(": ") + why : std::string("."));
 				ok = false;
 				break;
 			}
-			size += static_cast<uint64_t>(n);
-			written += static_cast<uint64_t>(n);
+			if (offset < 0 || (static_cast<uint64_t>(offset) != size && fseeko(file, offset, SEEK_SET) != 0))
+			{
+				*error = "Could not unpack " + FileName(entry.name) + ".";
+				ok = false;
+				break;
+			}
+			size = static_cast<uint64_t>(offset) + n;
+			written += n;
 			if (decision.max_size && size > decision.max_size)
 			{
 				*error = entry.name + " is too large.";
@@ -163,7 +182,7 @@ bool Unarchive::Extract(const std::string& path, const std::string& out_dir, con
 				ok = false;
 				break;
 			}
-			if (std::fwrite(buf.data(), 1, static_cast<size_t>(n), file) != static_cast<size_t>(n))
+			if (n && std::fwrite(block, 1, n, file) != n)
 			{
 				*error = "Could not write " + decision.path + " on the headset.";
 				ok = false;
@@ -180,6 +199,9 @@ bool Unarchive::Extract(const std::string& path, const std::string& out_dir, con
 				                                     static_cast<double>(archive_size)),
 					1.0f));
 		}
+		// A hole at the end of the file.
+		if (ok && archive_entry_size_is_set(header) && static_cast<uint64_t>(archive_entry_size(header)) > size)
+			ok = std::fflush(file) == 0 && ftruncate(fileno(file), static_cast<off_t>(archive_entry_size(header))) == 0;
 		ok = std::fclose(file) == 0 && ok;
 		if (!ok)
 		{
