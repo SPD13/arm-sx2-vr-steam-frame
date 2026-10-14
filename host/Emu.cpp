@@ -18,6 +18,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -110,6 +111,20 @@ static std::atomic<bool> s_games_again{false};
 static std::atomic<bool> s_has_bios{false};
 
 static void SetNotice(std::string notice);
+static void OnOSDMessage(std::string_view key, std::string_view text, float duration);
+
+// The core's OSD messages (OnOSDMessage), until they expire. Not OSDMessage: the core has one.
+namespace
+{
+	struct CoreMessage
+	{
+		std::string key; // empty for messages that cannot be replaced
+		std::string text;
+		std::chrono::steady_clock::time_point until;
+	};
+} // namespace
+static std::mutex s_osd_mutex;
+static std::vector<CoreMessage> s_osd_messages;
 
 // The GS presents into an offscreen ring (VKLibretro::Active); this size only seeds it.
 static constexpr u32 SURFACE_WIDTH = 1280;
@@ -243,6 +258,8 @@ bool Emu::InitializeConfig(const Options& options)
 	std::vector<ImGuiManager::FontInfo> fonts(1);
 	fonts[0].data = std::move(roboto_data);
 	ImGuiManager::SetFonts(std::move(fonts));
+	// The OSD messages go above the screen, not into the game's picture.
+	ImGuiManager::SetOSDMessageHook(&OnOSDMessage);
 
 	const std::string ini_path = Path::Combine(EmuFolders::Settings, "PCSX2.ini");
 	const bool ini_exists = FileSystem::FileExists(ini_path.c_str());
@@ -265,9 +282,6 @@ bool Emu::InitializeConfig(const Options& options)
 		auto lock = Host::GetSettingsLock();
 		// Vulkan is the only renderer that can hand frames to the XR compositor.
 		s_base_settings->SetIntValue("EmuCore/GS", "Renderer", static_cast<int>(GSRendererType::VK));
-		// The OSD messages (warnings at boot...) are 12 px at 100%, unreadable on the screen in the
-		// headset: 30 px on the 1280x960 surface.
-		s_base_settings->SetFloatValue("EmuCore/GS", "OsdScale", 250.0f);
 		// The Frame controllers also show up as an SDL gamepad (28de:11e0); OpenXR owns them.
 		s_base_settings->SetBoolValue("InputSources", "SDL", options.sdl_pad);
 		if (options.sdl_pad)
@@ -594,6 +608,46 @@ void Emu::SetCoreSettings(const CoreSettings& settings)
 				VMManager::ApplySettings();
 		});
 	}
+}
+
+// Any thread: the core's OSD messages, shown by the VR menu above the screen (Emu::GetMessages).
+static void OnOSDMessage(std::string_view key, std::string_view text, float duration)
+{
+	std::lock_guard lock(s_osd_mutex);
+	if (text.empty() && duration <= 0.0f)
+	{
+		if (key.empty())
+			s_osd_messages.clear();
+		else
+			std::erase_if(s_osd_messages, [&key](const CoreMessage& m) { return m.key == key; });
+		return;
+	}
+	const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(duration * 1000.0f));
+	if (!key.empty())
+	{
+		// A keyed message replaces the one with its key, where it was.
+		for (CoreMessage& m : s_osd_messages)
+		{
+			if (m.key == key)
+			{
+				m.text = text;
+				m.until = until;
+				return;
+			}
+		}
+	}
+	s_osd_messages.push_back({std::string(key), std::string(text), until});
+}
+
+std::vector<std::string> Emu::GetMessages()
+{
+	std::lock_guard lock(s_osd_mutex);
+	const auto now = std::chrono::steady_clock::now();
+	std::erase_if(s_osd_messages, [now](const CoreMessage& m) { return m.until <= now; });
+	std::vector<std::string> texts;
+	for (const CoreMessage& m : s_osd_messages)
+		texts.push_back(m.text);
+	return texts;
 }
 
 static void SetNotice(std::string notice)

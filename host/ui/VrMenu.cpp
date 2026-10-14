@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace
 {
@@ -42,7 +43,13 @@ namespace
 	// The Wi-Fi line below the screen: smaller than a tooltip.
 	constexpr int WEB_LINE_H_PX = 48;
 	constexpr float WEB_LINE_TEXT_SIZE = 24.0f;
+	// The emulator's messages above the screen: wrapped, oldest on top, bottom-aligned in their layer.
+	constexpr int MESSAGES_W_PX = 1280, MESSAGES_H_PX = 320;
+	constexpr float MESSAGE_TEXT_SIZE = 28.0f;
+	constexpr float MESSAGE_PAD_PX = 12.0f; // above and below a message's text
+	constexpr float MESSAGE_GAP_PX = 8.0f; // between two messages
 	constexpr float METERS_PER_PX = BUTTON_SIZE / static_cast<float>(BUTTON_PX);
+	constexpr int ATLAS_GUTTER_PX = 2; // transparent, between the atlas's parts: filtering does not bleed across
 	constexpr float BUTTON_GROUP_GAP = 0.05f; // more between the menu buttons and the light gun's
 	constexpr uint32_t GEAR_ICON = 0xf013;
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
@@ -55,6 +62,40 @@ namespace
 	constexpr uint32_t PLAY_ICON = 0xf04b;
 	constexpr uint32_t POWER_ICON = 0xf011; // power-off
 	constexpr float SCROLL_SPEED = 22.0f; // pixels per frame with a thumbstick pushed all the way
+
+	// text's lines (at its line breaks) wrapped at spaces to fit width.
+	std::vector<std::string_view> WrapLines(Font& font, std::string_view text, float size, float width)
+	{
+		while (!text.empty() && (text.back() == '\n' || text.back() == ' '))
+			text.remove_suffix(1);
+		std::vector<std::string_view> lines;
+		size_t para = 0;
+		while (para <= text.size())
+		{
+			const size_t para_end = std::min(text.find('\n', para), text.size());
+			const std::string_view line = text.substr(para, para_end - para);
+			size_t start = 0;
+			do
+			{
+				// Take words while they fit (at least one).
+				size_t best = std::string_view::npos, end = start;
+				for (;;)
+				{
+					const size_t stop = std::min(line.find(' ', end), line.size());
+					if (best != std::string_view::npos && font.Measure(line.substr(start, stop - start), size) > width)
+						break;
+					best = stop;
+					if (stop == line.size())
+						break;
+					end = stop + 1;
+				}
+				lines.push_back(line.substr(start, best - start));
+				start = best + 1;
+			} while (start < line.size());
+			para = para_end + 1;
+		}
+		return lines;
+	}
 } // namespace
 
 static_assert(SettingsMenu::WIDTH == GameListMenu::WIDTH && SettingsMenu::HEIGHT == GameListMenu::HEIGHT,
@@ -101,24 +142,43 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		button.offset = slot_of[b] * spacing + (b == GUN_MODE || b == GUNS ? BUTTON_GROUP_GAP : 0.0f);
 		m_groups[button.group].height = std::max(m_groups[button.group].height, button.offset + BUTTON_SIZE);
 	}
-	bool buttons_made = true;
+	// The atlas: the button groups side by side; right of them the tooltip, the notice and the Wi-Fi
+	// line one above the other, then the beam, the dot and the pad; the messages below all of it.
+	const auto place = [](OverlayLayer::Part& part, int x, int y, int w, int h) {
+		part.rect = {{x, y}, {w, h}};
+		part.size = {w * METERS_PER_PX, h * METERS_PER_PX};
+		return y + h + ATLAS_GUTTER_PX; // the next part's y below it
+	};
+	int x = 0, groups_bottom = 0;
 	for (ButtonGroup& group : m_groups)
 	{
 		const int px = static_cast<int>(std::lround(group.height / METERS_PER_PX));
-		buttons_made = buttons_made && group.layer.Create(xr, device, gpu, queue, queue_family_index, BUTTON_PX, px);
+		groups_bottom = std::max(groups_bottom, place(group.part, x, 0, BUTTON_PX, px));
 		group.canvas.Resize(BUTTON_PX, px);
-		group.layer.SetSize(BUTTON_SIZE, group.height);
+		x += BUTTON_PX + ATLAS_GUTTER_PX;
 	}
+	int y = place(m_tooltip, x, 0, TOOLTIP_W_PX, TOOLTIP_H_PX);
+	y = place(m_notice, x, y, TOOLTIP_W_PX, TOOLTIP_H_PX);
+	y = place(m_web_line, x, y, TOOLTIP_W_PX, WEB_LINE_H_PX);
+	place(m_beam, x, y, BEAM_W_PX, BEAM_H_PX);
+	place(m_cursor, x + BEAM_W_PX + ATLAS_GUTTER_PX, y, CURSOR_PX, CURSOR_PX);
+	y = place(m_pad, x + BEAM_W_PX + CURSOR_PX + 2 * ATLAS_GUTTER_PX, y, 4, 4) - 4 + CURSOR_PX;
+	const int messages_y = std::max(groups_bottom, y);
+	place(m_messages, 0, messages_y, MESSAGES_W_PX, MESSAGES_H_PX);
+	const int atlas_w = std::max(x + TOOLTIP_W_PX, MESSAGES_W_PX), atlas_h = messages_y + MESSAGES_H_PX;
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
-		!buttons_made || !m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
-		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX) ||
-		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX) ||
-		!m_notice.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX) ||
-		!m_web_line.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, WEB_LINE_H_PX))
+		!m_atlas.Create(xr, device, gpu, queue, queue_family_index, atlas_w, atlas_h))
 	{
 		Destroy();
 		return false;
 	}
+	m_atlas_canvas.Resize(atlas_w, atlas_h);
+	m_tooltip_canvas.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
+	m_notice_canvas.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
+	m_web_line_canvas.Resize(TOOLTIP_W_PX, WEB_LINE_H_PX);
+	m_messages_canvas.Resize(MESSAGES_W_PX, MESSAGES_H_PX);
+	m_pad.size = {0.001f, 0.001f};
+	m_pad.pose = {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, -50.0f, 0.0f}}; // far below, out of sight
 	m_settings_menu = std::make_unique<SettingsMenu>(m_settings, m_web, m_controls, m_text, m_icons);
 	m_game_list = std::make_unique<GameListMenu>(Path::Combine(EmuFolders::Settings, "favorites.txt"), m_text, m_icons);
 
@@ -127,8 +187,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	canvas.Resize(CURSOR_PX, CURSOR_PX);
 	canvas.FillCircle(0.5f * CURSOR_PX, 0.5f * CURSOR_PX, 0.5f * CURSOR_PX - 2.0f, Rgb(0x000000, 140));
 	canvas.FillCircle(0.5f * CURSOR_PX, 0.5f * CURSOR_PX, 0.5f * CURSOR_PX - 9.0f, Rgb(0xffffff));
-	m_cursor.Upload(canvas);
-	m_cursor.SetSize(CURSOR_SIZE, CURSOR_SIZE);
+	Put(m_cursor, canvas);
+	m_cursor.size = {CURSOR_SIZE, CURSOR_SIZE};
 
 	// The beam fades in from the controller towards the dot.
 	canvas.Resize(BEAM_W_PX, BEAM_H_PX);
@@ -138,10 +198,7 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		canvas.FillRect({static_cast<float>(x), 3.0f, 1.0f, 10.0f}, Theme::accent.WithAlpha(alpha * 0.5f));
 		canvas.FillRect({static_cast<float>(x), 6.0f, 1.0f, 4.0f}, Rgb(0xffffff).WithAlpha(alpha));
 	}
-	m_beam.Upload(canvas);
-
-	m_tooltip_canvas.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
-	m_tooltip.SetSize(TOOLTIP_W_PX * METERS_PER_PX, TOOLTIP_H_PX * METERS_PER_PX);
+	Put(m_beam, canvas);
 	m_tooltip_text.clear();
 
 	m_buttons[GEAR].icon = GEAR_ICON;
@@ -161,21 +218,26 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_created = true;
 	for (int g = 0; g < NUM_GROUPS; g++)
 		DrawGroup(g);
+	// Uploaded now, so the pad is there from the first frame.
+	m_atlas.Upload(m_atlas_canvas);
+	m_atlas_dirty = false;
 	return true;
+}
+
+void VrMenu::Put(const OverlayLayer::Part& part, const Canvas& canvas)
+{
+	m_atlas_canvas.Copy(canvas, part.rect.offset.x, part.rect.offset.y);
+	m_atlas_dirty = true;
 }
 
 void VrMenu::Destroy()
 {
 	m_created = false;
 	m_show_tooltip = false;
-	m_tooltip.Destroy();
-	m_notice.Destroy();
-	m_web_line.Destroy();
+	m_atlas.Destroy();
+	m_atlas_dirty = false;
 	m_web_line_text.clear();
-	m_beam.Destroy();
-	m_cursor.Destroy();
-	for (ButtonGroup& group : m_groups)
-		group.layer.Destroy();
+	m_messages_text.clear();
 	m_panel.Destroy();
 	m_game_list.reset();
 	m_settings_menu.reset();
@@ -226,7 +288,7 @@ void VrMenu::DrawGroup(int group)
 			c.DrawIcon(m_icons, 60.0f, all, button.icon, Theme::text.WithAlpha(0.8f));
 		}
 	}
-	m_groups[group].layer.Upload(c);
+	Put(m_groups[group].part, c);
 }
 
 std::string VrMenu::TooltipText(int button) const
@@ -234,9 +296,9 @@ std::string VrMenu::TooltipText(int button) const
 	switch (button)
 	{
 		case GEAR:
-			return "Settings";
+			return m_open == Panel::Settings && m_has_game ? "Back to the game" : "Settings";
 		case GAMES:
-			return "Game list";
+			return m_open == Panel::Games && m_has_game ? "Back to the game" : "Game list";
 		case MODE_3D:
 			return m_settings.Get().stereo ? "3D: volumetric" : "3D: flat";
 		case GUN_MODE:
@@ -278,13 +340,12 @@ void VrMenu::ShowTooltip(int button, float button_x)
 		c.DrawText(m_text, TOOLTIP_TEXT_SIZE, TOOLTIP_PAD_PX, 0.5f * (TOOLTIP_H_PX - m_text.LineHeight(TOOLTIP_TEXT_SIZE)),
 			text, Theme::text);
 		c.ResetClip();
-		m_tooltip.Upload(c);
+		Put(m_tooltip, c);
 		m_tooltip_text = std::move(text);
 	}
-	XrPosef pose = m_screen;
-	pose.position = Transform(m_screen,
-		{button_x + 0.5f * BUTTON_SIZE + TOOLTIP_GAP + 0.5f * m_tooltip.Size().width, m_buttons[button].y, 0.0f});
-	m_tooltip.SetPose(pose);
+	m_tooltip.pose = m_screen;
+	m_tooltip.pose.position = Transform(m_screen,
+		{button_x + 0.5f * BUTTON_SIZE + TOOLTIP_GAP + 0.5f * m_tooltip.size.width, m_buttons[button].y, 0.0f});
 }
 
 void VrMenu::UpdateModeButton()
@@ -334,7 +395,6 @@ void VrMenu::UpdateWebLine()
 		{
 			// A pill as wide as the text, centred in the layer; lit while pointed at.
 			Canvas& c = m_web_line_canvas;
-			c.Resize(TOOLTIP_W_PX, WEB_LINE_H_PX);
 			c.Clear();
 			const float text_w = m_text.Measure(text, WEB_LINE_TEXT_SIZE);
 			const float pill_w = std::min(text_w + 2.0f * TOOLTIP_PAD_PX, static_cast<float>(TOOLTIP_W_PX));
@@ -345,15 +405,64 @@ void VrMenu::UpdateWebLine()
 			c.DrawText(m_text, WEB_LINE_TEXT_SIZE, pill.x + TOOLTIP_PAD_PX,
 				0.5f * (WEB_LINE_H_PX - m_text.LineHeight(WEB_LINE_TEXT_SIZE)), text, Theme::text);
 			c.ResetClip();
-			m_web_line.Upload(c);
-			m_web_line.SetSize(TOOLTIP_W_PX * METERS_PER_PX, WEB_LINE_H_PX * METERS_PER_PX);
+			Put(m_web_line, c);
 			m_web_line_width = pill_w * METERS_PER_PX;
 		}
 	}
 	m_web_line_y = -0.5f * m_screen_height - TOOLTIP_GAP - 0.5f * WEB_LINE_H_PX * METERS_PER_PX;
+	m_web_line.pose = m_screen;
+	m_web_line.pose.position = Transform(m_screen, {0.0f, m_web_line_y, 0.0f});
+}
+
+void VrMenu::UpdateMessages()
+{
+	std::vector<std::string> texts = Emu::GetMessages();
+	if (texts != m_messages_text)
+	{
+		m_messages_text = std::move(texts);
+		if (!m_messages_text.empty())
+		{
+			// Each message a box as wide as its text, centred; the newest at the bottom, nearest the
+			// screen, and the oldest left out when they do not all fit.
+			Canvas& c = m_messages_canvas;
+			c.Clear();
+			const float line_h = std::round(m_text.LineHeight(MESSAGE_TEXT_SIZE) * 1.1f);
+			const float max_text_w = MESSAGES_W_PX - 2.0f * TOOLTIP_PAD_PX;
+			float bottom = static_cast<float>(MESSAGES_H_PX);
+			for (auto it = m_messages_text.rbegin(); it != m_messages_text.rend(); ++it)
+			{
+				const std::vector<std::string_view> lines = WrapLines(m_text, *it, MESSAGE_TEXT_SIZE, max_text_w);
+				const float box_h = lines.size() * line_h + 2.0f * MESSAGE_PAD_PX;
+				if (bottom - box_h < 0.0f)
+					break;
+				float text_w = 0.0f;
+				for (std::string_view line : lines)
+					text_w = std::max(text_w, m_text.Measure(line, MESSAGE_TEXT_SIZE));
+				const float box_w = std::min(text_w, max_text_w) + 2.0f * TOOLTIP_PAD_PX;
+				const Rect box{0.5f * (MESSAGES_W_PX - box_w), bottom - box_h, box_w, box_h};
+				const float radius = std::min(0.5f * box_h, 0.5f * TOOLTIP_H_PX);
+				c.FillRect(box, Theme::panel.WithAlpha(0.9f), radius);
+				c.StrokeRect(box, Theme::border, radius, 2.0f);
+				c.SetClip(box.Inset(TOOLTIP_PAD_PX, 0.0f));
+				float y = box.y + MESSAGE_PAD_PX;
+				for (std::string_view line : lines)
+				{
+					c.DrawText(m_text, MESSAGE_TEXT_SIZE, box.x + TOOLTIP_PAD_PX, y, line, Theme::text);
+					y += line_h;
+				}
+				c.ResetClip();
+				bottom = box.y - MESSAGE_GAP_PX;
+			}
+			Put(m_messages, c);
+		}
+	}
+	// Above the screen, and above an open panel that stands higher.
+	float top = 0.5f * m_screen_height;
+	if (m_open != Panel::None)
+		top = std::max(top, 0.5f * m_panel.Size().height);
 	XrPosef pose = m_screen;
-	pose.position = Transform(m_screen, {0.0f, m_web_line_y, 0.0f});
-	m_web_line.SetPose(pose);
+	pose.position = Transform(m_screen, {0.0f, top + TOOLTIP_GAP + 0.5f * m_messages.size.height, 0.0f});
+	m_messages.pose = pose;
 }
 
 void VrMenu::ShowNotice(std::string text, float seconds)
@@ -362,7 +471,6 @@ void VrMenu::ShowNotice(std::string text, float seconds)
 		return;
 	// A pill as wide as the text, centred in the layer.
 	Canvas& c = m_notice_canvas;
-	c.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
 	c.Clear();
 	const float text_w = m_text.Measure(text, TOOLTIP_TEXT_SIZE);
 	const float pill_w = std::min(text_w + 2.0f * TOOLTIP_PAD_PX, static_cast<float>(TOOLTIP_W_PX));
@@ -373,8 +481,7 @@ void VrMenu::ShowNotice(std::string text, float seconds)
 	c.DrawText(m_text, TOOLTIP_TEXT_SIZE, pill.x + TOOLTIP_PAD_PX, 0.5f * (TOOLTIP_H_PX - m_text.LineHeight(TOOLTIP_TEXT_SIZE)),
 		text, Theme::text);
 	c.ResetClip();
-	m_notice.Upload(c);
-	m_notice.SetSize(TOOLTIP_W_PX * METERS_PER_PX, TOOLTIP_H_PX * METERS_PER_PX);
+	Put(m_notice, c);
 	m_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(seconds * 1000.0f));
 	Console.WriteLnFmt("Menu: notice \"{}\"", text);
 }
@@ -438,8 +545,6 @@ void VrMenu::Open(Panel panel)
 		Emu::SetPaused(true);
 	m_on_button[0] = m_on_button[1] = -1;
 	m_open = panel;
-	if (panel == Panel::Games)
-		m_back_to_games = false;
 	UpdateShownButtons();
 	if (panel == Panel::Settings)
 	{
@@ -461,7 +566,6 @@ void VrMenu::OpenGameList()
 void VrMenu::Close()
 {
 	m_open = Panel::None;
-	m_back_to_games = false;
 	m_on_button[0] = m_on_button[1] = -1;
 	UpdateShownButtons();
 	if (m_pauses_game && !m_user_paused)
@@ -471,11 +575,14 @@ void VrMenu::Close()
 
 void VrMenu::UpdateShownButtons()
 {
+	// Beside an open panel, the buttons that go to the panels (and quit), the open one's lit.
 	for (int b = 0; b < NUM_BUTTONS; b++)
 	{
-		m_buttons[b].shown = m_open == Panel::None || (m_open == Panel::Games && (b == GEAR || b == POWER));
+		m_buttons[b].shown = m_open == Panel::None || b == GEAR || b == GAMES || b == POWER;
 		m_buttons[b].hovered = false;
 	}
+	m_buttons[GEAR].lit = m_open == Panel::Settings;
+	m_buttons[GAMES].lit = m_open == Panel::Games;
 	m_show_tooltip = false;
 	for (int g = 0; g < NUM_GROUPS; g++)
 		DrawGroup(g);
@@ -496,7 +603,7 @@ void VrMenu::PlacePointer(XrTime time, int hand, const XrPosef& aim, const Hit& 
 	XrPosef cursor;
 	cursor.position = hit.point + hit.normal * 0.004f;
 	cursor.orientation = facing;
-	m_cursor.SetPose(cursor);
+	m_cursor.pose = cursor;
 
 	// A thin quad from the controller to the dot (or into the room when it hits nothing), turned
 	// about its length to face the head.
@@ -509,8 +616,8 @@ void VrMenu::PlacePointer(XrTime time, int hand, const XrPosef& aim, const Hit& 
 	XrVector3f z = Normalize(to_head - dir * Dot(to_head, dir));
 	if (Dot(z, z) < 0.5f)
 		z = Normalize(Cross(dir, {0.0f, 1.0f, 0.0f}));
-	m_beam.SetPose({QuatFromAxes(dir, Cross(z, dir), z), centre});
-	m_beam.SetSize(length, BEAM_WIDTH);
+	m_beam.pose = {QuatFromAxes(dir, Cross(z, dir), z), centre};
+	m_beam.size = {length, BEAM_WIDTH};
 }
 
 VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std::array<Pointer, 2>& pointers,
@@ -526,14 +633,11 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	m_screen_width = screen_width;
 	m_screen_height = screen_height;
 	UpdateWebLine();
-	if (m_notice.HasImage())
-	{
-		// Below the screen, and below the Wi-Fi line when it shows.
-		const float top = m_web_line_text.empty() ? -0.5f * screen_height : m_web_line_y - 0.5f * m_web_line.Size().height;
-		XrPosef pose = screen;
-		pose.position = Transform(screen, {0.0f, top - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
-		m_notice.SetPose(pose);
-	}
+	UpdateMessages();
+	// The notice below the screen, and below the Wi-Fi line when it shows.
+	const float notice_top = m_web_line_text.empty() ? -0.5f * screen_height : m_web_line_y - 0.5f * m_web_line.size.height;
+	m_notice.pose = screen;
+	m_notice.pose.position = Transform(screen, {0.0f, notice_top - TOOLTIP_GAP - 0.5f * m_notice.size.height, 0.0f});
 	m_pointers = pointers;
 
 	// A game from the list that would not start: back to the list, which says why.
@@ -637,8 +741,11 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	}
 	m_web_line_hovered = false;
 
+	// While a control is being mapped, a trigger press is the input to map: not a click on a button
+	// or the panel, nor a click away that closes the menu.
+	const bool mapping = m_open == Panel::Settings && m_settings_menu->IsMappingControl();
 	bool just_opened = false;
-	if (m_open == Panel::None || m_open == Panel::Games)
+	if (!mapping)
 	{
 		const int hovered = on_button[hand];
 		for (int b = 0; b < NUM_BUTTONS; b++)
@@ -693,13 +800,18 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 				UpdatePauseButton();
 				m_swallow[hand] = true;
 			}
+			else if (hovered != POWER && m_open == (hovered == GAMES ? Panel::Games : Panel::Settings))
+			{
+				// The open panel's own button: back to the game, if one runs.
+				if (m_has_game)
+					Close();
+				m_swallow[hand] = true;
+			}
 			else
 			{
-				// The gear, the game list, or the power button's confirmation; from the game list, the
-				// settings go back to it.
-				const bool from_games = m_open == Panel::Games;
+				// The gear, the game list, or the power button's confirmation: that panel, in place of
+				// the open one.
 				Open(hovered == GAMES ? Panel::Games : Panel::Settings);
-				m_back_to_games = from_games;
 				if (hovered == POWER)
 					m_settings_menu->ShowQuitDialog();
 				ShowTooltip(-1, button_x);
@@ -712,9 +824,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		else if (on_web[hand] && pressed[hand] && !m_swallow[hand])
 		{
 			// The Wi-Fi line: the settings, on the Wi-Fi Transfer page.
-			const bool from_games = m_open == Panel::Games;
 			Open(Panel::Settings);
-			m_back_to_games = from_games;
 			m_settings_menu->ShowTransferPage();
 			m_web_line_hovered = false;
 			just_opened = true;
@@ -742,9 +852,6 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		gui.pointer = hand_on_panel;
 		gui.x = (panel_hit.x / m_panel.Size().width + 0.5f) * static_cast<float>(SettingsMenu::WIDTH);
 		gui.y = (0.5f - panel_hit.y / m_panel.Size().height) * static_cast<float>(SettingsMenu::HEIGHT);
-		// While a control is being mapped, a trigger press is the input to map: neither a click nor
-		// a click away that closes the menu.
-		const bool mapping = m_open == Panel::Settings && m_settings_menu->IsMappingControl();
 		const bool usable = !just_opened && !m_swallow[hand] && !mapping;
 		gui.down = usable && m_trigger_down[hand];
 		gui.pressed = usable && pressed[hand];
@@ -786,13 +893,13 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			{
 				Open(Panel::Settings);
 				m_settings_menu->ShowTransferPage();
-				m_back_to_games = true;
 				just_opened = true;
 			}
 		}
 		if (close || (usable && pressed[hand] && !hand_on_panel && on_button[hand] < 0))
 		{
-			if (m_open == Panel::Settings && m_back_to_games && !m_has_game)
+			// With no game, the settings go back to the game list (the welcome screen).
+			if (m_open == Panel::Settings && !m_has_game)
 			{
 				Open(Panel::Games);
 				just_opened = true;
@@ -821,7 +928,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	{
 		XrPosef pose = screen;
 		pose.position = Transform(screen, {button_x, group.top_y + 0.5f * BUTTON_SIZE - 0.5f * group.height, 0.0f});
-		group.layer.SetPose(pose);
+		group.part.pose = pose;
 	}
 
 	for (int h = 0; h < 2; h++)
@@ -831,27 +938,45 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 6 + NUM_GROUPS,
-		"the panel, the button groups, the tooltip, the notice, the Wi-Fi line, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 7 + NUM_GROUPS,
+		"the panel, the button groups, the tooltip, the notice, the Wi-Fi line, the messages, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
 		return;
+	// What changed in the atlas since the last frame, in one upload.
+	if (m_atlas_dirty)
+	{
+		m_atlas.Upload(m_atlas_canvas);
+		m_atlas_dirty = false;
+	}
 	if (m_open != Panel::None && m_panel.HasImage())
 		slots[0] = m_panel.Layer();
+	if (!m_atlas.HasImage())
+		return;
 	for (const Button& button : m_buttons)
 	{
-		if (button.shown && m_groups[button.group].layer.HasImage())
-			slots[1 + button.group] = m_groups[button.group].layer.Layer();
+		if (button.shown)
+			slots[1 + button.group] = m_atlas.Layer(m_groups[button.group].part);
 	}
-	if (m_show_tooltip && m_tooltip.HasImage())
-		slots[1 + NUM_GROUPS] = m_tooltip.Layer();
-	if (m_notice.HasImage() && std::chrono::steady_clock::now() < m_notice_until)
-		slots[2 + NUM_GROUPS] = m_notice.Layer();
-	if (!m_web_line_text.empty() && m_web_line.HasImage())
-		slots[3 + NUM_GROUPS] = m_web_line.Layer();
+	if (m_show_tooltip)
+		slots[1 + NUM_GROUPS] = m_atlas.Layer(m_tooltip);
+	if (std::chrono::steady_clock::now() < m_notice_until)
+		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_notice);
+	if (!m_web_line_text.empty())
+		slots[3 + NUM_GROUPS] = m_atlas.Layer(m_web_line);
+	if (!m_messages_text.empty())
+		slots[4 + NUM_GROUPS] = m_atlas.Layer(m_messages);
 	if (m_show_pointer)
-		slots[4 + NUM_GROUPS] = m_beam.Layer();
+		slots[5 + NUM_GROUPS] = m_atlas.Layer(m_beam);
 	if (m_show_cursor)
-		slots[5 + NUM_GROUPS] = m_cursor.Layer();
+		slots[6 + NUM_GROUPS] = m_atlas.Layer(m_cursor);
+}
+
+bool VrMenu::GetPadLayer(XrCompositionLayerQuad* quad)
+{
+	if (!m_created || !m_atlas.HasImage())
+		return false;
+	*quad = *reinterpret_cast<const XrCompositionLayerQuad*>(m_atlas.Layer(m_pad));
+	return true;
 }

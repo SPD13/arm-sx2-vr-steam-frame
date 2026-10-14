@@ -15,9 +15,10 @@ namespace
 {
 	// A sample brighter than this (its brightest channel, 0..1) is light the sensor would see ...
 	constexpr float LIGHT_THRESHOLD = 0.1f;
-	// ... and a picture with fewer lit samples than this share is dark. Not zero: the emulator's
-	// on-screen messages are drawn into the picture (a few percent of it).
-	constexpr float DARK_SHARE = 0.10f;
+	// ... and a picture with fewer lit samples than this share is dark: a black frame, with a small
+	// margin (a stray lit pixel). The emulator's messages are not in the picture (VrMenu shows them
+	// above the screen).
+	constexpr float DARK_SHARE = 0.02f;
 
 	// The push constants of gun_light.comp.
 	struct Params

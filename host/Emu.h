@@ -115,6 +115,10 @@ namespace Emu
 	void ResetGame();
 	// A short message for the user about the last of those, once; empty when there is none.
 	std::string TakeNotice();
+	// The emulator's on-screen messages still showing (warnings at boot...), oldest first. The core
+	// hands them over instead of drawing them into the game's picture, where the light gun's sensor
+	// would see them (GunLight). Any thread.
+	std::vector<std::string> GetMessages();
 
 	// DualShock 2 state for port 1, applied from the XR thread each frame.
 	struct PadState

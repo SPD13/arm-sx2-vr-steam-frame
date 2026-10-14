@@ -22,6 +22,18 @@ void Canvas::Clear(Color color)
 	std::fill(m_pixels.begin(), m_pixels.end(), value);
 }
 
+void Canvas::Copy(const Canvas& src, int x, int y)
+{
+	const int x0 = std::max(x, 0), x1 = std::min(x + src.m_width, m_width);
+	if (x0 >= x1)
+		return;
+	for (int row = std::max(y, 0); row < std::min(y + src.m_height, m_height); row++)
+	{
+		const uint32_t* from = src.m_pixels.data() + static_cast<size_t>(row - y) * src.m_width + (x0 - x);
+		std::copy(from, from + (x1 - x0), m_pixels.begin() + static_cast<size_t>(row) * m_width + x0);
+	}
+}
+
 void Canvas::SetClip(const Rect& clip)
 {
 	m_clip_x0 = std::clamp(static_cast<int>(std::floor(clip.x)), 0, m_width);

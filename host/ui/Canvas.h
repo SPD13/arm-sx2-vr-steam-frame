@@ -47,6 +47,8 @@ public:
 	const uint32_t* Pixels() const { return m_pixels.data(); }
 
 	void Clear(Color color = {0, 0, 0, 0});
+	// Replaces the pixels at x, y (top left) with src's, clipped to the canvas.
+	void Copy(const Canvas& src, int x, int y);
 	// Drawing outside the clip rectangle is dropped; the default is the whole canvas.
 	void SetClip(const Rect& clip);
 	void ResetClip();

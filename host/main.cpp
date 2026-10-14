@@ -398,17 +398,8 @@ int main(int argc, char* argv[])
 	// An invisible quad for the layer slots that are empty this frame, so that every layer keeps its
 	// place in the layer list. SteamVR shows quad layers as overlays matched by their place in the
 	// list: when a menu opened or closed and layers moved in the list, the menu and the guns were
-	// shown for a frame where other layers had been.
-	OverlayLayer layer_pad;
-	if (layer_pad.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family, 4, 4))
-	{
-		Canvas clear;
-		clear.Resize(4, 4);
-		clear.Clear();
-		layer_pad.Upload(clear);
-		layer_pad.SetSize(0.001f, 0.001f);
-		layer_pad.SetPose({{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, -50.0f, 0.0f}});
-	}
+	// shown for a frame where other layers had been. It is part of the menu's image (a swapchain of
+	// its own would count against SteamVR's 16).
 	std::array<XrCompositionLayerQuad, 24> pads{}; // one per layer slot (see below)
 	screen_right.SetEyeVisibility(XR_EYE_VISIBILITY_RIGHT);
 
@@ -990,7 +981,7 @@ int main(int argc, char* argv[])
 
 		const Clock::time_point t_emu_done = Clock::now();
 		// Every layer has a slot of its own, always at the same place in the list, with an invisible
-		// quad standing in when it is hidden (see layer_pad).
+		// quad standing in when it is hidden (see pads).
 		enum Slot
 		{
 			SLOT_SCREEN, // the screen: the left eye's (volumetric) or both eyes'
@@ -1048,11 +1039,8 @@ int main(int argc, char* argv[])
 			last_used = slots[i] ? i : last_used;
 		for (int i = 0; i <= last_used; i++)
 		{
-			if (!slots[i] && layer_pad.HasImage())
-			{
-				pads[i] = *reinterpret_cast<const XrCompositionLayerQuad*>(layer_pad.Layer());
+			if (!slots[i] && menu.GetPadLayer(&pads[i]))
 				slots[i] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&pads[i]);
-			}
 			if (slots[i])
 				layers[layer_count++] = slots[i];
 		}
@@ -1090,7 +1078,6 @@ int main(int argc, char* argv[])
 	gun_depth.Destroy();
 	gun_light.Destroy();
 	gun_renderer.Destroy();
-	layer_pad.Destroy();
 	menu.Destroy();
 	screen_right.Destroy();
 	screen.Destroy();

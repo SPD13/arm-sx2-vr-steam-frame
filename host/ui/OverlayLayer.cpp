@@ -220,14 +220,23 @@ void OverlayLayer::Upload(const Canvas& canvas)
 
 const XrCompositionLayerBaseHeader* OverlayLayer::Layer()
 {
-	m_layer = {XR_TYPE_COMPOSITION_LAYER_QUAD};
-	// Premultiplied alpha (the canvas's), blended over the layers before it.
-	m_layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-	m_layer.space = m_xr->LocalSpace();
-	m_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-	m_layer.subImage.swapchain = m_swapchain;
-	m_layer.subImage.imageRect = {{0, 0}, {m_width, m_height}};
-	m_layer.pose = m_pose;
-	m_layer.size = m_size;
+	Part whole{{{0, 0}, {m_width, m_height}}, m_pose, m_size};
+	Layer(whole);
+	m_layer = whole.layer;
 	return reinterpret_cast<const XrCompositionLayerBaseHeader*>(&m_layer);
+}
+
+const XrCompositionLayerBaseHeader* OverlayLayer::Layer(Part& part)
+{
+	XrCompositionLayerQuad& layer = part.layer;
+	layer = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+	// Premultiplied alpha (the canvas's), blended over the layers before it.
+	layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+	layer.space = m_xr->LocalSpace();
+	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	layer.subImage.swapchain = m_swapchain;
+	layer.subImage.imageRect = part.rect;
+	layer.pose = part.pose;
+	layer.size = part.size;
+	return reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer);
 }

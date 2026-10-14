@@ -12,9 +12,10 @@
 // show; pointing at a button and pulling the trigger opens its panel in front of the screen and
 // pauses the game. A tooltip beside the button the pointer is on says what it does. Its trigger
 // clicks, and the thumbsticks scroll the game list and the texture pack list. A click away from the
-// panel, its close button, or starting a game close it. The game list (the welcome screen when no
-// game runs) keeps the gear and the power button beside it, so the Wi-Fi transfer and quitting stay
-// at hand; settings opened from it go back to it when they close while no game runs.
+// panel, its close button, or starting a game close it. While a panel is open, the gear, the game
+// list and the power button stay beside it, the open panel's own lit, and a click on another goes
+// to its panel: the welcome screen (the game list, when no game runs) and a game alike. The open
+// panel's own button goes back to the game; with no game, settings that close go back to the list.
 //
 // A hand holding a light gun points with the gun's muzzle instead, and draws its own beam
 // (GunRenderer): the menu then only says where the ray meets the menu, if it does.
@@ -34,6 +35,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 class VrMenu
 {
@@ -86,10 +88,14 @@ public:
 	void Reanchor() { m_reanchor = true; }
 
 	// Its layers, each always in the same slot (null when hidden): the panel, the three button groups, the
-	// tooltip, the notice below the screen, the Wi-Fi line below the screen, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
+	// tooltip, the notice below the screen, the Wi-Fi line below the screen, the emulator's messages
+	// above the screen, the pointer's beam and its dot. SteamVR shows quad layers as overlays matched by their place in the
 	// layer list, so a layer that moved in the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 9;
+	static constexpr int NUM_LAYER_SLOTS = 10;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
+	// An invisible quad, to stand in for a hidden layer and keep the others in their place in the
+	// list (see main.cpp). False until Create.
+	bool GetPadLayer(XrCompositionLayerQuad* quad);
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
 	void SetPausesGame(bool pauses) { m_pauses_game = pauses; }
@@ -140,7 +146,7 @@ private:
 	// game list and the light gun's), the 3D button, and the bottom ones (pause and power).
 	struct ButtonGroup
 	{
-		OverlayLayer layer;
+		OverlayLayer::Part part;
 		Canvas canvas;
 		float height = 0.0f; // meters, from its first button's top to its last's bottom
 		float top_y = 0.0f; // its first button's centre, meters above the screen's centre
@@ -179,29 +185,43 @@ private:
 	std::unique_ptr<SettingsMenu> m_settings_menu;
 	std::unique_ptr<GameListMenu> m_game_list;
 	OverlayLayer m_panel; // whichever menu is open
+	// Every other layer is a part of one image, the atlas: a swapchain each would be too many
+	// (SteamVR on the Frame allows 16). The panel keeps its own: it is most of the pixels, and
+	// redraws every frame while it scrolls.
+	OverlayLayer m_atlas;
+	Canvas m_atlas_canvas;
+	bool m_atlas_dirty = false;
+	// Copies canvas (as large as the part) into the part's place in the atlas, uploaded with the next frame's layers.
+	void Put(const OverlayLayer::Part& part, const Canvas& canvas);
+	OverlayLayer::Part m_pad; // transparent
 	std::array<Button, NUM_BUTTONS> m_buttons;
 	std::array<ButtonGroup, NUM_GROUPS> m_groups;
 	std::array<Pointer, 2> m_pointers;
-	OverlayLayer m_cursor;
-	OverlayLayer m_beam;
-	OverlayLayer m_tooltip;
+	OverlayLayer::Part m_cursor;
+	OverlayLayer::Part m_beam;
+	OverlayLayer::Part m_tooltip;
 	Canvas m_tooltip_canvas;
 	std::string m_tooltip_text; // what m_tooltip shows
 	// While Wi-Fi transfer runs, a line below the screen with its address; a click opens its page.
 	void UpdateWebLine();
-	OverlayLayer m_web_line;
+	OverlayLayer::Part m_web_line;
 	Canvas m_web_line_canvas;
 	std::string m_web_line_text; // what it shows, empty while hidden
 	bool m_web_line_hovered = false; // the pointer is on it
 	bool m_web_line_drawn_hovered = false; // as drawn
 	float m_web_line_width = 0.0f; // the pill's, meters
 	float m_web_line_y = 0.0f; // its centre, meters above the screen's centre
-	OverlayLayer m_notice;
+	OverlayLayer::Part m_notice;
 	Canvas m_notice_canvas;
 	std::chrono::steady_clock::time_point m_notice_until{};
+	// The emulator's messages (Emu::GetMessages), stacked above the screen: outside the game's
+	// picture, where the light gun's sensor does not see them.
+	void UpdateMessages();
+	OverlayLayer::Part m_messages;
+	Canvas m_messages_canvas;
+	std::vector<std::string> m_messages_text; // what it shows, empty while hidden
 
 	Panel m_open = Panel::None;
-	bool m_back_to_games = false; // settings opened from the game list go back to it when no game runs
 	bool m_reanchor = false;
 	bool m_show_pointer = false; // the beam
 	bool m_show_cursor = false; // the dot at its end, when it ends on something

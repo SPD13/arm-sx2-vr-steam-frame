@@ -34,6 +34,17 @@ public:
 
 	const XrCompositionLayerBaseHeader* Layer();
 
+	// Part of the image shown as a quad of its own, so that several layers share one swapchain
+	// (SteamVR on the Frame allows 16 swapchains). Placed like the whole layer, in LOCAL space.
+	struct Part
+	{
+		XrRect2Di rect{}; // pixels of the image
+		XrPosef pose{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -2.0f}};
+		XrExtent2Df size{1.0f, 1.0f};
+		XrCompositionLayerQuad layer{XR_TYPE_COMPOSITION_LAYER_QUAD};
+	};
+	const XrCompositionLayerBaseHeader* Layer(Part& part);
+
 private:
 	struct Staging
 	{
