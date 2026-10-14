@@ -1,8 +1,8 @@
 # ARMSX2 VR
 
-A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app, shows the game on a virtual screen with real 3D depth, and is driven entirely from the headset: a settings menu, a game list, controller mapping and Wi-Fi transfer of games and BIOS files.
+A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with GunCon 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping and Wi-Fi transfer of games and BIOS files.
 
-> **Status.** The in-headset menu, game list and controller pointer run on the Steam Frame (first headset tests on 2026-10-12); Wi-Fi transfer, every settings page and controller mapping still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
+> **Status.** On the Steam Frame (headset tests on 2026-10-12 and 13): the menu, its buttons and tooltips, the game list and the pointer; volumetric and flat modes and switching between them; pause and quit; and the light gun in Time Crisis II, with one gun (steady in the hand, the beam landing on what is behind the glass, calibration with the trigger, gun colours). Wi-Fi transfer, every settings page, controller mapping and two-gun play still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
 
 ## Contents
 
@@ -65,7 +65,7 @@ Round buttons sit just outside the screen, on its right side, so they never cove
 
 - **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
 - **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
-- **Pausing.** Opening a menu pauses the game; closing it resumes.
+- **Pausing.** Opening a menu pauses the game; closing it resumes, unless you paused it with the pause button.
 - **Closing a menu.** Its ✕ button, or a click anywhere off the panel. Starting or loading a game closes it too.
 - **Scrolling** the game list: either thumbstick, or drag its scroll bar.
 - **Recentering.** Click both thumbsticks together, or use **Settings › Display › Recenter**.
@@ -235,13 +235,13 @@ Grips and triggers are analog: mapped to L1, R1, L2 or R2 they keep their pressu
 
 ## Light gun
 
-In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports), drawn in the hand in the colour you chose. Its trigger and side buttons move as you press them.
+In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports). Its trigger and side buttons move as you press them, and the gun stays steady in the hand however fast you move it or your head. Its colour is set under **Settings › Controls › GunCon**: by default gun 1 is gray when you play alone and red with two guns, and gun 2 is blue.
 
 - **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Volumetric mode it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it. Otherwise it stops on the screen glass.
 - **Shooting** off the picture is a reload, as with the real gun.
 - **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
 - **Recoil.** Each shot gives a short pulse in the controller.
-- **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2) with a blue beam, for two-player games. With one gun, the other hand's grip is the pedal.
+- **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2), with a blue beam (gun 1's is red), for two-player games. With one gun, the other hand's grip is the pedal.
 - **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and pull the trigger, then press A to confirm. "Gun calibrated" shows below the screen when the game takes it. As on a real gun, the guns see no light while the picture is black, which is what the game checks after the shot. The **calibration shot** (Y by default, and **Calibrate** on the Light Gun page) does the same without that check. The emulator also knows the screen size of about 30 GunCon 2 games.
 - **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
 
@@ -350,7 +350,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 
 ## Known limitations
 
-- **Only partly tested in the headset.** The menu buttons, pointer and game list were checked on the Steam Frame; the other features were tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
+- **Only partly tested in the headset.** See the status note at the top; the rest was tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
 - If the runtime rejects the controllers' aim pose, the gamepad still works but menus cannot be pointed at. The log says "no aim pose …; the menu pointer is unavailable."
 - In volumetric mode, both eyes may show the same picture while a menu has the game paused.
 - Flat mode still has the emulator draw both eyes, so it costs as much GPU time as volumetric.
@@ -358,7 +358,8 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 - The controller actions were renamed for mapping, so any SteamVR-side rebinding made for this app starts over.
 - Wi-Fi transfer is plain HTTP, and whether SteamOS lets port 8080 through has not been checked.
 - The game list cannot rescan while a game runs (see [Game list](#game-list)).
-- **The light gun is untested in the headset.** Things to check there: how the gun sits in the hand (Gun angle), whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), and the cost of the depth copies it turns on in volumetric mode.
+- **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), the cost of the depth copies it turns on in volumetric mode, and GunCon 2 games other than Time Crisis II.
+- The guns see no light while the picture is black, as a real gun does: a shot fired during a fade to black counts as a shot off the screen (a reload in Time Crisis). Calibration with the trigger was only tried in Time Crisis II; the calibration shot (Y) works without the light check.
 - In flat mode the beam stops on the glass.
 
 ## License
