@@ -20,6 +20,7 @@ namespace Icon
 	static constexpr uint32_t star = 0xf005;
 	static constexpr uint32_t play = 0xf04b;
 	static constexpr uint32_t restart = 0xf2ea; // rotate-left
+	static constexpr uint32_t wifi = 0xf1eb;
 } // namespace Icon
 
 namespace
@@ -191,6 +192,11 @@ bool GameListMenu::Update(const GuiInput& input)
 		m_refreshing = refreshing;
 		m_needs_draw = true;
 	}
+	if (const bool has_bios = Emu::HasBios(); has_bios != m_has_bios)
+	{
+		m_has_bios = has_bios;
+		m_needs_draw = true;
+	}
 	if (std::string running = Emu::GetRunningGamePath(); running != m_running_raw)
 	{
 		m_running = running.empty() ? std::string() : Canonical(running);
@@ -269,6 +275,13 @@ void GameListMenu::RunList()
 		Theme::text_muted);
 
 	const Rect view{LIST_LEFT, LIST_TOP, LIST_RIGHT - LIST_LEFT, LIST_BOTTOM - LIST_TOP};
+	const bool no_games = m_games.empty() && !m_refreshing;
+	if (no_games || !m_has_bios)
+	{
+		RunSetupHelp(view, no_games, !m_has_bios);
+		m_content_height = 0.0f;
+		return;
+	}
 	if (shown.empty())
 	{
 		static constexpr std::array<std::string_view, 5> empty = {
@@ -381,6 +394,38 @@ void GameListMenu::RunList()
 
 	if (clicked)
 		Launch(*clicked);
+}
+
+void GameListMenu::RunSetupHelp(const Rect& view, bool no_games, bool no_bios)
+{
+	const std::string title = no_games && no_bios ? "No games and no PS2 BIOS yet" : no_bios ? "No PS2 BIOS yet" : "No games yet";
+	std::string what;
+	if (no_games && no_bios)
+		what = "Games need to be uploaded, along with a PS2 BIOS dumped from your own console.";
+	else if (no_bios)
+		what = fmt::format("{} ready, but {} a PS2 BIOS, dumped from your own console.",
+			m_games.size() == 1 ? std::string("1 game is") : fmt::format("{} games are", m_games.size()),
+			m_games.size() == 1 ? "it needs" : "they need");
+	else
+		what = "Upload your games to play them here.";
+	const std::string how = what + " Open Settings › Wi-Fi Transfer and turn the transfer on, then open the address it "
+	                               "shows in a web browser on a computer on the same Wi-Fi network, and upload " +
+	                        (no_games ? "them" : "it") + " there.";
+
+	constexpr float text_w = 820.0f;
+	const float text_x = std::round(view.x + 0.5f * (view.w - text_w));
+	float y = view.y + 40.0f;
+	if (m_gui.Drawing())
+	{
+		m_gui.Draw().DrawIcon(m_gui.IconFont(), 56.0f, {view.x, y, view.w, 80.0f}, Icon::wifi, Theme::accent);
+		m_gui.TextCentered({view.x, y + 96.0f, view.w, 48.0f}, title, Theme::title_size - 4.0f, Theme::text);
+	}
+	y += 168.0f;
+	y += m_gui.TextWrapped(text_x, y, text_w, how, Theme::body_size, Theme::text_muted);
+	constexpr float button_w = 380.0f;
+	if (m_gui.Button(GuiId("wifi"), {std::round(view.x + 0.5f * (view.w - button_w)), y + 36.0f, button_w, 64.0f},
+			"Open Wi-Fi Transfer", Icon::wifi, Gui::Style::Primary))
+		m_wifi_requested = true;
 }
 
 void GameListMenu::Launch(const Game& game)

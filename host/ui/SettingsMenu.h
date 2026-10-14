@@ -34,6 +34,8 @@ public:
 	void Refresh();
 	// After Refresh: show only the quit confirmation (the power button); dismissing it closes the menu.
 	void ShowQuitDialog();
+	// After Refresh: show the Wi-Fi transfer page (no game or BIOS yet).
+	void ShowTransferPage();
 	// Which controller layout the Controls page shows.
 	void SetFrameControllers(bool frame) { m_frame_controllers = frame; }
 	// The controllers as they are this frame, for mapping a control (call before Update).

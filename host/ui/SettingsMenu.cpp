@@ -82,6 +82,12 @@ void SettingsMenu::ShowQuitDialog()
 	m_needs_draw = true;
 }
 
+void SettingsMenu::ShowTransferPage()
+{
+	m_page = Page::Transfer;
+	m_needs_draw = true;
+}
+
 bool SettingsMenu::Update(const GuiInput& input)
 {
 	// Changes from elsewhere: VR.ini edited, a save slot written, a notice.

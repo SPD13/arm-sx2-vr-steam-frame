@@ -104,6 +104,7 @@ static std::vector<Emu::GameInfo> s_games;
 static std::atomic<unsigned> s_games_version{0};
 static std::atomic<bool> s_games_busy{false};
 static std::atomic<bool> s_games_again{false};
+static std::atomic<bool> s_has_bios{false};
 
 static void SetNotice(std::string notice);
 
@@ -174,6 +175,35 @@ static void ServiceDebugRequest()
 		GSVolumetric::ArmDrawTrace(1);
 		Console.WriteLnFmt("Debug: snapshot queued to {}", path);
 	}
+}
+
+// The BIOS games boot with: the one chosen in PCSX2.ini while its file is there, else (there is no
+// setup wizard) the first console BIOS in the folder, which becomes the chosen one. Whether there is one.
+static bool PickBios()
+{
+	{
+		auto lock = Host::GetSettingsLock();
+		const std::string chosen = s_base_settings->GetStringValue("Filenames", "BIOS");
+		if (!chosen.empty() &&
+			FileSystem::FileExists((Path::IsAbsolute(chosen) ? chosen : Path::Combine(EmuFolders::Bios, chosen)).c_str()))
+			return true;
+	}
+	FileSystem::FindResultsArray files;
+	FileSystem::FindFiles(EmuFolders::Bios.c_str(), "*", FILESYSTEM_FIND_FILES, &files);
+	for (const FILESYSTEM_FIND_DATA& file : files)
+	{
+		u32 version, region;
+		std::string description, zone;
+		if (!IsConsoleBIOS(file.FileName.c_str(), version, description, region, zone))
+			continue;
+		const std::string name(Path::GetFileName(file.FileName));
+		Console.WriteLnFmt("Using BIOS {} ({})", name, description);
+		auto lock = Host::GetSettingsLock();
+		s_base_settings->SetStringValue("Filenames", "BIOS", name.c_str());
+		s_base_settings->Save();
+		return true;
+	}
+	return false;
 }
 
 bool Emu::InitializeConfig(const Options& options)
@@ -260,32 +290,16 @@ bool Emu::InitializeConfig(const Options& options)
 
 	VMManager::Internal::LoadStartupSettings();
 
-	// No BIOS chosen yet (there is no setup wizard): take the first console BIOS in the folder.
-	if (s_base_settings->GetStringValue("Filenames", "BIOS").empty())
-	{
-		FileSystem::FindResultsArray files;
-		FileSystem::FindFiles(EmuFolders::Bios.c_str(), "*", FILESYSTEM_FIND_FILES, &files);
-		for (const FILESYSTEM_FIND_DATA& file : files)
-		{
-			u32 version, region;
-			std::string description, zone;
-			if (!IsConsoleBIOS(file.FileName.c_str(), version, description, region, zone))
-				continue;
-			const std::string name(Path::GetFileName(file.FileName));
-			Console.WriteLnFmt("Using BIOS {} ({})", name, description);
-			auto lock = Host::GetSettingsLock();
-			s_base_settings->SetStringValue("Filenames", "BIOS", name.c_str());
-			s_base_settings->Save();
-			break;
-		}
-	}
+	s_has_bios = PickBios();
 	return true;
 }
 
-// Fills the game list from the games folder. The scan needs the CDVD lock, which a running game
+// Fills the game list from the games folder, and looks for a BIOS. The scan needs the CDVD lock, which a running game
 // holds, so files added meanwhile only show by file name until no game runs.
 static void ListGames()
 {
+	// A BIOS sent over Wi-Fi meanwhile is found here too.
+	s_has_bios = PickBios();
 	GameList::Refresh(false, false, nullptr);
 
 	std::vector<Emu::GameInfo> games;
@@ -419,7 +433,9 @@ static void CPUThreadMain(std::optional<VMBootParameters> params)
 						if (boot_from_list)
 						{
 							// Back to the list, which says what went wrong.
-							SetNotice(fmt::format("Could not start {}", Path::GetFileName(bp.filename)));
+							s_has_bios = PickBios();
+							SetNotice(s_has_bios ? fmt::format("Could not start {}", Path::GetFileName(bp.filename)) :
+							                       std::string("Could not start the game: there is no PS2 BIOS"));
 							s_boot_failed = true;
 							continue;
 						}
@@ -707,6 +723,11 @@ void Emu::BootGame(const std::string& path)
 		if (VMManager::HasValidVM())
 			VMManager::SetState(VMState::Stopping);
 	});
+}
+
+bool Emu::HasBios()
+{
+	return s_has_bios.load();
 }
 
 bool Emu::TakeBootFailure()

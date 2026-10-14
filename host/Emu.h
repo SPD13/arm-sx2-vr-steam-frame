@@ -57,11 +57,13 @@ namespace Emu
 		std::time_t last_played = 0;
 		std::time_t played_seconds = 0;
 	};
-	// Lists the games folder again, in the background; GetGames has the result.
+	// Lists the games folder again, in the background; GetGames has the result. It looks for a BIOS too.
 	void RefreshGames();
 	bool IsRefreshingGames();
 	std::vector<GameInfo> GetGames();
 	unsigned GetGamesVersion(); // changes with every new list
+	// Whether there is a PS2 BIOS to boot games with, as of the last list.
+	bool HasBios();
 	// Stops the running game, if any, and starts this one.
 	void BootGame(const std::string& path);
 	// Whether a game failed to start since the last call (TakeNotice says why).
