@@ -43,6 +43,30 @@ if [[ ! -f $deps/.done ]]; then
   touch "$deps/.done"
 fi
 
+# libarchive, for the zip, 7z and RAR archives sent over Wi-Fi: static, as the Steam Runtime has no
+# libarchive (it does have the zlib, liblzma, libbz2 and libzstd it uses).
+libarchive=3.8.9
+libarchive_sha256=888c934f9d95648ecb9163dc8e23ab80a476ecb81a8f1154704a227b5b676dde
+if [[ ! -f $deps/.libarchive-$libarchive ]]; then
+  src=$root/build/libarchive-$libarchive
+  rm -rf "$src"
+  curl -fsSL -o "$src.tar.xz" "https://github.com/libarchive/libarchive/releases/download/v$libarchive/libarchive-$libarchive.tar.xz"
+  echo "$libarchive_sha256  $src.tar.xz" | sha256sum -c -
+  tar xf "$src.tar.xz" -C "$root/build"
+  cmake -S "$src" -B "$src/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$deps" -DCMAKE_PREFIX_PATH="$deps" -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+    -DENABLE_TAR=OFF -DENABLE_CPIO=OFF -DENABLE_CAT=OFF -DENABLE_UNZIP=OFF -DENABLE_TEST=OFF \
+    -DENABLE_ZLIB=ON -DENABLE_LZMA=ON -DENABLE_BZip2=ON -DENABLE_ZSTD=ON -DENABLE_ICONV=ON \
+    -DENABLE_OPENSSL=OFF -DENABLE_MBEDTLS=OFF -DENABLE_NETTLE=OFF -DENABLE_LIBB2=OFF -DENABLE_LZ4=OFF \
+    -DENABLE_LZO=OFF -DENABLE_LIBXML2=OFF -DENABLE_EXPAT=OFF -DENABLE_PCREPOSIX=OFF -DENABLE_PCRE2POSIX=OFF \
+    -DENABLE_LIBGCC=OFF -DENABLE_CNG=OFF -DENABLE_XATTR=OFF -DENABLE_ACL=OFF
+  cmake --build "$src/build"
+  cmake --install "$src/build"
+  rm -rf "$src" "$src.tar.xz"
+  touch "$deps/.libarchive-$libarchive"
+fi
+
 # ARMSX2 has to be the top-level CMake project; it pulls the host in through PS2V_HOST_DIR.
 cmake -S "$root/external/armsx2" -B "$root/build/frame" -G Ninja \
   -DPS2V_HOST_DIR="$root/host" \

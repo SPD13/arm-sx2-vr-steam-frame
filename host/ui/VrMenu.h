@@ -9,7 +9,7 @@
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
 // show; pointing at a button and pulling the trigger opens its panel in front of the screen and
 // pauses the game. A tooltip beside the button the pointer is on says what it does. Its trigger
-// clicks, and the thumbsticks scroll the game list. A click away from the panel, its close button,
+// clicks, and the thumbsticks scroll the game list and the texture pack list. A click away from the panel, its close button,
 // or starting a game close it.
 //
 // A hand holding a light gun points with the gun's muzzle instead, and draws its own beam

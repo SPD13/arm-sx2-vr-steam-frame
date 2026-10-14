@@ -5,6 +5,9 @@
 
 #include "web_page.h" // s_web_page: web/index.html, embedded at build time
 
+#include "Unarchive.h"
+#include "TexturePacks.h"
+
 #include "common/Console.h"
 
 #include <arpa/inet.h>
@@ -24,7 +27,9 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <random>
+#include <set>
 
 namespace
 {
@@ -36,6 +41,11 @@ namespace
 	constexpr uint64_t SPACE_MARGIN = 64ull << 20; // keep this much free after an upload
 	constexpr int CODE_TRIES = 5; // wrong codes before a client is held off
 	constexpr size_t MAX_SESSIONS = 32;
+	// Unpacked archives waiting for an answer: how many, and for how long.
+	constexpr size_t MAX_PENDING = 4;
+	constexpr int64_t PENDING_MS = 30 * 60 * 1000;
+	// Names of the archives and unpacked folders in the staging folder.
+	constexpr std::string_view STAGING_PREFIX = "upload-";
 
 	int64_t NowMs()
 	{
@@ -74,6 +84,7 @@ namespace
 			case 409: return "Conflict";
 			case 411: return "Length Required";
 			case 413: return "Payload Too Large";
+			case 422: return "Unprocessable Content";
 			case 429: return "Too Many Requests";
 			case 500: return "Internal Server Error";
 			case 503: return "Service Unavailable";
@@ -200,6 +211,53 @@ namespace
 		return best;
 	}
 
+	// A query parameter's decoded value, empty when it is absent.
+	std::string QueryValue(std::string_view query, std::string_view key)
+	{
+		while (!query.empty())
+		{
+			const size_t amp = query.find('&');
+			const std::string_view pair = query.substr(0, amp);
+			const size_t eq = pair.find('=');
+			if (pair.substr(0, eq) == key && eq != std::string_view::npos)
+			{
+				bool ok = false;
+				std::string value = UrlDecode(pair.substr(eq + 1), &ok);
+				return ok ? value : std::string();
+			}
+			query = amp == std::string_view::npos ? std::string_view() : query.substr(amp + 1);
+		}
+		return {};
+	}
+
+	bool EndsWithAny(const std::string& lower, const std::vector<std::string>& extensions)
+	{
+		return std::any_of(extensions.begin(), extensions.end(), [&](const std::string& ext) {
+			return lower.size() > ext.size() && lower.compare(lower.size() - ext.size(), ext.size(), ext) == 0;
+		});
+	}
+
+	std::string JsonStrings(const std::vector<std::string>& strings)
+	{
+		std::string json = "[";
+		for (size_t i = 0; i < strings.size(); i++)
+			json += (i ? "," : "") + JsonString(strings[i]);
+		return json + "]";
+	}
+
+	// A rename, or a copy when the two are on different file systems.
+	bool MoveFile(const std::filesystem::path& from, const std::filesystem::path& to)
+	{
+		std::error_code ec;
+		std::filesystem::rename(from, to, ec);
+		if (!ec)
+			return true;
+		if (!std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec))
+			return false;
+		std::filesystem::remove(from, ec);
+		return true;
+	}
+
 	std::string RandomHex(size_t bytes)
 	{
 		std::random_device rd;
@@ -284,10 +342,22 @@ bool WebServer::IsValidFileName(std::string_view name)
 bool WebServer::Start(bool require_code)
 {
 	Stop();
+	std::error_code ec;
 	for (const Folder& folder : m_folders)
 	{
-		std::error_code ec;
 		std::filesystem::create_directories(folder.path, ec);
+		if (folder.kind == Folder::Kind::TexturePacks)
+			TexturePacks::Sweep(folder.path);
+	}
+	// What an interrupted upload or unpacking left.
+	if (!m_staging.empty())
+	{
+		std::filesystem::create_directories(m_staging, ec);
+		for (const auto& item : std::filesystem::directory_iterator(m_staging, ec))
+		{
+			if (item.path().filename().string().starts_with(STAGING_PREFIX))
+				std::filesystem::remove_all(item.path(), ec);
+		}
 	}
 
 	m_listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -359,6 +429,10 @@ void WebServer::Stop()
 	m_code.clear();
 	m_sessions.clear();
 	m_transfer.clear();
+	std::error_code ec;
+	for (const Pending& pending : m_pending)
+		std::filesystem::remove_all(pending.dir, ec);
+	m_pending.clear();
 	Console.WriteLn("Web transfer: stopped.");
 }
 
@@ -398,9 +472,10 @@ WebServer::Status WebServer::GetStatus() const
 			status.url = "http://" + m_address + (m_port == 80 ? "" : ":" + std::to_string(m_port));
 		status.code = m_code;
 		status.transfer = m_transfer;
+		status.phase = m_transfer_phase;
 		status.progress = m_transfer_size ? static_cast<float>(static_cast<double>(m_transfer_done) /
 		                                                       static_cast<double>(m_transfer_size)) :
-		                                    0.0f;
+		                                    m_transfer_progress;
 	}
 	return status;
 }
@@ -596,9 +671,16 @@ void WebServer::Handle(int fd, uint32_t peer, Request& request)
 			std::lock_guard lock(m_mutex);
 			required = !m_code.empty();
 		}
-		RespondJson(fd, 200,
-			std::string("{\"code_required\":") + (required ? "true" : "false") +
-				",\"authorized\":" + (Authorized(request) ? "true" : "false") + "}");
+		const bool authorized = Authorized(request);
+		std::string json = std::string("{\"code_required\":") + (required ? "true" : "false") +
+		                   ",\"authorized\":" + (authorized ? "true" : "false");
+		// The upload or unpacking under way, for the page waiting on an archive.
+		if (const Status status = GetStatus(); authorized && !status.transfer.empty())
+		{
+			json += ",\"transfer\":{\"name\":" + JsonString(status.transfer) + ",\"phase\":" + JsonString(status.phase) +
+			        ",\"progress\":" + std::to_string(status.progress) + "}";
+		}
+		RespondJson(fd, 200, json + "}");
 		return;
 	}
 	if (request.path == "/api/login")
@@ -611,7 +693,9 @@ void WebServer::Handle(int fd, uint32_t peer, Request& request)
 	}
 
 	constexpr std::string_view files_prefix = "/api/files/";
-	if (request.path.compare(0, files_prefix.size(), files_prefix) != 0)
+	constexpr std::string_view pending_prefix = "/api/pending/";
+	const bool pending = request.path.compare(0, pending_prefix.size(), pending_prefix) == 0;
+	if (!pending && request.path.compare(0, files_prefix.size(), files_prefix) != 0)
 	{
 		RespondError(fd, 404, "Not found.");
 		return;
@@ -619,6 +703,11 @@ void WebServer::Handle(int fd, uint32_t peer, Request& request)
 	if (!Authorized(request))
 	{
 		RespondError(fd, 401, "The access code is needed.");
+		return;
+	}
+	if (pending)
+	{
+		HandlePending(fd, request, request.path.substr(pending_prefix.size()));
 		return;
 	}
 	const std::string rest = request.path.substr(files_prefix.size());
@@ -631,10 +720,12 @@ void WebServer::Handle(int fd, uint32_t peer, Request& request)
 	}
 	if (slash == std::string::npos)
 	{
-		if (safe)
-			HandleList(fd, *folder);
-		else
+		if (!safe)
 			RespondError(fd, 405, "Use GET.");
+		else if (folder->kind == Folder::Kind::TexturePacks)
+			HandleTextureList(fd, *folder);
+		else
+			HandleList(fd, *folder);
 		return;
 	}
 	bool decoded = false;
@@ -753,20 +844,63 @@ void WebServer::HandleList(int fd, const Folder& folder)
 		json += "{\"name\":" + JsonString(entries[i].name) + ",\"size\":" + std::to_string(entries[i].size) +
 		        ",\"mtime\":" + std::to_string(entries[i].mtime) + "}";
 	}
-	json += "],\"free\":" + std::to_string(free) + ",\"total\":" + std::to_string(total) + ",\"extensions\":[";
-	for (size_t i = 0; i < folder.extensions.size(); i++)
-		json += (i ? "," : "") + JsonString(folder.extensions[i]);
-	json += "]}";
+	std::vector<std::string> extensions = folder.extensions;
+	if (folder.archives)
+		extensions.insert(extensions.end(), Unarchive::Extensions().begin(), Unarchive::Extensions().end());
+	json += "],\"free\":" + std::to_string(free) + ",\"total\":" + std::to_string(total) +
+	        ",\"extensions\":" + JsonStrings(extensions) + "}";
+	RespondJson(fd, 200, json);
+}
+
+std::string WebServer::GameTitle(const std::string& serial) const
+{
+	if (m_texture_hooks.games)
+	{
+		for (const GameRef& game : m_texture_hooks.games())
+		{
+			if (game.serial == serial)
+				return game.title;
+		}
+	}
+	return m_texture_hooks.title ? m_texture_hooks.title(serial) : std::string();
+}
+
+void WebServer::HandleTextureList(int fd, const Folder& folder)
+{
+	const TextureHooks& hooks = m_texture_hooks;
+	const std::vector<GameRef> games = hooks.games ? hooks.games() : std::vector<GameRef>();
+	const std::string running = hooks.running_serial ? hooks.running_serial() : std::string();
+	std::string json = "{\"packs\":[";
+	bool first = true;
+	for (const TexturePacks::Pack& pack : TexturePacks::List(folder.path))
+	{
+		const auto game = std::find_if(games.begin(), games.end(), [&](const GameRef& g) { return g.serial == pack.serial; });
+		const std::string title = game != games.end() ? game->title : GameTitle(pack.serial);
+		json += first ? "" : ",";
+		first = false;
+		json += "{\"serial\":" + JsonString(pack.serial) + ",\"title\":" + JsonString(title) +
+		        ",\"textures\":" + std::to_string(pack.textures) + ",\"size\":" + std::to_string(pack.bytes) +
+		        ",\"mtime\":" + std::to_string(pack.modified) + ",\"in_library\":" + (game != games.end() ? "true" : "false") +
+		        ",\"running\":" + (pack.serial == running ? "true" : "false") + "}";
+	}
+	json += "],\"games\":[";
+	for (size_t i = 0; i < games.size(); i++)
+	{
+		json += (i ? "," : "") + std::string("{\"serial\":") + JsonString(games[i].serial) +
+		        ",\"title\":" + JsonString(games[i].title) + "}";
+	}
+	uint64_t free = 0, total = 0;
+	DiskSpace(folder.path, &free, &total);
+	json += "],\"running\":" + JsonString(running) + ",\"free\":" + std::to_string(free) +
+	        ",\"total\":" + std::to_string(total) + ",\"extensions\":" + JsonStrings(Unarchive::Extensions()) + "}";
 	RespondJson(fd, 200, json);
 }
 
 void WebServer::HandleUpload(int fd, const Folder& folder, const std::string& name, Request& request)
 {
 	const std::string lower = Lower(name);
-	const bool accepted = std::any_of(folder.extensions.begin(), folder.extensions.end(), [&](const std::string& ext) {
-		return lower.size() > ext.size() && lower.compare(lower.size() - ext.size(), ext.size(), ext) == 0;
-	});
-	if (!accepted)
+	const bool archive = folder.archives && Unarchive::IsArchive(lower);
+	if (!archive && !EndsWithAny(lower, folder.extensions))
 	{
 		RespondError(fd, 400, "This kind of file does not belong here.");
 		return;
@@ -787,25 +921,26 @@ void WebServer::HandleUpload(int fd, const Folder& folder, const std::string& na
 		RespondError(fd, 507, "Not enough space left on the headset.");
 		return;
 	}
+	// An archive is never kept under its own name: only what it holds can be in the way.
 	const std::string path = folder.path + "/" + name;
-	if (std::filesystem::exists(path) && request.query.find("overwrite=1") == std::string::npos)
+	if (!archive && std::filesystem::exists(path) && request.query.find("overwrite=1") == std::string::npos)
 	{
 		RespondError(fd, 409, "A file with this name is already there.");
 		return;
 	}
+	if (archive && m_staging.empty())
 	{
-		std::lock_guard lock(m_mutex);
-		if (!m_transfer.empty())
-		{
-			RespondError(fd, 503, "Another upload is in progress.");
-			return;
-		}
-		m_transfer = name;
-		m_transfer_done = 0;
-		m_transfer_size = request.content_length;
+		RespondError(fd, 500, "Archives cannot be received here.");
+		return;
+	}
+	if (!BeginTransfer(name, "Receiving", request.content_length))
+	{
+		RespondError(fd, 503, "Another upload is in progress.");
+		return;
 	}
 
-	const std::string part = folder.path + "/." + name + ".part";
+	const std::string part = archive ? m_staging + "/" + std::string(STAGING_PREFIX) + RandomHex(8) + ".part" :
+	                                   folder.path + "/." + name + ".part";
 	std::FILE* file = std::fopen(part.c_str(), "wb");
 	bool ok = file != nullptr;
 	uint64_t written = 0;
@@ -832,19 +967,23 @@ void WebServer::HandleUpload(int fd, const Folder& folder, const std::string& na
 	}
 	if (file)
 	{
-		ok = ok && std::fflush(file) == 0 && fsync(fileno(file)) == 0;
+		ok = ok && std::fflush(file) == 0 && (archive || fsync(fileno(file)) == 0);
 		ok = std::fclose(file) == 0 && ok;
 	}
 	ok = ok && written == request.content_length;
 	std::error_code ec;
+	if (ok && archive)
+	{
+		Console.WriteLnFmt("Web transfer: received archive {} ({} bytes).", name, written);
+		HandleArchive(fd, folder, name, part, request.query);
+		EndTransfer();
+		return;
+	}
 	if (ok)
 		std::filesystem::rename(part, path, ec);
 	if (!ok || ec)
 		std::filesystem::remove(part, ec);
-	{
-		std::lock_guard lock(m_mutex);
-		m_transfer.clear();
-	}
+	EndTransfer();
 	if (ok && !ec)
 	{
 		Console.WriteLnFmt("Web transfer: received {} ({} bytes).", path, written);
@@ -855,8 +994,254 @@ void WebServer::HandleUpload(int fd, const Folder& folder, const std::string& na
 	// Otherwise the connection broke off: nobody is left to answer.
 }
 
+bool WebServer::BeginTransfer(const std::string& name, const char* phase, uint64_t size)
+{
+	std::lock_guard lock(m_mutex);
+	if (!m_transfer.empty())
+		return false;
+	m_transfer = name;
+	m_transfer_phase = phase;
+	m_transfer_done = 0;
+	m_transfer_size = size;
+	m_transfer_progress = 0.0f;
+	return true;
+}
+
+void WebServer::SetTransferPhase(const char* phase)
+{
+	std::lock_guard lock(m_mutex);
+	m_transfer_phase = phase;
+	m_transfer_done = m_transfer_size = 0;
+	m_transfer_progress = 0.0f;
+}
+
+void WebServer::SetTransferProgress(float progress)
+{
+	std::lock_guard lock(m_mutex);
+	m_transfer_progress = progress;
+}
+
+void WebServer::EndTransfer()
+{
+	std::lock_guard lock(m_mutex);
+	m_transfer.clear();
+	m_transfer_phase = "";
+}
+
+void WebServer::HandleArchive(int fd, const Folder& folder, const std::string& name, const std::string& archive,
+	const std::string& query)
+{
+	SetTransferPhase("Unpacking");
+	Pending pending;
+	pending.id = RandomHex(8);
+	pending.folder = folder.id;
+	pending.name = name;
+	pending.dir = m_staging + "/" + std::string(STAGING_PREFIX) + pending.id;
+	// The archive's space comes back once it is unpacked, not before.
+	uint64_t free = 0, total = 0;
+	const uint64_t room = DiskSpace(m_staging, &free, &total) && free > SPACE_MARGIN ? free - SPACE_MARGIN : 0;
+	const auto progress = [this](float p) { SetTransferProgress(p); };
+	std::string error;
+	bool ok;
+	if (folder.kind == Folder::Kind::TexturePacks)
+	{
+		TexturePacks::Staged staged;
+		ok = TexturePacks::Unpack(archive, pending.dir, room, progress, &m_stop, &staged, &error);
+		pending.files = std::move(staged.paths);
+		// As ARMSX2 tells which game a pack is for: a serial folder in it, else its name.
+		if (!staged.serial)
+			staged.serial = TexturePacks::FindSerial(name);
+		pending.serial = staged.serial.value_or("");
+	}
+	else
+	{
+		// The folder's kinds of files, wherever they are in the archive, go straight into the folder.
+		std::set<std::string> names;
+		const auto filter = [&](const Unarchive::Entry& entry) {
+			using Decision = Unarchive::Decision;
+			const size_t cut = entry.name.find_last_of("/\\");
+			const std::string file = cut == std::string::npos ? entry.name : entry.name.substr(cut + 1);
+			if (!entry.regular || !IsValidFileName(file) || !EndsWithAny(Lower(file), folder.extensions))
+				return Decision::Skip();
+			if (!names.insert(file).second)
+				return Decision::Fail("The archive holds two files named " + file + ".");
+			pending.files.push_back(file);
+			return Decision::Extract(file);
+		};
+		ok = Unarchive::Extract(archive, pending.dir, filter, room, progress, &m_stop, &error);
+		if (ok && pending.files.empty())
+		{
+			error = folder.id == "bios" ? "The archive has no BIOS file." : "The archive has no game.";
+			ok = false;
+		}
+	}
+	std::error_code ec;
+	std::filesystem::remove(archive, ec);
+	if (!ok)
+	{
+		std::filesystem::remove_all(pending.dir, ec);
+		Console.WriteLnFmt("Web transfer: could not unpack {}: {}", name, error);
+		RespondError(fd, 422, error);
+		return;
+	}
+	Install(fd, folder, std::move(pending), query);
+}
+
+void WebServer::Install(int fd, const Folder& folder, Pending pending, const std::string& query)
+{
+	SetTransferPhase("Installing");
+	std::error_code ec;
+	if (folder.kind == Folder::Kind::TexturePacks)
+	{
+		// The game the user chose, else the one the pack names.
+		const std::string chosen = QueryValue(query, "serial");
+		std::string serial = TexturePacks::FindSerial(chosen).value_or(IsValidFileName(chosen) ? chosen : "");
+		if (serial.empty())
+			serial = pending.serial;
+		if (serial.empty())
+		{
+			const std::string json = "{\"error\":\"Which game is this texture pack for?\",\"pending\":" +
+			                         JsonString(pending.id) + ",\"need_game\":true}";
+			KeepPending(std::move(pending));
+			RespondJson(fd, 409, json);
+			return;
+		}
+		TexturePacks::Staged staged{pending.dir, std::move(pending.files), std::nullopt};
+		std::string error;
+		if (!TexturePacks::Install(folder.path, staged, serial, &error))
+		{
+			RespondError(fd, 500, error);
+			return;
+		}
+		Console.WriteLnFmt("Web transfer: {} textures from {} added to the pack of {}.", staged.paths.size(),
+			pending.name, serial);
+		if (m_texture_hooks.changed)
+			m_texture_hooks.changed(serial, true);
+		const std::string title = GameTitle(serial);
+		RespondJson(fd, 200,
+			"{\"ok\":true,\"serial\":" + JsonString(serial) + ",\"title\":" + JsonString(title) +
+				",\"textures\":" + std::to_string(staged.paths.size()) + "}");
+		return;
+	}
+
+	std::vector<std::string> conflicts;
+	for (const std::string& file : pending.files)
+	{
+		const std::string path = folder.path + "/" + file;
+		if (!std::filesystem::exists(path, ec))
+			continue;
+		bool running;
+		{
+			std::lock_guard lock(m_mutex);
+			running = !m_protected_file.empty() && std::filesystem::equivalent(path, m_protected_file, ec);
+		}
+		if (running)
+		{
+			std::filesystem::remove_all(pending.dir, ec);
+			RespondError(fd, 409, file + " is the game running; it cannot be replaced now.");
+			return;
+		}
+		conflicts.push_back(file);
+	}
+	if (!conflicts.empty() && QueryValue(query, "overwrite") != "1")
+	{
+		const std::string json = "{\"error\":\"Files with these names are already there.\",\"pending\":" +
+		                         JsonString(pending.id) + ",\"conflicts\":" + JsonStrings(conflicts) + "}";
+		KeepPending(std::move(pending));
+		RespondJson(fd, 409, json);
+		return;
+	}
+	for (const std::string& file : pending.files)
+	{
+		if (!MoveFile(pending.dir + "/" + file, folder.path + "/" + file))
+		{
+			std::filesystem::remove_all(pending.dir, ec);
+			RespondError(fd, 500, "Could not write " + file + " on the headset.");
+			return;
+		}
+		Console.WriteLnFmt("Web transfer: unpacked {} from {}.", file, pending.name);
+	}
+	std::filesystem::remove_all(pending.dir, ec);
+	RespondJson(fd, 200, "{\"ok\":true,\"files\":" + JsonStrings(pending.files) + "}");
+}
+
+void WebServer::KeepPending(Pending pending)
+{
+	std::lock_guard lock(m_mutex);
+	const int64_t now = NowMs();
+	pending.created_ms = now;
+	// The oldest go when the user never answered.
+	std::error_code ec;
+	for (auto it = m_pending.begin(); it != m_pending.end();)
+	{
+		if (now - it->created_ms > PENDING_MS || m_pending.size() >= MAX_PENDING)
+		{
+			std::filesystem::remove_all(it->dir, ec);
+			it = m_pending.erase(it);
+		}
+		else
+			++it;
+	}
+	m_pending.push_back(std::move(pending));
+}
+
+void WebServer::HandlePending(int fd, const Request& request, const std::string& id)
+{
+	if (request.method != "POST" && request.method != "DELETE")
+	{
+		RespondError(fd, 405, "Use POST or DELETE.");
+		return;
+	}
+	std::optional<Pending> pending;
+	{
+		std::lock_guard lock(m_mutex);
+		const auto it = std::find_if(m_pending.begin(), m_pending.end(), [&](const Pending& p) { return p.id == id; });
+		if (it != m_pending.end())
+		{
+			pending = std::move(*it);
+			m_pending.erase(it);
+		}
+	}
+	const Folder* folder = pending ? FindFolder(pending->folder) : nullptr;
+	if (!folder)
+	{
+		RespondError(fd, 404, "This upload is no longer waiting; send the archive again.");
+		return;
+	}
+	std::error_code ec;
+	if (request.method == "DELETE")
+	{
+		std::filesystem::remove_all(pending->dir, ec);
+		RespondJson(fd, 200, "{\"ok\":true}");
+		return;
+	}
+	if (!BeginTransfer(pending->name, "Installing", 0))
+	{
+		KeepPending(std::move(*pending));
+		RespondError(fd, 503, "Another upload is in progress.");
+		return;
+	}
+	Install(fd, *folder, std::move(*pending), request.query);
+	EndTransfer();
+}
+
 void WebServer::HandleDelete(int fd, const Folder& folder, const std::string& name)
 {
+	if (folder.kind == Folder::Kind::TexturePacks)
+	{
+		// name is the serial of the game whose pack goes.
+		std::string error;
+		if (!TexturePacks::Remove(folder.path, name, &error))
+		{
+			RespondError(fd, 404, error);
+			return;
+		}
+		Console.WriteLnFmt("Web transfer: deleted the texture pack of {}.", name);
+		if (m_texture_hooks.changed)
+			m_texture_hooks.changed(name, false);
+		RespondJson(fd, 200, "{\"ok\":true}");
+		return;
+	}
 	const std::string path = folder.path + "/" + name;
 	{
 		std::lock_guard lock(m_mutex);

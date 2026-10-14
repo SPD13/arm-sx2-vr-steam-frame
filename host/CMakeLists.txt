@@ -3,9 +3,16 @@
 
 find_package(OpenXR CONFIG REQUIRED)
 find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+# Zip, 7z and RAR archives sent over Wi-Fi: libarchive, static (tools/build-frame.sh builds it into
+# the deps; the Steam Runtime has none), with the runtime's own zlib, liblzma, libbz2 and libzstd.
+find_package(LibArchive 3.8 REQUIRED)
+find_package(LibLZMA REQUIRED)
+find_package(BZip2 REQUIRED)
 
 add_executable(ps2v
 	main.cpp
+	Unarchive.cpp
+	Unarchive.h
 	Controls.cpp
 	Controls.h
 	Profile.cpp
@@ -16,6 +23,8 @@ add_executable(ps2v
 	ScreenLayer.h
 	Settings.cpp
 	Settings.h
+	TexturePacks.cpp
+	TexturePacks.h
 	XrApp.cpp
 	XrApp.h
 	XrMath.h
@@ -82,6 +91,8 @@ target_include_directories(ps2v PRIVATE
 	"${CMAKE_SOURCE_DIR}/pcsx2"
 	"${PS2V_SHADER_DIR}"
 	"${CMAKE_CURRENT_BINARY_DIR}/web"
+	# ARMSX2's texture pack path rules (IOS/TexturePackPaths.h), shared with its iOS app.
+	"${CMAKE_SOURCE_DIR}/platforms/ios/app/src/main/cpp"
 )
 
 target_link_libraries(ps2v PRIVATE
@@ -90,6 +101,11 @@ target_link_libraries(ps2v PRIVATE
 	libretro-headers
 	imgui # for its stb_truetype, see ui/Font.cpp
 	OpenXR::openxr_loader
+	LibArchive::LibArchive
+	LibLZMA::LibLZMA
+	BZip2::BZip2
+	Zstd::Zstd
+	ZLIB::ZLIB
 )
 
 # resources/ (GameDB, shaders, fonts) next to the binary, as for the other frontends, the game

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The settings page the gear button opens: a navigation bar of categories on the left (Display,
-// 3D, Graphics, Audio, Game, Wi-Fi Transfer, Controls, Light Gun, and Exit last) and the selected
-// category's settings on the right. It draws on a Canvas and knows nothing of OpenXR; VrMenu shows it in the headset and
+// 3D, Graphics, Texture Packs, Audio, Game, Wi-Fi Transfer, Controls, Light Gun, and Exit last) and
+// the selected category's settings on the right. It draws on a Canvas and knows nothing of OpenXR; VrMenu shows it in the headset and
 // feeds it the pointer.
 
 #pragma once
@@ -16,6 +16,7 @@
 #include "ui/Gui.h"
 
 #include <chrono>
+#include <future>
 #include <optional>
 #include <string>
 #include <utility>
@@ -40,6 +41,8 @@ public:
 	bool IsMappingControl() const { return m_mapping.has_value(); }
 	// Light gun mode for the running game, for the Light Gun page.
 	void SetGunMode(bool has_game, bool on, bool chosen);
+	// Scrolls the page's list (the Texture Packs page's) by this many pixels (positive: down), from a thumbstick.
+	void Scroll(float pixels);
 
 	enum class GunModeRequest
 	{
@@ -72,6 +75,7 @@ private:
 		Display,
 		Stereo,
 		Graphics,
+		Textures,
 		Audio,
 		Game,
 		Transfer,
@@ -89,6 +93,7 @@ private:
 		None,
 		Exit,
 		Restart,
+		RemovePack, // m_remove_pack's
 	};
 
 	// The whole UI, run once per pass (see Gui).
@@ -97,6 +102,9 @@ private:
 	void RunDisplay();
 	void RunStereo();
 	void RunGraphics();
+	void RunTextures();
+	// Reads the texture packs again in the background, first removing m_remove_pack if it is set.
+	void LoadTexturePacks();
 	void RunAudio();
 	void RunGame();
 	void RunTransfer();
@@ -157,6 +165,29 @@ private:
 	bool m_gun_chosen = false;
 	std::optional<GunModeRequest> m_gun_mode_request;
 	std::optional<GunAction> m_gun_action;
+
+	// The Texture Packs page: the games with a pack, read in the background (a pack is thousands of files).
+	struct PackRow
+	{
+		std::string serial;
+		std::string title; // empty when the game is unknown
+		uint64_t textures = 0;
+		uint64_t bytes = 0;
+	};
+	struct PackList
+	{
+		std::vector<PackRow> rows;
+		std::string notice; // the outcome of a removal
+	};
+	std::vector<PackRow> m_packs;
+	std::future<PackList> m_packs_loading;
+	bool m_packs_loaded = false;
+	bool m_packs_again = false; // read them again when the current read ends
+	std::string m_remove_pack; // the serial the remove dialog asks about, then removes
+	std::string m_running_serial;
+	float m_packs_scroll = 0.0f;
+	float m_packs_overflow = 0.0f; // how far the list scrolls
+	bool m_web_busy = false; // an upload under way: the list changes when it ends
 
 	std::string m_toast;
 	Clock::time_point m_toast_until{};

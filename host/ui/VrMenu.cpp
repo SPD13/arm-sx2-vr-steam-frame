@@ -549,10 +549,16 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		gui.pressed = usable && pressed[hand];
 		gui.released = released[hand];
 
+		// Either thumbstick scrolls a list (a stick being mapped is an input, not a scroll).
+		const ControllerState& c = input.controller;
+		const float stick = std::abs(c.left_stick.y) > std::abs(c.right_stick.y) ? c.left_stick.y : c.right_stick.y;
+		const float scroll = std::abs(stick) > 0.2f && !mapping ? -stick * SCROLL_SPEED : 0.0f;
 		bool close = false;
 		if (m_open == Panel::Settings)
 		{
 			m_settings_menu->SetControllerState(input.controller);
+			if (scroll != 0.0f)
+				m_settings_menu->Scroll(scroll);
 			if (m_settings_menu->Update(gui) || just_opened)
 				m_panel.Upload(m_settings_menu->GetCanvas());
 			if (m_settings_menu->TakeRecenterRequest())
@@ -572,11 +578,8 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		}
 		else
 		{
-			// Either thumbstick scrolls the list.
-			const ControllerState& c = input.controller;
-			const float stick = std::abs(c.left_stick.y) > std::abs(c.right_stick.y) ? c.left_stick.y : c.right_stick.y;
-			if (std::abs(stick) > 0.2f)
-				m_game_list->Scroll(-stick * SCROLL_SPEED);
+			if (scroll != 0.0f)
+				m_game_list->Scroll(scroll);
 			if (m_game_list->Update(gui) || just_opened)
 				m_panel.Upload(m_game_list->GetCanvas());
 			close = m_game_list->TakeCloseRequest();

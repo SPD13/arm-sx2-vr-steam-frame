@@ -282,11 +282,30 @@ int main(int argc, char* argv[])
 			return EXIT_FAILURE;
 		}
 	}
-	// Wi-Fi transfer, switched on from the menu: the BIOS folder and the games folder.
+	// Wi-Fi transfer, switched on from the menu: the BIOS folder, the games folder and the texture
+	// packs. Zip, 7z and RAR archives are unpacked into them.
 	WebServer web;
+	using WebFolder = WebServer::Folder;
 	web.SetFolders({
-		{"bios", EmuFolders::Bios, {".bin", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm"}},
-		{"roms", Emu::GetGamesFolder(), Emu::GetGameExtensions()},
+		{"bios", EmuFolders::Bios, {".bin", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm"}, WebFolder::Kind::Files, true},
+		{"roms", Emu::GetGamesFolder(), Emu::GetGameExtensions(), WebFolder::Kind::Files, true},
+		{"textures", Emu::GetTexturesFolder(), {}, WebFolder::Kind::TexturePacks, true},
+	});
+	web.SetStagingFolder(Path::Combine(EmuFolders::DataRoot, "transfer"));
+	web.SetTextureHooks({
+		[]() {
+			std::vector<WebServer::GameRef> games;
+			for (const Emu::GameInfo& game : Emu::GetGames())
+			{
+				if (!game.serial.empty() && std::none_of(games.begin(), games.end(),
+												[&](const WebServer::GameRef& g) { return g.serial == game.serial; }))
+					games.push_back({game.serial, game.title});
+			}
+			return games;
+		},
+		&Emu::GetGameTitle,
+		&Emu::GetSerial,
+		&Emu::TexturePackChanged,
 	});
 
 	// What the controllers do in the game, set in Settings › Controls.
