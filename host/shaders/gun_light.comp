@@ -1,0 +1,37 @@
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// The light gun's sensor (GunLight): how much of the presented picture is lit, sampled on a coarse
+// grid over the game's picture. Counts the samples brighter than the threshold and keeps the
+// brightest value (as float bits, which order like the floats for values >= 0).
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D picture;
+layout(std430, binding = 1) buffer Result
+{
+	uint lit; // samples brighter than the threshold
+	uint brightest; // floatBitsToUint of the brightest channel seen
+};
+
+layout(push_constant) uniform Params
+{
+	vec4 rect_uv; // the game's picture in the image, 0..1 (x0, y0, x1, y1)
+	uvec2 grid_size;
+	float threshold;
+};
+
+void main()
+{
+	const uvec2 cell = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(cell, grid_size)))
+		return;
+	const vec2 uv = mix(rect_uv.xy, rect_uv.zw, (vec2(cell) + 0.5) / vec2(grid_size));
+	const vec3 c = textureLod(picture, uv, 0.0).rgb;
+	const float v = max(c.r, max(c.g, c.b));
+	if (v > threshold)
+		atomicAdd(lit, 1u);
+	atomicMax(brightest, floatBitsToUint(v));
+}

@@ -14,7 +14,7 @@
 #include <array>
 #include <cstdio>
 
-static constexpr std::array<VrSettingInfo, 14> s_settings = {{
+static constexpr std::array<VrSettingInfo, 16> s_settings = {{
 	{"Screen", "screen_width", &VrSettings::screen_width, nullptr, 0.3f, 10.0f, false},
 	{"Screen", "screen_distance", &VrSettings::screen_distance, nullptr, 0.3f, 10.0f, false},
 	{"Mode", "stereo", nullptr, &VrSettings::stereo, 0.0f, 0.0f, false},
@@ -29,6 +29,8 @@ static constexpr std::array<VrSettingInfo, 14> s_settings = {{
 	{"LightGun", "gun_haptics", &VrSettings::gun_haptics, nullptr, 0.0f, 1.0f, false},
 	{"LightGun", "gun_pitch", &VrSettings::gun_pitch, nullptr, -45.0f, 45.0f, false},
 	{"LightGun", "gun_color", nullptr, nullptr, 0.0f, 0.0f, false, &VrSettings::gun_color},
+	{"LightGun", "gun_color_2p", nullptr, nullptr, 0.0f, 0.0f, false, &VrSettings::gun_color_2p},
+	{"LightGun", "gun2_color", nullptr, nullptr, 0.0f, 0.0f, false, &VrSettings::gun2_color},
 }};
 
 std::span<const VrSettingInfo> VrSettingList()

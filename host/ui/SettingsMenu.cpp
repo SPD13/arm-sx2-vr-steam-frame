@@ -3,6 +3,8 @@
 
 #include "SettingsMenu.h"
 
+#include "TexturePacks.h"
+
 #include "fmt/format.h"
 
 #include <algorithm>
@@ -29,7 +31,9 @@ namespace Icon
 	static constexpr uint32_t restart = 0xf2ea; // rotate-left
 	static constexpr uint32_t info = 0xf05a; // circle-info
 	static constexpr uint32_t transfer = 0xf1eb; // wifi
-	static constexpr uint32_t lightgun = 0xf05b; // crosshairs
+	static constexpr uint32_t lightgun = 0xe19b; // gun
+	static constexpr uint32_t textures = 0xf302; // images
+	static constexpr uint32_t trash = 0xf1f8;
 } // namespace Icon
 
 namespace
@@ -42,7 +46,10 @@ namespace
 	constexpr float LABEL_WIDTH = CONTENT_RIGHT - CONTROL_WIDTH - 40.0f - CONTENT_X;
 	constexpr float PAGE_TOP = 128.0f;
 	constexpr float RADIUS = 28.0f;
-	constexpr float NAV_SPACING = 66.0f;
+	constexpr float NAV_SPACING = 60.0f;
+	constexpr float NAV_ITEM_HEIGHT = 58.0f;
+	constexpr float PACK_ROW_HEIGHT = 76.0f;
+	constexpr float PACK_ROW_GAP = 8.0f;
 
 	// The gun colours offered, sRGB; the first is the default.
 	struct Swatch
@@ -52,6 +59,15 @@ namespace
 	};
 	constexpr Swatch GUN_COLORS[] = {{0x8C8C91, "Gray"}, {0x1E1E22, "Black"}, {0xE8E8EA, "White"}, {0xC0282D, "Red"},
 		{0x2F5FD0, "Blue"}, {0x2E9E4F, "Green"}, {0xE8892B, "Orange"}, {0x7B45C8, "Purple"}};
+
+	std::string FormatBytes(uint64_t bytes)
+	{
+		if (bytes >= 1000000000ull)
+			return fmt::format("{:.1f} GB", static_cast<double>(bytes) / 1e9);
+		if (bytes >= 1000000ull)
+			return fmt::format("{} MB", (bytes + 500000) / 1000000);
+		return fmt::format("{} KB", (bytes + 999) / 1000);
+	}
 } // namespace
 
 SettingsMenu::SettingsMenu(VrSettingsStore& settings, WebServer& web, ControlMap& controls, Font& text,
@@ -72,6 +88,9 @@ void SettingsMenu::Refresh()
 	m_dialog = Dialog::None;
 	m_dialog_only = false;
 	m_mapping.reset();
+	m_running_serial = Emu::GetSerial();
+	if (m_page == Page::Textures)
+		LoadTexturePacks();
 	m_needs_draw = true;
 }
 
@@ -80,6 +99,58 @@ void SettingsMenu::ShowQuitDialog()
 	m_dialog = Dialog::Exit;
 	m_dialog_only = true;
 	m_needs_draw = true;
+}
+
+void SettingsMenu::ShowTransferPage()
+{
+	m_page = Page::Transfer;
+	m_needs_draw = true;
+}
+
+void SettingsMenu::Scroll(float pixels)
+{
+	if (m_page != Page::Textures || m_dialog != Dialog::None)
+		return;
+	const float scroll = std::clamp(m_packs_scroll + pixels, 0.0f, m_packs_overflow);
+	if (scroll != m_packs_scroll)
+	{
+		m_packs_scroll = scroll;
+		m_needs_draw = true;
+	}
+}
+
+void SettingsMenu::LoadTexturePacks()
+{
+	// One read at a time: replacing an unfinished future would wait for it here.
+	if (m_packs_loading.valid())
+	{
+		m_packs_again = true;
+		return;
+	}
+	m_packs_loading = std::async(std::launch::async, [root = Emu::GetTexturesFolder(), remove = std::exchange(m_remove_pack, {})]() {
+		PackList list;
+		if (!remove.empty())
+		{
+			const std::string title = Emu::GetGameTitle(remove);
+			std::string error;
+			if (TexturePacks::Remove(root, remove, &error))
+			{
+				Emu::TexturePackChanged(remove, false);
+				list.notice = fmt::format("Texture pack of {} removed", title.empty() ? remove : title);
+			}
+			else
+				list.notice = error;
+		}
+		for (const TexturePacks::Pack& pack : TexturePacks::List(root))
+			list.rows.push_back({pack.serial, Emu::GetGameTitle(pack.serial), pack.textures, pack.bytes});
+		// By title; the unknown games, by serial, last.
+		std::sort(list.rows.begin(), list.rows.end(), [](const PackRow& a, const PackRow& b) {
+			if (a.title.empty() != b.title.empty())
+				return b.title.empty();
+			return a.title.empty() ? a.serial < b.serial : a.title < b.title;
+		});
+		return list;
+	});
 }
 
 bool SettingsMenu::Update(const GuiInput& input)
@@ -107,6 +178,7 @@ bool SettingsMenu::Update(const GuiInput& input)
 	// The transfer page follows the server: its address, code and uploads.
 	if (WebServer::Status web = m_web.GetStatus(); web.running != m_web_status.running || web.url != m_web_status.url ||
 		web.code != m_web_status.code || web.error != m_web_status.error || web.transfer != m_web_status.transfer ||
+		web.phase != m_web_status.phase ||
 		static_cast<int>(web.progress * 100.0f) != static_cast<int>(m_web_status.progress * 100.0f))
 	{
 		m_web_status = std::move(web);
@@ -116,6 +188,31 @@ bool SettingsMenu::Update(const GuiInput& input)
 	{
 		m_toast.clear();
 		m_needs_draw = true;
+	}
+	// The texture packs: a read done, or an upload over (it may have added a pack and turned them on).
+	if (m_packs_loading.valid() && m_packs_loading.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+	{
+		PackList list = m_packs_loading.get();
+		m_packs = std::move(list.rows);
+		m_packs_loaded = true;
+		if (!list.notice.empty())
+		{
+			m_toast = std::move(list.notice);
+			m_toast_until = now + std::chrono::seconds(3);
+		}
+		if (std::exchange(m_packs_again, false))
+			LoadTexturePacks();
+		m_needs_draw |= m_page == Page::Textures;
+	}
+	if (const bool busy = !m_web_status.transfer.empty(); busy != m_web_busy)
+	{
+		m_web_busy = busy;
+		if (!busy)
+		{
+			m_core = Emu::GetCoreSettings();
+			if (m_page == Page::Textures)
+				LoadTexturePacks();
+		}
 	}
 
 	UpdateMapping();
@@ -169,8 +266,8 @@ void SettingsMenu::Run()
 	m_gui.SetBlocked(m_dialog != Dialog::None || m_mapping);
 	RunNav();
 
-	static constexpr std::array<std::string_view, 8> titles = {
-		"Display", "3D", "Graphics", "Audio", "Game", "Wi-Fi Transfer", "Controls", "Light Gun"};
+	static constexpr std::array<std::string_view, 9> titles = {
+		"Display", "3D", "Graphics", "Texture Packs", "Audio", "Game", "Wi-Fi Transfer", "Controls", "Light Gun"};
 	m_gui.Text(CONTENT_X, 42.0f, titles[static_cast<size_t>(m_page)], Theme::title_size);
 	if (m_gui.IconButton(GuiId("close"), {CONTENT_RIGHT - 52.0f, 36.0f, 60.0f, 60.0f}, Icon::close, 28.0f))
 		m_close_requested = true;
@@ -182,6 +279,7 @@ void SettingsMenu::Run()
 		case Page::Display: RunDisplay(); break;
 		case Page::Stereo: RunStereo(); break;
 		case Page::Graphics: RunGraphics(); break;
+		case Page::Textures: RunTextures(); break;
 		case Page::Audio: RunAudio(); break;
 		case Page::Game: RunGame(); break;
 		case Page::Transfer: RunTransfer(); break;
@@ -218,10 +316,11 @@ void SettingsMenu::RunNav()
 		uint32_t icon;
 		std::string_view label;
 	};
-	static constexpr std::array<Item, 8> items = {{
+	static constexpr std::array<Item, 9> items = {{
 		{Page::Display, Icon::display, "Display"},
 		{Page::Stereo, Icon::stereo, "3D"},
 		{Page::Graphics, Icon::graphics, "Graphics"},
+		{Page::Textures, Icon::textures, "Texture Packs"},
 		{Page::Audio, Icon::audio, "Audio"},
 		{Page::Game, Icon::game, "Game"},
 		{Page::Transfer, Icon::transfer, "Wi-Fi Transfer"},
@@ -231,13 +330,18 @@ void SettingsMenu::RunNav()
 	float y = PAGE_TOP;
 	for (const Item& item : items)
 	{
-		if (m_gui.NavItem(GuiId("nav", static_cast<int>(item.page)), {16.0f, y, NAV_WIDTH - 32.0f, 64.0f}, item.icon,
-				item.label, m_page == item.page) &&
+		if (m_gui.NavItem(GuiId("nav", static_cast<int>(item.page)), {16.0f, y, NAV_WIDTH - 32.0f, NAV_ITEM_HEIGHT},
+				item.icon, item.label, m_page == item.page) &&
 			m_page != item.page)
 		{
 			m_page = item.page;
 			if (m_page == Page::Game)
 				Emu::RefreshSaveSlots();
+			if (m_page == Page::Textures)
+			{
+				m_packs_scroll = 0.0f;
+				LoadTexturePacks();
+			}
 			m_needs_draw = true;
 		}
 		y += NAV_SPACING;
@@ -368,6 +472,95 @@ void SettingsMenu::RunGraphics()
 	}
 }
 
+void SettingsMenu::RunTextures()
+{
+	// The core's texture replacement settings, as ARMSX2's Android and iOS apps offer them.
+	m_row_gap = 16.0f;
+	Emu::CoreSettings core = m_core;
+	if (m_gui.Toggle(GuiId("texture_packs"),
+			Row("Texture packs", "Shows a game with the HD textures of its pack. Add packs with Wi-Fi Transfer."),
+			&core.texture_packs))
+		SetCore(core);
+	m_gui.SetDisabled(!core.texture_packs);
+	if (m_gui.Toggle(GuiId("texture_packs_async"),
+			Row("Load in the background", "The game runs on while textures load; they show a moment later."),
+			&core.texture_packs_async))
+		SetCore(core);
+	if (m_gui.Toggle(GuiId("texture_packs_precache"),
+			Row("Preload", "Loads the whole pack as the game starts: no pop-in, but a slower start and more memory."),
+			&core.texture_packs_precache))
+		SetCore(core);
+	m_gui.SetDisabled(false);
+
+	Section(m_packs.empty() ? std::string("GAMES WITH A TEXTURE PACK") :
+	                          fmt::format("GAMES WITH A TEXTURE PACK ({})", m_packs.size()));
+	const Rect view{CONTENT_X, m_y - 6.0f, CONTENT_RIGHT - CONTENT_X - 22.0f, HEIGHT - 24.0f - (m_y - 6.0f)};
+	if (m_packs.empty())
+	{
+		if (m_gui.Drawing())
+		{
+			const Rect box{CONTENT_X, view.y, CONTENT_RIGHT - CONTENT_X, std::min(view.h, 150.0f)};
+			m_gui.Draw().FillRect(box, Theme::nav, 16.0f);
+			m_gui.Draw().DrawIcon(m_gui.IconFont(), 40.0f, {box.x + 28.0f, box.y, 56.0f, box.h}, Icon::textures,
+				Theme::control_hover);
+			m_gui.TextWrapped(box.x + 108.0f, box.y + 0.5f * box.h - 28.0f, box.w - 136.0f,
+				m_packs_loaded ? "No texture packs yet. Send one from a computer or phone: Wi-Fi Transfer, Texture "
+				                 "Packs tab (zip, 7z or RAR)." :
+				                 "Looking for texture packs…",
+				Theme::body_size, Theme::text_muted);
+		}
+		m_packs_overflow = 0.0f;
+		return;
+	}
+
+	const float content = static_cast<float>(m_packs.size()) * (PACK_ROW_HEIGHT + PACK_ROW_GAP) - PACK_ROW_GAP;
+	m_packs_overflow = std::max(content - view.h, 0.0f);
+	m_gui.ScrollBar(GuiId("packs_scroll"), {view.Right() + 8.0f, view.y, 14.0f, view.h}, &m_packs_scroll, content, view.h);
+	m_packs_scroll = std::clamp(m_packs_scroll, 0.0f, m_packs_overflow);
+	m_gui.SetClip(view);
+	for (size_t i = 0; i < m_packs.size(); i++)
+	{
+		const PackRow& pack = m_packs[i];
+		const Rect row{view.x, view.y + static_cast<float>(i) * (PACK_ROW_HEIGHT + PACK_ROW_GAP) - m_packs_scroll, view.w,
+			PACK_ROW_HEIGHT};
+		if (row.Bottom() < view.y || row.y > view.Bottom())
+			continue;
+		const bool running = !m_running_serial.empty() && pack.serial == m_running_serial;
+		const Rect remove{row.Right() - 12.0f - 52.0f, row.y + 0.5f * (row.h - 52.0f), 52.0f, 52.0f};
+		constexpr float badge_w = 120.0f;
+		if (m_gui.Drawing())
+		{
+			Canvas& c = m_gui.Draw();
+			c.FillRect(row, running ? Theme::item_selected.WithAlpha(0.6f) : Theme::nav, 14.0f);
+			c.DrawIcon(m_gui.IconFont(), 26.0f, {row.x + 18.0f, row.y, 40.0f, row.h}, Icon::textures,
+				running ? Theme::accent : Theme::text_muted);
+			const float text_x = row.x + 74.0f;
+			const float text_w = remove.x - 12.0f - (running ? badge_w + 12.0f : 0.0f) - text_x;
+			m_gui.Text(text_x, row.y + 10.0f,
+				m_gui.Elide(pack.title.empty() ? pack.serial : pack.title, Theme::label_size, text_w), Theme::label_size);
+			const std::string details = fmt::format("{}{} · {} texture{} · {}", pack.serial,
+				pack.title.empty() ? " (not in the game database)" : "", pack.textures, pack.textures == 1 ? "" : "s",
+				FormatBytes(pack.bytes));
+			m_gui.Text(text_x, row.y + 44.0f, m_gui.Elide(details, Theme::small_size, text_w), Theme::small_size,
+				Theme::text_muted);
+			if (running)
+			{
+				const Rect badge{remove.x - 12.0f - badge_w, row.y + 0.5f * (row.h - 40.0f), badge_w, 40.0f};
+				c.FillRect(badge, Theme::accent.WithAlpha(0.25f), 20.0f);
+				m_gui.TextCentered(badge, "Playing", Theme::small_size, Theme::accent_hover);
+			}
+		}
+		if (m_gui.IconButton(GuiId("pack_remove", static_cast<int>(i)) ^ static_cast<uint32_t>(std::hash<std::string>{}(pack.serial)),
+				remove, Icon::trash, 22.0f, Theme::text_muted, Theme::danger_hover))
+		{
+			m_remove_pack = pack.serial;
+			m_dialog = Dialog::RemovePack;
+			m_needs_draw = true;
+		}
+	}
+	m_gui.SetClip(std::nullopt);
+}
+
 void SettingsMenu::RunAudio()
 {
 	Emu::CoreSettings core = m_core;
@@ -428,8 +621,8 @@ void SettingsMenu::RunTransfer()
 	const WebServer::Status& web = m_web_status;
 	bool on = web.running;
 	if (m_gui.Toggle(GuiId("web"),
-			Row("Wi-Fi transfer", "Add games and BIOS files from a computer or phone on the same Wi-Fi network, in "
-								  "its web browser.", 52.0f, !on && !web.error.empty()),
+			Row("Wi-Fi transfer", "Add games, BIOS files and texture packs from a computer or phone on the same "
+								  "Wi-Fi network, in its web browser.", 52.0f, !on && !web.error.empty()),
 			&on))
 	{
 		if (on)
@@ -486,7 +679,7 @@ void SettingsMenu::RunTransfer()
 	// The upload in progress.
 	if (!web.transfer.empty())
 	{
-		m_gui.Text(CONTENT_X, m_y, fmt::format("Receiving {}", web.transfer), Theme::body_size);
+		m_gui.Text(CONTENT_X, m_y, fmt::format("{} {}", web.phase, web.transfer), Theme::body_size);
 		const std::string percent = fmt::format("{}%", static_cast<int>(web.progress * 100.0f));
 		m_gui.Text(CONTENT_RIGHT - m_gui.TextWidth(percent, Theme::body_size), m_y, percent, Theme::body_size, Theme::text_muted);
 		if (m_gui.Drawing())
@@ -497,7 +690,9 @@ void SettingsMenu::RunTransfer()
 		}
 	}
 	else
-		m_gui.Text(CONTENT_X, m_y, "Files sent from the browser appear in the emulator's BIOS and games folders.",
+		m_gui.TextWrapped(CONTENT_X, m_y, CONTENT_RIGHT - CONTENT_X,
+			"Files sent from the browser go into the emulator's BIOS, games and texture pack folders. Zip, 7z and "
+			"RAR archives are unpacked.",
 			Theme::small_size, Theme::text_muted);
 }
 
@@ -619,10 +814,62 @@ void SettingsMenu::RunControls()
 		                                                Theme::text_muted;
 		m_gui.TextCentered(pill, label, Theme::small_size, ink);
 	}
-	if (m_controls_guncon)
-		m_gui.Text(CONTENT_X, top + 7.0f * (row_h + row_gap) + 6.0f,
-			"* in both guns' sets: with two guns, gun 2 has it. Pedal presses the Light Gun page's pedal button.",
-			Theme::small_size, Theme::text_muted);
+	if (!m_controls_guncon)
+		return;
+	const float below = top + 7.0f * (row_h + row_gap);
+	m_gui.Text(CONTENT_X, below + 6.0f,
+		"* in both guns' sets: with two guns, gun 2 has it. Pedal presses the Light Gun page's pedal button.",
+		Theme::small_size, Theme::text_muted);
+
+	// The gun's colour: gun 1 has one for playing alone and one for two players.
+	vr = m_settings.Get();
+	bool changed = false;
+	const Rect left{CONTENT_X, below + 48.0f, col_w, 72.0f};
+	const Rect right{CONTENT_X + col_w + gap, left.y, col_w, left.h};
+	if (m_controls_gun == 0)
+	{
+		changed |= GunColor("gun_color", "Colour, one player", left, &vr.gun_color);
+		changed |= GunColor("gun_color_2p", "Colour, two players", right, &vr.gun_color_2p);
+	}
+	else
+		changed |= GunColor("gun2_color", "Colour", left, &vr.gun2_color);
+	if (changed)
+		SetVr(vr);
+}
+
+bool SettingsMenu::GunColor(std::string_view id, std::string_view label, const Rect& area, uint32_t* rgb)
+{
+	// A colour not offered here (set in VR.ini) leaves none selected.
+	const auto preset = std::find_if(std::begin(GUN_COLORS), std::end(GUN_COLORS),
+		[&](const Swatch& sw) { return sw.rgb == *rgb; });
+	m_gui.Text(area.x, area.y, fmt::format("{}: {}", label, preset == std::end(GUN_COLORS) ? FormatColor(*rgb) : preset->name),
+		Theme::small_size, Theme::text_muted);
+	const Rect row{area.x, area.y + 30.0f, area.w, area.h - 30.0f};
+	constexpr int num_colours = static_cast<int>(std::size(GUN_COLORS));
+	const float swatch_gap = 7.0f;
+	const float swatch_w = (row.w - swatch_gap * (num_colours - 1)) / num_colours;
+	bool picked = false;
+	for (int i = 0; i < num_colours; i++)
+	{
+		const Rect r{row.x + static_cast<float>(i) * (swatch_w + swatch_gap), row.y, swatch_w, row.h};
+		bool hovered = false;
+		if (m_gui.Clickable(GuiId(id, i), r, &hovered))
+		{
+			*rgb = GUN_COLORS[i].rgb;
+			picked = true;
+		}
+		if (m_gui.Drawing())
+		{
+			Canvas& c = m_gui.Draw();
+			const bool selected = GUN_COLORS[i].rgb == *rgb;
+			c.FillRect(r.Inset(selected || hovered ? 5.0f : 3.0f, selected || hovered ? 5.0f : 3.0f), Rgb(GUN_COLORS[i].rgb), 10.0f);
+			if (selected)
+				c.StrokeRect(r, Theme::accent, 12.0f, 3.0f);
+			else if (hovered)
+				c.StrokeRect(r, Theme::border, 12.0f, 2.0f);
+		}
+	}
+	return picked;
 }
 
 void SettingsMenu::RunLightGun()
@@ -660,35 +907,6 @@ void SettingsMenu::RunLightGun()
 	{
 		vr.gun_left_hand = hand == 1;
 		changed = true;
-	}
-
-	// The colours as swatches; one not offered here (set in VR.ini) leaves none selected.
-	const auto preset = std::find_if(std::begin(GUN_COLORS), std::end(GUN_COLORS),
-		[&](const Swatch& sw) { return sw.rgb == vr.gun_color; });
-	const Rect colours = Row(preset == std::end(GUN_COLORS) ? "Gun colour (custom)" : "Gun colour",
-		preset == std::end(GUN_COLORS) ? FormatColor(vr.gun_color) : preset->name, h);
-	constexpr int num_colours = static_cast<int>(std::size(GUN_COLORS));
-	const float swatch_gap = 7.0f;
-	const float swatch_w = (colours.w - swatch_gap * (num_colours - 1)) / num_colours;
-	for (int i = 0; i < num_colours; i++)
-	{
-		const Rect r{colours.x + static_cast<float>(i) * (swatch_w + swatch_gap), colours.y, swatch_w, colours.h};
-		bool hovered = false;
-		if (m_gui.Clickable(GuiId("gun_color", i), r, &hovered))
-		{
-			vr.gun_color = GUN_COLORS[i].rgb;
-			changed = true;
-		}
-		if (m_gui.Drawing())
-		{
-			Canvas& c = m_gui.Draw();
-			const bool selected = GUN_COLORS[i].rgb == vr.gun_color;
-			c.FillRect(r.Inset(selected || hovered ? 5.0f : 3.0f, selected || hovered ? 5.0f : 3.0f), Rgb(GUN_COLORS[i].rgb), 10.0f);
-			if (selected)
-				c.StrokeRect(r, Theme::accent, 12.0f, 3.0f);
-			else if (hovered)
-				c.StrokeRect(r, Theme::border, 12.0f, 2.0f);
-		}
 	}
 
 	static constexpr std::array<std::string_view, 3> beams = {"Beam and dot", "Dot", "Off"};
@@ -799,6 +1017,7 @@ void SettingsMenu::RunMappingDialog()
 void SettingsMenu::RunDialog()
 {
 	const bool exit = m_dialog == Dialog::Exit;
+	const bool remove = m_dialog == Dialog::RemovePack;
 	const Rect box{0.5f * (WIDTH - 600.0f), 0.5f * (HEIGHT - 300.0f), 600.0f, 300.0f};
 	if (m_gui.Drawing())
 	{
@@ -806,23 +1025,33 @@ void SettingsMenu::RunDialog()
 		c.FillRect({0, 0, WIDTH, HEIGHT}, Rgb(0x000000, 140), RADIUS);
 		c.FillRect(box, Theme::nav, 24.0f);
 		c.StrokeRect(box, Theme::border, 24.0f, 2.0f);
-		m_gui.Text(box.x + 40.0f, box.y + 36.0f, exit ? "Quit ARMSX2 VR?" : "Restart the game?", Theme::title_size - 4.0f);
-		m_gui.TextWrapped(box.x + 40.0f, box.y + 96.0f, box.w - 80.0f,
-			exit ? "The game stops. Progress since your last save is lost." :
-				   "The game starts over. Progress since your last save is lost.",
-			Theme::body_size, Theme::text_muted);
+		std::string title = exit ? "Quit ARMSX2 VR?" : remove ? "Remove the texture pack?" : "Restart the game?";
+		std::string text = exit ? "The game stops. Progress since your last save is lost." :
+		                          "The game starts over. Progress since your last save is lost.";
+		if (remove)
+		{
+			const auto pack = std::find_if(m_packs.begin(), m_packs.end(), [this](const PackRow& p) { return p.serial == m_remove_pack; });
+			const std::string game = pack != m_packs.end() && !pack->title.empty() ? pack->title : m_remove_pack;
+			text = fmt::format("The HD textures of {} are deleted from the headset. The game itself stays.", game);
+		}
+		m_gui.Text(box.x + 40.0f, box.y + 36.0f, title, Theme::title_size - 4.0f);
+		m_gui.TextWrapped(box.x + 40.0f, box.y + 96.0f, box.w - 80.0f, text, Theme::body_size, Theme::text_muted);
 	}
 	const float bw = 200.0f, by = box.Bottom() - 40.0f - 56.0f;
-	if (m_gui.Button(GuiId("dialog_cancel"), {box.Right() - 40.0f - 2.0f * bw - 16.0f, by, bw, 56.0f}, "Cancel"))
-	{
+	const auto dismiss = [this]() {
 		m_dialog = Dialog::None;
+		m_remove_pack.clear();
 		m_needs_draw = true;
-	}
-	if (m_gui.Button(GuiId("dialog_ok"), {box.Right() - 40.0f - bw, by, bw, 56.0f}, exit ? "Quit" : "Restart",
-			exit ? Icon::exit : Icon::restart, Gui::Style::Danger))
+	};
+	if (m_gui.Button(GuiId("dialog_cancel"), {box.Right() - 40.0f - 2.0f * bw - 16.0f, by, bw, 56.0f}, "Cancel"))
+		dismiss();
+	if (m_gui.Button(GuiId("dialog_ok"), {box.Right() - 40.0f - bw, by, bw, 56.0f}, exit ? "Quit" : remove ? "Remove" : "Restart",
+			exit ? Icon::exit : remove ? Icon::trash : Icon::restart, Gui::Style::Danger))
 	{
 		if (exit)
 			Emu::RequestShutdown();
+		else if (remove)
+			LoadTexturePacks(); // removes m_remove_pack first
 		else
 		{
 			Emu::ResetGame();
@@ -833,8 +1062,5 @@ void SettingsMenu::RunDialog()
 	}
 	// A press outside the dialog dismisses it.
 	if (!m_gui.Drawing() && m_gui.Input().pressed && !m_gui.Hovered(box))
-	{
-		m_dialog = Dialog::None;
-		m_needs_draw = true;
-	}
+		dismiss();
 }

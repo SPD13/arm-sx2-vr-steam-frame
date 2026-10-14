@@ -20,6 +20,7 @@
 #include "gun/GunAim.h"
 #include "gun/GunDepth.h"
 #include "gun/GunGames.h"
+#include "gun/GunLight.h"
 #include "gun/GunRenderer.h"
 #include "ui/VrMenu.h"
 #include "web/WebServer.h"
@@ -289,11 +290,30 @@ int main(int argc, char* argv[])
 			return EXIT_FAILURE;
 		}
 	}
-	// Wi-Fi transfer, switched on from the menu: the BIOS folder and the games folder.
+	// Wi-Fi transfer, switched on from the menu: the BIOS folder, the games folder and the texture
+	// packs. Zip, 7z and RAR archives are unpacked into them.
 	WebServer web;
+	using WebFolder = WebServer::Folder;
 	web.SetFolders({
-		{"bios", EmuFolders::Bios, {".bin", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm"}},
-		{"roms", Emu::GetGamesFolder(), Emu::GetGameExtensions()},
+		{"bios", EmuFolders::Bios, {".bin", ".rom0", ".rom1", ".rom2", ".erom", ".mec", ".nvm"}, WebFolder::Kind::Files, true},
+		{"roms", Emu::GetGamesFolder(), Emu::GetGameExtensions(), WebFolder::Kind::Files, true},
+		{"textures", Emu::GetTexturesFolder(), {}, WebFolder::Kind::TexturePacks, true},
+	});
+	web.SetStagingFolder(Path::Combine(EmuFolders::DataRoot, "transfer"));
+	web.SetTextureHooks({
+		[]() {
+			std::vector<WebServer::GameRef> games;
+			for (const Emu::GameInfo& game : Emu::GetGames())
+			{
+				if (!game.serial.empty() && std::none_of(games.begin(), games.end(),
+												[&](const WebServer::GameRef& g) { return g.serial == game.serial; }))
+					games.push_back({game.serial, game.title});
+			}
+			return games;
+		},
+		&Emu::GetGameTitle,
+		&Emu::GetSerial,
+		&Emu::TexturePackChanged,
 	});
 
 	// What the controllers do in the game, set in Settings › Controls.
@@ -341,6 +361,7 @@ int main(int argc, char* argv[])
 	GSDeviceVK* gs = GSDeviceVK::GetInstance();
 	GunRenderer gun_renderer;
 	GunDepth gun_depth;
+	GunLight gun_light;
 	ScreenLayer screen;
 	ScreenLayer screen_right; // volumetric: the right eye's picture; screen then shows the left eye's
 	VrMenu menu(settings, web, controls);
@@ -367,6 +388,8 @@ int main(int argc, char* argv[])
 		Console.Error("Light gun: neither guns nor controllers can be shown.");
 	else if (!gun_renderer.HasGun())
 		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
+	if (!gun_light.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
+		Console.Error("Light gun: no light sensor; calibration needs the calibration shot.");
 	if (!gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no depth; shots land on the screen glass.");
 	// An invisible quad for the layer slots that are empty this frame, so that every layer keeps its
@@ -430,6 +453,12 @@ int main(int argc, char* argv[])
 	bool gun_chosen = false;
 	std::array<float, 2> gun_press_left{}, gun_press_right{}; // eased button presses, per gun
 	std::array<bool, 2> gun_fired{}; // the trigger was down last frame, per gun (recoil on a new pull)
+	bool gun_saw_dark = false; // the light sensor's last reading, to log changes
+	// Per gun: when it last shot (trigger or calibration shot), and how often the game set its
+	// calibration, to tell the player when a shot calibrated it.
+	std::array<Clock::time_point, 2> gun_shot_at{};
+	std::array<bool, 2> gun_shot_down{};
+	std::array<unsigned, 2> gun_calibrations{};
 	std::optional<SettingsMenu::GunAction> gun_action; // asked in the menu, done once it has closed
 	// Per hand: where the grip is in the aim pose's frame, from the last frame that had both (for a
 	// frame without a grip pose), and the gun's last pose (to log jumps).
@@ -727,6 +756,18 @@ int main(int argc, char* argv[])
 			if (gun_action && !action_held && gun_action_at == Clock::time_point::max())
 				gun_action.reset();
 
+			// The guns' light sensor: a dark picture is no light, as a real gun reports it (off the screen).
+			// Time Crisis's calibration waits for that after the calibration shot.
+			const GunLight::Reading& light = gun_light.Latest();
+			const bool dark = light.valid && light.dark;
+			if (dark != gun_saw_dark && pose_logs < 200)
+			{
+				pose_logs++;
+				Console.WriteLnFmt("Light gun: picture {} ({:.1f}% lit, brightest {:.2f})", dark ? "dark: no light" : "lit again",
+					light.lit_share * 100.0f, light.brightest);
+			}
+			gun_saw_dark = dark;
+
 			for (int g = 0; g < Emu::NUM_GUNS; g++)
 			{
 				Emu::GunState state;
@@ -743,13 +784,13 @@ int main(int argc, char* argv[])
 				{
 					aim = AimGun(muzzle_pose[h], gun_screen, gun_stereo.z_mode ? &gun_stereo : nullptr, depth_grid);
 					const bool on_ui = ui.on_ui[h] || ui.open;
-					state.aim_valid = aim.on_picture && !on_ui;
+					state.aim_valid = aim.on_picture && !on_ui && !dark;
 					state.x = aim.window_x;
 					state.y = aim.window_y;
 
 					drawn.visible = gun_renderer.HasGun();
 					drawn.pose = gun_pose[h];
-					drawn.body_color = vr.gun_color;
+					drawn.body_color = g == 1 ? vr.gun2_color : num_guns > 1 ? vr.gun_color_2p : vr.gun_color;
 					drawn.trigger = controls.GunTrigger(input.controller, g);
 					const float ease = 0.35f; // per frame, about 40 ms to settle at 90 Hz
 					gun_press_left[g] += ((state.buttons & Emu::GUN_A) ? 1.0f - gun_press_left[g] : -gun_press_left[g]) * ease;
@@ -801,7 +842,7 @@ int main(int argc, char* argv[])
 					const DebugOptions::GunShot& shot = shots[gun_script_next];
 					const bool firing = t >= shot.time;
 					const float* r = frame_draw_rect;
-					state.aim_valid = !shot.offscreen;
+					state.aim_valid = !shot.offscreen && !dark;
 					state.x = r[0] + shot.u * (r[2] - r[0]);
 					state.y = r[1] + shot.v * (r[3] - r[1]);
 					// For a shot, the pedal is held from a second before the first one (out of cover);
@@ -838,6 +879,24 @@ int main(int argc, char* argv[])
 				}
 				gun_fired[g] = fired;
 				Emu::SetGun(g, state);
+
+				// The game sets the gun's calibration (its offset) right after a calibration shot; it
+				// also does at start, without one.
+				const bool shooting = (state.buttons & (Emu::GUN_TRIGGER | Emu::GUN_RECALIBRATE)) != 0;
+				if (shooting && !gun_shot_down[g])
+					gun_shot_at[g] = now;
+				gun_shot_down[g] = shooting;
+				int offset_x = 0, offset_y = 0;
+				if (const unsigned calibrations = Emu::GetGunCalibration(g, &offset_x, &offset_y);
+					calibrations != gun_calibrations[g])
+				{
+					gun_calibrations[g] = calibrations;
+					if (now - gun_shot_at[g] < std::chrono::milliseconds(1500))
+					{
+						Console.WriteLnFmt("Light gun: gun {} calibrated by the game (offset {}, {})", g + 1, offset_x, offset_y);
+						menu.ShowNotice(num_guns > 1 ? fmt::format("Gun {} calibrated", g + 1) : std::string("Gun calibrated"), 3.0f);
+					}
+				}
 			}
 		}
 
@@ -922,6 +981,8 @@ int main(int argc, char* argv[])
 				screen.Update(emu_frame);
 			if (emu_frame.stereo_eye >= 0)
 				last_eye_frame[emu_frame.stereo_eye] = Clock::now();
+			if (gun_mode)
+				gun_light.Process(emu_frame);
 		}
 
 		const Clock::time_point t_emu_done = Clock::now();
@@ -1024,6 +1085,7 @@ int main(int argc, char* argv[])
 	web.Stop();
 	Emu::RequestShutdown();
 	gun_depth.Destroy();
+	gun_light.Destroy();
 	gun_renderer.Destroy();
 	layer_pad.Destroy();
 	menu.Destroy();

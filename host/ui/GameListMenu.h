@@ -4,7 +4,8 @@
 // The game list the games button opens: tabs for all games, the recently added ones, the recently
 // played ones, the most played ones and the favourites, one row per game with a star that marks it as a favourite.
 // Clicking a row starts the game, after asking when another one is running; the running game's row
-// resumes it, and its Restart button starts it over, after asking. Like SettingsMenu it draws on a
+// resumes it, and its Restart button starts it over, after asking. With no game or no BIOS yet (the
+// first run), it says how to add them instead, with a button to the Wi-Fi transfer settings. Like SettingsMenu it draws on a
 // Canvas; VrMenu shows it and feeds it the pointer and the thumbsticks' scrolling.
 
 #pragma once
@@ -38,6 +39,8 @@ public:
 	const Canvas& GetCanvas() const { return m_canvas; }
 
 	bool TakeCloseRequest() { return std::exchange(m_close_requested, false); }
+	// The Wi-Fi transfer settings asked for (nothing to play yet).
+	bool TakeWifiRequest() { return std::exchange(m_wifi_requested, false); }
 
 private:
 	enum class Tab
@@ -57,6 +60,8 @@ private:
 
 	void Run();
 	void RunList();
+	// In place of the list: no game or no BIOS yet, and where to add them.
+	void RunSetupHelp(const Rect& view, bool no_games, bool no_bios);
 	void RunDialog();
 	// The games the current tab shows, in its order.
 	std::vector<const Game*> Shown() const;
@@ -73,6 +78,7 @@ private:
 	std::vector<Game> m_games;
 	unsigned m_games_version = ~0u;
 	bool m_refreshing = false;
+	bool m_has_bios = true;
 	std::string m_running_raw; // as the emulator reports it
 	std::string m_running; // canonical
 
@@ -81,6 +87,7 @@ private:
 	float m_content_height = 0.0f;
 	bool m_needs_draw = true;
 	bool m_close_requested = false;
+	bool m_wifi_requested = false;
 	const Game* m_confirm = nullptr; // the game the dialog asks about
 	bool m_confirm_restart = false; // ... to restart it (it runs), not to switch to it
 

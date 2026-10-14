@@ -1,8 +1,8 @@
 # ARMSX2 VR
 
-A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app, shows the game on a virtual screen with real 3D depth, and is driven entirely from the headset: a settings menu, a game list, controller mapping and Wi-Fi transfer of games and BIOS files.
+A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with GunCon 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping, HD texture packs and Wi-Fi transfer of games, BIOS files and texture packs (zip, 7z and RAR archives are unpacked on the headset).
 
-> **Status.** The in-headset menu, game list and controller pointer run on the Steam Frame (first headset tests on 2026-10-12); Wi-Fi transfer, every settings page and controller mapping still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
+> **Status.** On the Steam Frame (headset tests on 2026-10-12 and 13): the menu, its buttons and tooltips, the game list and the pointer; volumetric and flat modes and switching between them; pause and quit; and the light gun in Time Crisis II, with one gun (steady in the hand, the beam landing on what is behind the glass, calibration with the trigger, gun colours); and HD texture packs sent over Wi-Fi. The rest of Wi-Fi transfer, every settings page, controller mapping and two-gun play still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
 
 ## Contents
 
@@ -11,6 +11,7 @@ A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https:
 - [Settings menu](#settings-menu)
 - [Game list](#game-list)
 - [Wi-Fi transfer](#wi-fi-transfer)
+- [Texture packs](#texture-packs)
 - [Controller mapping](#controller-mapping)
 - [Light gun](#light-gun)
 - [Files and folders](#files-and-folders)
@@ -51,21 +52,21 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ## In the headset
 
-Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, and pause and power at the bottom:
+Round buttons sit just outside the screen, on its right side, so they never cover the game: a group from level with its top down, the 3D button at mid height, and pause and power at the bottom:
 
 | Button | Does |
 |---|---|
 | ⚙ Gear | Opens the [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
-| ▣ Cube / ■ square (below it) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
-| ⌖ Crosshair (after a gap) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
+| 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
+| ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
 | ⏸ Pause (bottom, above power) | Pauses or resumes the game; lit (a play icon) while paused. Menus opened meanwhile leave it paused, and another game starts unpaused |
 | ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit** |
 
 - **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
 - **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
-- **Pausing.** Opening a menu pauses the game; closing it resumes.
+- **Pausing.** Opening a menu pauses the game; closing it resumes, unless you paused it with the pause button.
 - **Closing a menu.** Its ✕ button, or a click anywhere off the panel. Starting or loading a game closes it too.
 - **Scrolling** the game list: either thumbstick, or drag its scroll bar.
 - **Recentering.** Click both thumbsticks together, or use **Settings › Display › Recenter**.
@@ -101,6 +102,18 @@ These are the only two modes. The emulator always draws both eyes (multiview); F
 
 Both apply while the game runs. Settings that only one renderer supports, or that could break the stereo rendering (renderer choice, aspect ratio, widescreen patches, deinterlacing), are left out on purpose.
 
+### Texture Packs
+
+The core's texture replacement settings, as ARMSX2's Android and iOS apps offer them, then the games that have a texture pack.
+
+| Option | Values | Stored in |
+|---|---|---|
+| Texture packs | on / off | `PCSX2.ini`, `[EmuCore/GS] LoadTextureReplacements`. Off at first; adding a pack over Wi-Fi turns it on, as ARMSX2 does when it installs one. |
+| Load in the background | on / off | `PCSX2.ini`, `[EmuCore/GS] LoadTextureReplacementsAsync` (on): the game runs on while textures load, and they show a moment later. |
+| Preload | on / off | `PCSX2.ini`, `[EmuCore/GS] PrecacheTextureReplacements` (off): the whole pack is loaded as the game starts. |
+
+Under them, **Games with a texture pack**: one row per pack with the game's title (from the game list, else PCSX2's game database), its serial, how many textures and how much space. The running game's row says **Playing**. The 🗑 removes a pack after a confirmation; the game itself stays. The thumbsticks scroll the list. See [Texture packs](#texture-packs).
+
 ### Audio
 
 | Option | Range | Stored in |
@@ -128,7 +141,9 @@ While it runs, the page shows the address to open (for example `http://192.168.1
 
 ### Controls
 
-Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown. See [Controller mapping](#controller-mapping).
+Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown (not the colours).
+
+Under the GunCon controls, the gun's colour, from gray, black, white, red, blue, green, orange and purple; it applies at once. Gun 1 has one colour for playing alone (gray by default) and one for two players (red); gun 2 has one (blue). The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. See [Controller mapping](#controller-mapping).
 
 **Show controllers** (on by default) shows your controllers in the headset, as SteamVR's own Steam Frame controller models, with their buttons, triggers, grips and sticks moving as you press them. In light gun mode a hand holding a gun shows the gun instead; with one gun, the other hand still shows its controller. The models are read from the SteamVR install (`/opt/steamvr` on the Steam Frame); without them, no controllers are shown.
 
@@ -136,10 +151,9 @@ Two tabs: **DualShock 2**, its 18 controls with the controller input each one ha
 
 | Option | Values | Notes |
 |---|---|---|
-| Light gun mode | Auto · Off · On | For the running game, as the crosshair button. **Auto** is on for the games the emulator knows as GunCon 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
+| Light gun mode | Auto · Off · On | For the running game, as the gun button. **Auto** is on for the games the emulator knows as GunCon 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
 | Guns | One gun · Two guns | Two: one in each hand, for two players. As the people button. |
 | Gun hand | Right · Left | The hand that holds gun 1. |
-| Gun colour | Gray, black, white, red, blue, green, orange, purple | The body; applies at once. The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. |
 | Beam | Beam and dot · Dot · Off | What shows where the gun points. On a menu or a button the dot always shows. |
 | Pedal button | A · B · C | The gun button the pedal input presses: the one the game takes cover with. |
 | Recoil | Off – 100 % | Strength of the controller's pulse on each shot. |
@@ -172,11 +186,11 @@ The gamepad button opens the list of games in the games folder (`roms/`), with f
 
 ## Wi-Fi transfer
 
-Manage the BIOS and game folders from any computer or phone on the same network.
+Manage the BIOS, game and texture pack folders from any computer or phone on the same network.
 
 1. In the headset: **Settings › Wi-Fi Transfer**, switch it on.
 2. In a browser: open the address shown (port 8080, or the next free one up to 8089) and enter the code if asked.
-3. Pick the **BIOS** or **ROMs** tab.
+3. Pick the **BIOS**, **ROMs** or **Texture Packs** tab.
 
 The page shows the files in that folder (name, size, date added) and the space left on the headset. You can:
 
@@ -185,10 +199,13 @@ The page shows the files in that folder (name, size, date added) and the space l
 
 | Folder | Accepted files |
 |---|---|
-| BIOS | `.bin .rom0 .rom1 .rom2 .erom .mec .nvm` |
-| ROMs | `.iso .chd .cso .zso .gz .bin .cue .img .mdf .mds .nrg .elf` |
+| BIOS | `.bin .rom0 .rom1 .rom2 .erom .mec .nvm`, and `.zip .7z .rar` archives |
+| ROMs | `.iso .chd .cso .zso .gz .bin .cue .img .mdf .mds .nrg .elf`, and `.zip .7z .rar` archives |
+| Texture Packs | `.zip .7z .rar` archives (see [Texture packs](#texture-packs)) |
 
 Uploads are written to a hidden `.part` file and renamed when complete, so an interrupted upload leaves nothing behind. The headset keeps at least 64 MiB free.
+
+**Archives.** A zip, 7z or RAR (RAR4 and RAR5) archive is unpacked on the headset and then deleted; the page shows the unpacking's progress. In the BIOS and ROMs tabs, the files of the tab's kinds go straight into the folder, wherever they are in the archive (a cue sheet and its bins stay together), and everything else in it (readme, nfo…) is left out. If files with those names are already there, the page asks before replacing them; the running game is never replaced. Password-protected and multi-volume archives are not supported. Archives are received and unpacked in `transfer/`, on the same disk, and only then moved into place.
 
 ### Security
 
@@ -201,6 +218,21 @@ The server is meant for your own network only:
 - **Safe file names.** Names cannot contain paths, start with a dot or carry control characters, and each folder only takes its own file types.
 
 It is plain HTTP: the code and the files cross your network unencrypted, as with most LAN tools. Switch the transfer off when you are done.
+
+## Texture packs
+
+HD texture packs replace a game's textures with redrawn ones. They work the way they do in ARMSX2 (and PCSX2): a pack belongs to one game, by its serial, and its files are in `textures/<serial>/replacements/`, where the core looks for them. The core loads PNG, DDS, ASTC and KTX textures.
+
+**Adding a pack.** In the **Texture Packs** tab of the Wi-Fi transfer page, drop the pack's `.zip`, `.7z` or `.rar`. It is unpacked with ARMSX2's rules (the iOS app's `TexturePackPaths.h`, shared with its Android app), so a pack ends up with the same files as on ARMSX2's phone apps:
+
+- **Which game.** The game picked in the **For** list beside the drop zone, if one is. Otherwise a serial folder in the archive (`SLUS-20219/…`), else a serial in the archive's name (`Time Crisis 2 slus_202.19 HD.zip` is SLUS-20219). If neither says, the page asks which game it is for: a game of your library (the running one first), or a serial typed in.
+- **Which files.** The wrappers a pack comes in are dropped (`<serial>/`, `<serial>/replacements/`, a GitHub download's root folder), and only texture files are kept. Folders inside the pack stay.
+- **Merging.** The files go over the game's existing pack: an add-on keeps its base pack, and a newer version of a pack replaces its files.
+- **Refused.** An archive with a path that leaves its folder (`../`), a link, two files for the same texture (letter case aside), more than 100,000 entries, or a single file over 512 MB, as ARMSX2 refuses them. Nothing is installed then.
+
+Adding a pack turns **Texture packs** on (as ARMSX2 does), and when it is for the running game, the game picks it up at once.
+
+**Seeing and removing packs.** The tab lists the packs with their game, their serial, a **Playing** badge on the running game's and "not in your games" when no game of the library has that serial (a pack made for another region of the game, say: upload it again with your game picked in **For**). The 🗑 removes a pack. In the headset, **Settings › Texture Packs** lists the same packs and removes them too. Texture dumps, if any, stay in `textures/<serial>/`.
 
 ## Controller mapping
 
@@ -236,15 +268,15 @@ Grips and triggers are analog: mapped to L1, R1, L2 or R2 they keep their pressu
 
 ## Light gun
 
-In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports), drawn in the hand in the colour you chose. Its trigger and side buttons move as you press them.
+In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports). Its trigger and side buttons move as you press them, and the gun stays steady in the hand however fast you move it or your head. Its colour is set under **Settings › Controls › GunCon**: by default gun 1 is gray when you play alone and red with two guns, and gun 2 is blue.
 
 - **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Volumetric mode it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it. Otherwise it stops on the screen glass.
 - **Shooting** off the picture is a reload, as with the real gun.
 - **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
 - **Recoil.** Each shot gives a short pulse in the controller.
-- **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2) with a blue beam, for two-player games. With one gun, the other hand's grip is the pedal.
-- **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and fire the **calibration shot** (Y by default; a trigger pull does not count there), then press A to confirm. **Calibrate** on the Light Gun page fires one too. The emulator also knows the screen size of about 30 GunCon 2 games.
-- **Turning it on and off.** The crosshair button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
+- **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2), with a blue beam (gun 1's is red), for two-player games. With one gun, the other hand's grip is the pedal.
+- **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and pull the trigger, then press A to confirm. "Gun calibrated" shows below the screen when the game takes it. As on a real gun, the guns see no light while the picture is black, which is what the game checks after the shot. The **calibration shot** (Y by default, and **Calibrate** on the Light Gun page) does the same without that check. The emulator also knows the screen size of about 30 GunCon 2 games.
+- **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
 
 ### GunCon controls
 
@@ -278,6 +310,8 @@ Everything lives in the data folder, `$XDG_DATA_HOME/ps2v` (by default `~/.local
 | `inis/playtime.dat` | Play time per game (PCSX2's) |
 | `bios/` | PS2 BIOS dumps (Wi-Fi transfer's BIOS tab) |
 | `roms/` | Games (Wi-Fi transfer's ROMs tab; the game list scans it, subfolders included) |
+| `textures/<serial>/replacements/` | Texture packs, one per game (Wi-Fi transfer's Texture Packs tab) |
+| `transfer/` | Archives being received and unpacked by the Wi-Fi transfer; emptied when it starts |
 | `sstates/` | Save states |
 | `profiles/<serial>.ini` | Your own per-game profiles; they take precedence over the ones shipped next to the binary |
 | `logs/emulog.txt` | Emulator log |
@@ -303,7 +337,9 @@ Values are read in this order, each overriding the one before: built-in defaults
 | | `gun_pedal` | 0 | 0 A, 1 B, 2 C | | live |
 | | `gun_haptics` | 0.6 | 0 – 1 | | live |
 | | `gun_pitch` | 0 | −45 – 45° | | live |
-| | `gun_color` | `#8c8c91` | `#rrggbb` | | live |
+| | `gun_color` | `#8c8c91` | `#rrggbb`: gun 1, one player | | live |
+| | `gun_color_2p` | `#c0282d` | `#rrggbb`: gun 1, two players | | live |
+| | `gun2_color` | `#2f5fd0` | `#rrggbb`: gun 2 | | live |
 
 Numbers outside their range are clamped. `[Stereo]` settings apply in volumetric mode.
 
@@ -344,13 +380,14 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 | Menu in the headset | `ui/VrMenu.{h,cpp}` | The buttons beside the screen and their tooltips, the panel, the pointer (controller aim poses), pausing, and keeping menu clicks from the game. |
 | Pages | `ui/SettingsMenu.{h,cpp}`, `ui/GameListMenu.{h,cpp}` | The settings categories, and the game list. |
 | Controllers | `XrApp.{h,cpp}`, `Controls.{h,cpp}` | `XrApp` reports the controllers as they are (one OpenXR action per button, grip, trigger and stick); `ControlMap` turns that into the DualShock 2 state. |
-| Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. |
-| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
+| Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. An archive that needs an answer (files to replace, which game a pack is for) waits unpacked in `transfer/` for up to 30 minutes, at `/api/pending/<id>`. |
+| Archives and texture packs | `Unarchive.{h,cpp}`, `TexturePacks.{h,cpp}` | `Unarchive` reads zip, 7z and RAR with libarchive (built static by `tools/build-frame.sh`: the Steam Runtime has none). `TexturePacks` lists, installs and removes packs in the core's texture folder with ARMSX2's path rules, from the fork's `platforms/ios/.../IOS/TexturePackPaths.h`. `Emu::TexturePackChanged` reloads the running game's pack as the core's Reload Texture Replacements hotkey does. |
+| Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunLight` is the guns' light sensor: a black picture (under 10% of it lit, which leaves room for the emulator's own messages) is no light, so the guns report off the screen; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. |
 | Emulator | `Emu.{h,cpp}` | The CPU thread, PCSX2's host callbacks, and what the menus need: pause, settings, save states, the game list, switching games. Switching runs on the CPU thread, and resuming from a menu is skipped while a switch is under way so it cannot cancel it. |
 
 ## Known limitations
 
-- **Only partly tested in the headset.** The menu buttons, pointer and game list were checked on the Steam Frame; the other features were tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
+- **Only partly tested in the headset.** See the status note at the top; the rest was tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
 - If the runtime rejects the controllers' aim pose, the gamepad still works but menus cannot be pointed at. The log says "no aim pose …; the menu pointer is unavailable."
 - In volumetric mode, both eyes may show the same picture while a menu has the game paused.
 - Flat mode still has the emulator draw both eyes, so it costs as much GPU time as volumetric.
@@ -358,7 +395,8 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 - The controller actions were renamed for mapping, so any SteamVR-side rebinding made for this app starts over.
 - Wi-Fi transfer is plain HTTP, and whether SteamOS lets port 8080 through has not been checked.
 - The game list cannot rescan while a game runs (see [Game list](#game-list)).
-- **The light gun is untested in the headset.** Things to check there: how the gun sits in the hand (Gun angle), whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), and the cost of the depth copies it turns on in volumetric mode.
+- **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), the cost of the depth copies it turns on in volumetric mode, and GunCon 2 games other than Time Crisis II.
+- The guns see no light while the picture is black, as a real gun does: a shot fired during a fade to black counts as a shot off the screen (a reload in Time Crisis). Calibration with the trigger was only tried in Time Crisis II; the calibration shot (Y) works without the light check.
 - In flat mode the beam stops on the glass.
 
 ## License

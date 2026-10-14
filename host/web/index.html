@@ -40,7 +40,7 @@ button {
 	border-radius: 10px; padding: 9px 16px; cursor: pointer;
 }
 button:hover { background: var(--hover); }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover { background: var(--accent-hover); }
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
@@ -84,6 +84,13 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 .drop.over { border-color: var(--accent); background: #18223a; }
 .drop strong { display: block; font-weight: 600; }
 .drop span { color: var(--muted); font-size: 13px; }
+.drop-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.drop-actions label { color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+select, input.field {
+	font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--border);
+	border-radius: 10px; padding: 8px 12px; max-width: 100%;
+}
+select { max-width: 280px; }
 
 /* Uploads */
 #uploads:empty { display: none; }
@@ -104,6 +111,9 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 .file:last-child { border-bottom: none; }
 .file:hover { background: var(--raised); }
 .file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file .name small { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: #1d2b48; color: var(--accent-hover); vertical-align: 1px; }
+.badge.muted { background: var(--raised); color: var(--muted); }
 .file .size, .file .date { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .num { text-align: right; }
 .empty { padding: 36px 18px; text-align: center; color: var(--muted); }
@@ -113,6 +123,9 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 .dialog { max-width: 420px; width: 100%; padding: 24px; }
 .dialog h3 { margin: 0 0 8px; font-size: 18px; }
 .dialog p { margin: 0 0 22px; color: var(--muted); word-break: break-word; }
+#dialog-extra:empty { display: none; }
+#dialog-extra { display: flex; flex-direction: column; gap: 10px; margin: -8px 0 22px; }
+#dialog-extra select, #dialog-extra input { width: 100%; max-width: none; }
 .dialog .actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 #toast {
@@ -126,6 +139,7 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 	.file .name { grid-column: 1; }
 	.file .size { grid-row: 2; grid-column: 1; text-align: left; }
 	.file .date { display: none; }
+	select { max-width: 100%; }
 	.file button { grid-row: 1 / span 2; grid-column: 2; }
 	.tabs { width: 100%; }
 	.tabs button { flex: 1; }
@@ -161,6 +175,7 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 		<div class="tabs" role="tablist">
 			<button role="tab" data-folder="bios" aria-selected="true">BIOS</button>
 			<button role="tab" data-folder="roms" aria-selected="false">ROMs</button>
+			<button role="tab" data-folder="textures" aria-selected="false">Texture Packs</button>
 		</div>
 
 		<div class="storage card" id="storage">
@@ -173,14 +188,19 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 				<strong id="drop-title">Drop files here</strong>
 				<span id="drop-hint"></span>
 			</div>
-			<button class="primary" type="button" id="choose">Choose files</button>
+			<div class="drop-actions">
+				<label id="game-pick" class="hidden">For
+					<select id="game" aria-label="The game the texture pack is for"><option value="">the game the pack names</option></select>
+				</label>
+				<button class="primary" type="button" id="choose">Choose files</button>
+			</div>
 			<input type="file" id="picker" multiple class="hidden">
 		</div>
 
 		<div id="uploads" class="card"></div>
 
 		<div class="files card">
-			<div class="head"><span>Name</span><span class="num">Size</span><span class="num">Added</span><span></span></div>
+			<div class="head"><span id="col-name">Name</span><span class="num" id="col-a">Size</span><span class="num" id="col-b">Added</span><span></span></div>
 			<div id="list"></div>
 		</div>
 	</section>
@@ -190,6 +210,7 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 	<div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
 		<h3 id="dialog-title"></h3>
 		<p id="dialog-text"></p>
+		<div id="dialog-extra"></div>
 		<div class="actions">
 			<button type="button" id="dialog-cancel">Cancel</button>
 			<button type="button" id="dialog-ok" class="danger"></button>
@@ -202,12 +223,20 @@ button.icon:hover { background: var(--hover); color: var(--danger); }
 "use strict";
 const $ = (id) => document.getElementById(id);
 const FOLDERS = {
-	bios: { hint: "Your own PS2 BIOS dump", empty: "No BIOS yet. The emulator needs one to start games." },
-	roms: { hint: "Your PS2 game images", empty: "No games yet." },
+	bios: { hint: "Your own PS2 BIOS dump", what: "BIOS file", empty: "No BIOS yet. The emulator needs one to start games." },
+	roms: { hint: "Your PS2 game images", what: "game", empty: "No games yet." },
+	textures: {
+		hint: "HD texture packs, each paired with a game by its serial",
+		what: "texture pack (zip, 7z or RAR)",
+		empty: "No texture packs yet. A pack is paired with the game it names (like SLUS-20219), or with the game you pick.",
+	},
 };
+const ARCHIVES = [".zip", ".7z", ".rar"];
 const SPACE_MARGIN = 64 * 1024 * 1024; // the headset keeps this much free (WebServer.cpp)
 let folder = "bios";
 let extensions = [];
+let games = []; // the library's games, to pair a texture pack with
+let running = ""; // the serial of the game running on the headset
 const queue = [];
 let uploading = false;
 
@@ -222,6 +251,11 @@ function date(seconds) {
 	return new Date(seconds * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
+function isArchive(name) {
+	const lower = name.toLowerCase();
+	return ARCHIVES.some((ext) => lower.endsWith(ext));
+}
+
 let toastTimer;
 function toast(text) {
 	const t = $("toast");
@@ -231,11 +265,14 @@ function toast(text) {
 	toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
 }
 
-function ask(title, text, ok) {
+// A dialog with Cancel and ok; extra is shown under the text. Resolves to whether ok was chosen.
+function dialog({ title, text, ok, danger = true, extra = null }) {
 	return new Promise((resolve) => {
 		$("dialog-title").textContent = title;
 		$("dialog-text").textContent = text;
 		$("dialog-ok").textContent = ok;
+		$("dialog-ok").className = danger ? "danger" : "primary";
+		$("dialog-extra").replaceChildren(...(extra ? [extra] : []));
 		$("dialog").classList.remove("hidden");
 		const done = (answer) => {
 			$("dialog").classList.add("hidden");
@@ -244,8 +281,40 @@ function ask(title, text, ok) {
 		};
 		$("dialog-ok").onclick = () => done(true);
 		$("dialog-cancel").onclick = () => done(false);
-		$("dialog-ok").focus();
+		(extra ? extra.querySelector("select, input") : $("dialog-ok")).focus();
 	});
+}
+
+function ask(title, text, ok) {
+	return dialog({ title, text, ok });
+}
+
+// Which game a texture pack is for: a game of the library, or a serial typed in. Resolves to the
+// serial, or "" when cancelled.
+async function chooseGame(name) {
+	const box = document.createElement("div");
+	const select = document.createElement("select");
+	select.setAttribute("aria-label", "Game");
+	for (const game of games) {
+		const option = document.createElement("option");
+		option.value = game.serial;
+		option.textContent = game.title + " (" + game.serial + ")";
+		option.selected = game.serial === running;
+		select.append(option);
+	}
+	const typed = document.createElement("input");
+	typed.className = "field";
+	typed.placeholder = games.length ? "Or its serial, like SLUS-20219" : "Its serial, like SLUS-20219";
+	typed.setAttribute("aria-label", "Serial");
+	if (games.length) box.append(select);
+	box.append(typed);
+	const ok = await dialog({
+		title: "Which game is it for?",
+		text: name + " does not say which game it is for. Its textures go to the game you choose.",
+		ok: "Pair", danger: false, extra: box,
+	});
+	if (!ok) return "";
+	return typed.value.trim() || (games.length ? select.value : "");
 }
 
 async function api(method, path, body) {
@@ -296,18 +365,57 @@ function selectFolder(id) {
 	try { localStorage.setItem("ps2v-folder", id); } catch (e) {}
 	for (const tab of document.querySelectorAll("[role=tab]"))
 		tab.setAttribute("aria-selected", tab.dataset.folder === id ? "true" : "false");
+	const packs = id === "textures";
+	$("game-pick").classList.toggle("hidden", !packs);
+	$("drop-title").textContent = packs ? "Drop texture packs here" : "Drop files here";
+	$("col-name").textContent = packs ? "Game" : "Name";
+	$("col-a").textContent = packs ? "Textures" : "Size";
+	$("col-b").textContent = packs ? "Size" : "Added";
 	$("list").innerHTML = "";
 	refresh();
 }
 for (const tab of document.querySelectorAll("[role=tab]"))
 	tab.addEventListener("click", () => selectFolder(tab.dataset.folder));
 
+function deleteButton(label, onclick) {
+	const remove = document.createElement("button");
+	remove.className = "icon";
+	remove.title = "Delete";
+	remove.setAttribute("aria-label", label);
+	remove.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+	remove.addEventListener("click", onclick);
+	return remove;
+}
+
+function cell(className, text) {
+	const span = document.createElement("span");
+	span.className = className;
+	span.textContent = text;
+	return span;
+}
+
+// The games a pack can be paired with, in the drop zone's picker (keeping the choice).
+function fillGamePicker() {
+	const select = $("game");
+	const chosen = select.value;
+	select.replaceChildren(select.options[0]);
+	for (const game of games) {
+		const option = document.createElement("option");
+		option.value = game.serial;
+		option.textContent = game.title + " (" + game.serial + ")";
+		select.append(option);
+	}
+	select.value = games.some((g) => g.serial === chosen) ? chosen : "";
+}
+
 async function refresh() {
 	const shown = folder;
 	const { status, data } = await api("GET", "/api/files/" + shown);
 	if (status !== 200 || shown !== folder) return;
 	extensions = data.extensions;
-	$("drop-hint").textContent = FOLDERS[shown].hint + " (" + extensions.join(", ") + ")";
+	const archives = extensions.some((ext) => ARCHIVES.includes(ext));
+	$("drop-hint").textContent = FOLDERS[shown].hint + " (" + extensions.join(", ") + ")" +
+		(archives && shown !== "textures" ? ". Archives are unpacked." : ".");
 	$("picker").accept = extensions.join(",");
 
 	const used = data.total - data.free;
@@ -318,31 +426,38 @@ async function refresh() {
 
 	const list = $("list");
 	list.innerHTML = "";
-	if (!data.files.length) {
+	const items = data.packs || data.files;
+	if (data.packs) {
+		games = data.games;
+		running = data.running;
+		fillGamePicker();
+	}
+	if (!items.length) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
 		empty.textContent = FOLDERS[shown].empty;
 		list.append(empty);
 	}
-	for (const file of data.files) {
+	for (const item of items) {
 		const row = document.createElement("div");
 		row.className = "file";
-		const name = document.createElement("span");
-		name.className = "name";
-		name.textContent = name.title = file.name;
-		const bytes = document.createElement("span");
-		bytes.className = "size num";
-		bytes.textContent = size(file.size);
-		const added = document.createElement("span");
-		added.className = "date num";
-		added.textContent = date(file.mtime);
-		const remove = document.createElement("button");
-		remove.className = "icon";
-		remove.title = "Delete";
-		remove.setAttribute("aria-label", "Delete " + file.name);
-		remove.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
-		remove.addEventListener("click", () => removeFile(shown, file.name));
-		row.append(name, bytes, added, remove);
+		if (data.packs) {
+			// A pack: its game, its serial, and whether that game is on the headset.
+			const name = cell("name", item.title || item.serial);
+			name.title = (item.title ? item.title + " · " : "") + item.serial;
+			if (item.running) name.append(cell("badge", "Playing"));
+			const details = document.createElement("small");
+			details.textContent = item.serial + (item.in_library ? "" : " · not in your games");
+			name.append(details);
+			row.append(name, cell("size num", item.textures.toLocaleString()), cell("date num", size(item.size)),
+				deleteButton("Delete the texture pack of " + (item.title || item.serial),
+					() => removePack(item.serial, item.title || item.serial)));
+		} else {
+			const name = cell("name", item.name);
+			name.title = item.name;
+			row.append(name, cell("size num", size(item.size)), cell("date num", date(item.mtime)),
+				deleteButton("Delete " + item.name, () => removeFile(shown, item.name)));
+		}
 		list.append(row);
 	}
 }
@@ -351,6 +466,13 @@ async function removeFile(id, name) {
 	if (!(await ask("Delete " + name + "?", "It is removed from the headset for good.", "Delete"))) return;
 	const { status, data } = await api("DELETE", "/api/files/" + id + "/" + encodeURIComponent(name));
 	toast(status === 200 ? "Deleted " + name : (data.error || "Could not delete " + name));
+	refresh();
+}
+
+async function removePack(serial, title) {
+	if (!(await ask("Delete the texture pack of " + title + "?", "Its HD textures are removed from the headset. The game stays.", "Delete"))) return;
+	const { status, data } = await api("DELETE", "/api/files/textures/" + encodeURIComponent(serial));
+	toast(status === 200 ? "Deleted the texture pack of " + title : (data.error || "Could not delete the texture pack"));
 	refresh();
 }
 
@@ -363,9 +485,10 @@ function addFiles(files) {
 		item.innerHTML = '<div class="row"><span class="name"></span><span class="state">Waiting</span></div><div class="bar"><div style="width:0"></div></div>';
 		item.querySelector(".name").textContent = file.name;
 		$("uploads").append(item);
-		const entry = { file, folder, item };
+		// The game chosen for texture packs, as it was when they were dropped.
+		const entry = { file, folder, item, serial: folder === "textures" ? $("game").value : "" };
 		if (!extensions.some((ext) => lower.endsWith(ext))) {
-			finish(entry, false, "Not a " + (folder === "bios" ? "BIOS" : "game") + " file");
+			finish(entry, false, "Not a " + FOLDERS[folder].what);
 			continue;
 		}
 		queue.push(entry);
@@ -380,43 +503,103 @@ function finish(entry, ok, text) {
 	setTimeout(() => entry.item.remove(), ok ? 4000 : 10000);
 }
 
+function progress(entry, fraction, text) {
+	entry.item.querySelector(".bar > div").style.width = (100 * fraction).toFixed(1) + "%";
+	entry.item.querySelector(".state").textContent = text;
+}
+
+// While the headset unpacks an archive: what it is doing, from its status.
+function followUnpacking(entry) {
+	let stopped = false;
+	const poll = async () => {
+		if (stopped) return;
+		const { data } = await api("GET", "/api/status");
+		const transfer = data.transfer;
+		if (!stopped && transfer && transfer.phase !== "Receiving")
+			progress(entry, transfer.progress, transfer.phase + " " + Math.floor(100 * transfer.progress) + "%");
+		if (!stopped) setTimeout(poll, 700);
+	};
+	progress(entry, 0, "Unpacking");
+	setTimeout(poll, 700);
+	return () => { stopped = true; };
+}
+
 function send(entry, overwrite) {
 	return new Promise((resolve) => {
+		const params = new URLSearchParams();
+		if (overwrite) params.set("overwrite", "1");
+		if (entry.serial) params.set("serial", entry.serial);
+		const query = params.toString();
 		const xhr = new XMLHttpRequest();
-		xhr.open("PUT", "/api/files/" + entry.folder + "/" + encodeURIComponent(entry.file.name) + (overwrite ? "?overwrite=1" : ""));
+		xhr.open("PUT", "/api/files/" + entry.folder + "/" + encodeURIComponent(entry.file.name) + (query ? "?" + query : ""));
 		xhr.setRequestHeader("X-Requested-With", "ps2v");
-		const state = entry.item.querySelector(".state");
-		const bar = entry.item.querySelector(".bar > div");
 		const started = performance.now();
+		let stopFollowing = null;
 		xhr.upload.onprogress = (event) => {
 			if (!event.lengthComputable) return;
 			const seconds = (performance.now() - started) / 1000;
-			bar.style.width = (100 * event.loaded / event.total).toFixed(1) + "%";
-			state.textContent = Math.floor(100 * event.loaded / event.total) + "%" +
-				(seconds > 1 ? " · " + size(event.loaded / seconds) + "/s" : "");
+			progress(entry, event.loaded / event.total, Math.floor(100 * event.loaded / event.total) + "%" +
+				(seconds > 1 ? " · " + size(event.loaded / seconds) + "/s" : ""));
 		};
+		xhr.upload.onload = () => {
+			if (isArchive(entry.file.name)) stopFollowing = followUnpacking(entry);
+		};
+		xhr.onloadend = () => { if (stopFollowing) stopFollowing(); };
 		xhr.onload = () => {
-			let error = "";
-			try { error = JSON.parse(xhr.responseText).error || ""; } catch (e) {}
-			resolve({ status: xhr.status, error });
+			let data = {};
+			try { data = JSON.parse(xhr.responseText); } catch (e) {}
+			resolve({ status: xhr.status, data });
 		};
-		xhr.onerror = () => resolve({ status: 0, error: "Connection lost" });
+		xhr.onerror = () => resolve({ status: 0, data: { error: "Connection lost" } });
 		xhr.send(entry.file);
 	});
+}
+
+// An archive unpacked on the headset that waits for an answer: replace files already there, or
+// which game a texture pack is for. Resolves to the final result.
+async function answerPending(entry, result) {
+	while (result.status === 409 && result.data.pending) {
+		const id = encodeURIComponent(result.data.pending);
+		let params = null;
+		if (result.data.need_game) {
+			const serial = await chooseGame(entry.file.name);
+			if (serial) params = "serial=" + encodeURIComponent(serial);
+		} else {
+			const conflicts = result.data.conflicts || [];
+			const what = conflicts.length === 1 ? conflicts[0] : conflicts.length + " files";
+			if (await ask("Replace " + what + "?", "Already on the headset: " + conflicts.join(", ") + ".", "Replace"))
+				params = "overwrite=1";
+		}
+		if (params === null) {
+			await api("DELETE", "/api/pending/" + id);
+			return { status: 409, data: { skipped: true } };
+		}
+		progress(entry, 1, "Installing");
+		result = await api("POST", "/api/pending/" + id + "?" + params);
+	}
+	return result;
+}
+
+function doneText(entry, data) {
+	if (data.textures !== undefined)
+		return "Paired with " + (data.title || data.serial) + " · " + data.textures.toLocaleString() + " textures";
+	if (data.files) return data.files.length === 1 ? "Unpacked " + data.files[0] : "Unpacked " + data.files.length + " files";
+	return "Done";
 }
 
 async function next() {
 	if (uploading || !queue.length) return;
 	uploading = true;
 	const entry = queue.shift();
+	const archive = isArchive(entry.file.name);
 	// Check first: the headset refuses a big upload before reading it, which the browser only
-	// reports as a broken connection.
+	// reports as a broken connection. An archive is never kept under its own name.
 	const replace = () => ask("Replace " + entry.file.name + "?", "A file with this name is already on the headset.", "Replace");
 	const { status, data } = await api("GET", "/api/files/" + entry.folder);
 	let overwrite = false, skip = "";
 	if (status === 401) skip = "Sign in first";
 	else if (status === 200) {
-		if (data.files.some((f) => f.name === entry.file.name)) {
+		if (!archive && data.files && data.files.some((f) => f.name === entry.file.name)) {
 			if (await replace()) overwrite = true; else skip = "Skipped";
 		}
 		if (!skip && entry.file.size + SPACE_MARGIN > data.free) skip = "Not enough space on the headset";
@@ -425,11 +608,12 @@ async function next() {
 	else {
 		entry.item.querySelector(".state").textContent = "0%";
 		let result = await send(entry, overwrite);
-		if (result.status === 409 && await replace())
-			result = await send(entry, true);
-		if (result.status === 200) finish(entry, true, "Done");
-		else if (result.status === 409) finish(entry, false, "Skipped");
-		else finish(entry, false, result.error || "Failed");
+		if (result.status === 409 && !result.data.pending && !archive)
+			result = (await replace()) ? await send(entry, true) : { status: 409, data: { skipped: true } };
+		result = await answerPending(entry, result);
+		if (result.status === 200) finish(entry, true, doneText(entry, result.data));
+		else if (result.data.skipped) finish(entry, false, "Skipped");
+		else finish(entry, false, result.data.error || "Failed");
 		if (result.status === 401) showLogin();
 	}
 	uploading = false;

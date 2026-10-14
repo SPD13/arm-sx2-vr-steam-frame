@@ -46,6 +46,13 @@ namespace Emu
 	// The folder games are listed from (and Wi-Fi transfer uploads to), and the files it lists.
 	std::string GetGamesFolder();
 	const std::vector<std::string>& GetGameExtensions();
+	// The core's texture pack folder: textures/<serial>/replacements (see TexturePacks.h).
+	std::string GetTexturesFolder();
+	// A game's title from its serial: the game list's, else the game database's; empty if unknown. Any thread.
+	std::string GetGameTitle(const std::string& serial);
+	// The texture pack of a game was added to (turns texture packs on, as ARMSX2 does when it
+	// installs one) or removed; the running game's is loaded again. Any thread.
+	void TexturePackChanged(const std::string& serial, bool added);
 
 	struct GameInfo
 	{
@@ -57,11 +64,13 @@ namespace Emu
 		std::time_t last_played = 0;
 		std::time_t played_seconds = 0;
 	};
-	// Lists the games folder again, in the background; GetGames has the result.
+	// Lists the games folder again, in the background; GetGames has the result. It looks for a BIOS too.
 	void RefreshGames();
 	bool IsRefreshingGames();
 	std::vector<GameInfo> GetGames();
 	unsigned GetGamesVersion(); // changes with every new list
+	// Whether there is a PS2 BIOS to boot games with, as of the last list.
+	bool HasBios();
 	// Stops the running game, if any, and starts this one.
 	void BootGame(const std::string& path);
 	// Whether a game failed to start since the last call (TakeNotice says why).
@@ -81,6 +90,10 @@ namespace Emu
 		int texture_filtering = 2; // BiFiltering: 0 nearest, 1 bilinear forced, 2 bilinear as the PS2 asks
 		int volume = 100; // percent
 		bool muted = false;
+		// Texture packs (LoadTextureReplacements, LoadTextureReplacementsAsync, PrecacheTextureReplacements).
+		bool texture_packs = false;
+		bool texture_packs_async = true; // the game runs on while textures load
+		bool texture_packs_precache = false; // the whole pack is loaded into memory as the game starts
 	};
 	CoreSettings GetCoreSettings();
 	// Saves them and has the CPU thread apply them.
@@ -139,6 +152,8 @@ namespace Emu
 	};
 	// The gun on USB port `port` (0 or 1). Any thread; the game reads it when it polls the gun.
 	void SetGun(int port, const GunState& state);
+	// How many times the game has set the gun's calibration offset (GunCon 2 Set Param), and the last one.
+	unsigned GetGunCalibration(int port, int* x, int* y);
 	// Hands the USB ports back to their own bindings (light gun mode off).
 	void ReleaseGuns();
 	// Plugs a GunCon 2 into the first `guns` USB ports (0 to 2) and unplugs the rest, in the running

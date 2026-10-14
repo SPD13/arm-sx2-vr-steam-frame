@@ -45,7 +45,10 @@
 #include "pcsx2/CDVD/CDVDcommon.h"
 #include "pcsx2/GS.h"
 #include "GS/GSVolumetric.h"
+#include "pcsx2/GameDatabase.h"
 #include "pcsx2/GameList.h"
+#include "GS/Renderers/Common/GSRenderer.h"
+#include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/INISettingsInterface.h"
 #include "pcsx2/ImGui/FullscreenUI.h"
@@ -104,6 +107,7 @@ static std::vector<Emu::GameInfo> s_games;
 static std::atomic<unsigned> s_games_version{0};
 static std::atomic<bool> s_games_busy{false};
 static std::atomic<bool> s_games_again{false};
+static std::atomic<bool> s_has_bios{false};
 
 static void SetNotice(std::string notice);
 
@@ -174,6 +178,35 @@ static void ServiceDebugRequest()
 		GSVolumetric::ArmDrawTrace(1);
 		Console.WriteLnFmt("Debug: snapshot queued to {}", path);
 	}
+}
+
+// The BIOS games boot with: the one chosen in PCSX2.ini while its file is there, else (there is no
+// setup wizard) the first console BIOS in the folder, which becomes the chosen one. Whether there is one.
+static bool PickBios()
+{
+	{
+		auto lock = Host::GetSettingsLock();
+		const std::string chosen = s_base_settings->GetStringValue("Filenames", "BIOS");
+		if (!chosen.empty() &&
+			FileSystem::FileExists((Path::IsAbsolute(chosen) ? chosen : Path::Combine(EmuFolders::Bios, chosen)).c_str()))
+			return true;
+	}
+	FileSystem::FindResultsArray files;
+	FileSystem::FindFiles(EmuFolders::Bios.c_str(), "*", FILESYSTEM_FIND_FILES, &files);
+	for (const FILESYSTEM_FIND_DATA& file : files)
+	{
+		u32 version, region;
+		std::string description, zone;
+		if (!IsConsoleBIOS(file.FileName.c_str(), version, description, region, zone))
+			continue;
+		const std::string name(Path::GetFileName(file.FileName));
+		Console.WriteLnFmt("Using BIOS {} ({})", name, description);
+		auto lock = Host::GetSettingsLock();
+		s_base_settings->SetStringValue("Filenames", "BIOS", name.c_str());
+		s_base_settings->Save();
+		return true;
+	}
+	return false;
 }
 
 bool Emu::InitializeConfig(const Options& options)
@@ -260,32 +293,16 @@ bool Emu::InitializeConfig(const Options& options)
 
 	VMManager::Internal::LoadStartupSettings();
 
-	// No BIOS chosen yet (there is no setup wizard): take the first console BIOS in the folder.
-	if (s_base_settings->GetStringValue("Filenames", "BIOS").empty())
-	{
-		FileSystem::FindResultsArray files;
-		FileSystem::FindFiles(EmuFolders::Bios.c_str(), "*", FILESYSTEM_FIND_FILES, &files);
-		for (const FILESYSTEM_FIND_DATA& file : files)
-		{
-			u32 version, region;
-			std::string description, zone;
-			if (!IsConsoleBIOS(file.FileName.c_str(), version, description, region, zone))
-				continue;
-			const std::string name(Path::GetFileName(file.FileName));
-			Console.WriteLnFmt("Using BIOS {} ({})", name, description);
-			auto lock = Host::GetSettingsLock();
-			s_base_settings->SetStringValue("Filenames", "BIOS", name.c_str());
-			s_base_settings->Save();
-			break;
-		}
-	}
+	s_has_bios = PickBios();
 	return true;
 }
 
-// Fills the game list from the games folder. The scan needs the CDVD lock, which a running game
+// Fills the game list from the games folder, and looks for a BIOS. The scan needs the CDVD lock, which a running game
 // holds, so files added meanwhile only show by file name until no game runs.
 static void ListGames()
 {
+	// A BIOS sent over Wi-Fi meanwhile is found here too.
+	s_has_bios = PickBios();
 	GameList::Refresh(false, false, nullptr);
 
 	std::vector<Emu::GameInfo> games;
@@ -419,7 +436,9 @@ static void CPUThreadMain(std::optional<VMBootParameters> params)
 						if (boot_from_list)
 						{
 							// Back to the list, which says what went wrong.
-							SetNotice(fmt::format("Could not start {}", Path::GetFileName(bp.filename)));
+							s_has_bios = PickBios();
+							SetNotice(s_has_bios ? fmt::format("Could not start {}", Path::GetFileName(bp.filename)) :
+							                       std::string("Could not start the game: there is no PS2 BIOS"));
 							s_boot_failed = true;
 							continue;
 						}
@@ -545,6 +564,9 @@ Emu::CoreSettings Emu::GetCoreSettings()
 	settings.texture_filtering = s_base_settings->GetIntValue("EmuCore/GS", "filter", static_cast<int>(BiFiltering::PS2));
 	settings.volume = static_cast<int>(s_base_settings->GetUIntValue("SPU2/Output", "StandardVolume", 100));
 	settings.muted = s_base_settings->GetBoolValue("SPU2/Output", "OutputMuted", false);
+	settings.texture_packs = s_base_settings->GetBoolValue("EmuCore/GS", "LoadTextureReplacements", false);
+	settings.texture_packs_async = s_base_settings->GetBoolValue("EmuCore/GS", "LoadTextureReplacementsAsync", true);
+	settings.texture_packs_precache = s_base_settings->GetBoolValue("EmuCore/GS", "PrecacheTextureReplacements", false);
 	return settings;
 }
 
@@ -558,6 +580,9 @@ void Emu::SetCoreSettings(const CoreSettings& settings)
 		s_base_settings->SetIntValue("EmuCore/GS", "filter", settings.texture_filtering);
 		s_base_settings->SetUIntValue("SPU2/Output", "StandardVolume", static_cast<u32>(settings.volume));
 		s_base_settings->SetBoolValue("SPU2/Output", "OutputMuted", settings.muted);
+		s_base_settings->SetBoolValue("EmuCore/GS", "LoadTextureReplacements", settings.texture_packs);
+		s_base_settings->SetBoolValue("EmuCore/GS", "LoadTextureReplacementsAsync", settings.texture_packs_async);
+		s_base_settings->SetBoolValue("EmuCore/GS", "PrecacheTextureReplacements", settings.texture_packs_precache);
 		Host::CommitBaseSettingChanges();
 	}
 	// A slider sends a change per frame: queue one apply at a time, which reads the latest values.
@@ -663,6 +688,56 @@ const std::vector<std::string>& Emu::GetGameExtensions()
 	return extensions;
 }
 
+std::string Emu::GetTexturesFolder()
+{
+	return EmuFolders::Textures;
+}
+
+std::string Emu::GetGameTitle(const std::string& serial)
+{
+	if (serial.empty())
+		return {};
+	{
+		std::lock_guard lock(s_games_mutex);
+		for (const GameInfo& game : s_games)
+		{
+			if (game.serial == serial && !game.title.empty())
+				return game.title;
+		}
+	}
+	const GameDatabaseSchema::GameEntry* entry = GameDatabase::findGame(serial);
+	if (!entry)
+		return {};
+	// The English title when the database has one: the menu's font is Latin only.
+	return entry->name_en.empty() ? entry->name : entry->name_en;
+}
+
+void Emu::TexturePackChanged(const std::string& serial, bool added)
+{
+	if (added)
+	{
+		CoreSettings settings = GetCoreSettings();
+		if (!settings.texture_packs)
+		{
+			Console.WriteLn("Texture packs: turned on for the pack just added.");
+			settings.texture_packs = true;
+			SetCoreSettings(settings); // turning them on loads the running game's pack
+			return;
+		}
+	}
+	Host::RunOnCPUThread([serial]() {
+		if (!MTGS::IsOpen() || VMManager::GetDiscSerial() != serial || !EmuConfig.GS.LoadTextureReplacements)
+			return;
+		// As the core's Reload Texture Replacements hotkey does.
+		MTGS::RunOnGSThread([]() {
+			if (!g_gs_renderer)
+				return;
+			GSTextureReplacements::ReloadReplacementMap();
+			g_gs_renderer->PurgeTextureCache(true, false, true);
+		});
+	});
+}
+
 void Emu::RefreshGames()
 {
 	if (s_games_busy.exchange(true))
@@ -707,6 +782,11 @@ void Emu::BootGame(const std::string& path)
 		if (VMManager::HasValidVM())
 			VMManager::SetState(VMState::Stopping);
 	});
+}
+
+bool Emu::HasBios()
+{
+	return s_has_bios.load();
 }
 
 bool Emu::TakeBootFailure()
@@ -761,6 +841,15 @@ static_assert(static_cast<u32>(Emu::GUN_C) == usb_lightgun::HOST_C && static_cas
 void Emu::SetGun(int port, const GunState& state)
 {
 	usb_lightgun::SetHostState(static_cast<u32>(port), true, state.aim_valid, state.x, state.y, state.buttons);
+}
+
+unsigned Emu::GetGunCalibration(int port, int* x, int* y)
+{
+	s16 px = 0, py = 0;
+	const u32 count = usb_lightgun::GetGameParams(static_cast<u32>(port), &px, &py);
+	*x = px;
+	*y = py;
+	return count;
 }
 
 void Emu::ReleaseGuns()

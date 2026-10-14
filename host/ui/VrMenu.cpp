@@ -45,9 +45,9 @@ namespace
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
 	constexpr uint32_t VOLUMETRIC_ICON = 0xf1b2; // cube
 	constexpr uint32_t FLAT_ICON = 0xf0c8; // square
-	constexpr uint32_t GUN_MODE_ICON = 0xf05b; // crosshairs
+	constexpr uint32_t GUN_MODE_ICON = 0xe19b; // gun
 	constexpr uint32_t ONE_GUN_ICON = 0xf007; // user
-	constexpr uint32_t TWO_GUNS_ICON = 0xf0c0; // users
+	constexpr uint32_t TWO_GUNS_ICON = 0xf500; // user-group: two people
 	constexpr uint32_t PAUSE_ICON = 0xf04c;
 	constexpr uint32_t PLAY_ICON = 0xf04b;
 	constexpr uint32_t POWER_ICON = 0xf011; // power-off
@@ -86,15 +86,17 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_xr = &xr;
 	if (!LoadFont(&m_text, "Roboto-Regular.ttf") || !LoadFont(&m_icons, "fa-solid-900.ttf"))
 		return false;
-	// The groups' layouts: each button's place below its group's first, with a gap before the light gun's.
+	// The groups' layouts: each button's place below its group's first. At the top, the light gun's
+	// two come after a gap below the game list.
 	const float spacing = BUTTON_SIZE + BUTTON_GAP;
+	static constexpr int group_of[NUM_BUTTONS] = {0, 0, 1, 0, 0, 2, 2}; // GEAR ... POWER
+	static constexpr float slot_of[NUM_BUTTONS] = {0, 1, 0, 2, 3, 0, 1}; // in spacings
 	for (int b = 0; b < NUM_BUTTONS; b++)
 	{
 		Button& button = m_buttons[b];
-		button.group = b >= PAUSE ? 1 : 0;
-		const int first = button.group == 0 ? GEAR : PAUSE;
-		button.offset = (b - first) * spacing + (b >= GUN_MODE && b < PAUSE ? BUTTON_GROUP_GAP : 0.0f);
-		m_groups[button.group].height = button.offset + BUTTON_SIZE;
+		button.group = group_of[b];
+		button.offset = slot_of[b] * spacing + (b == GUN_MODE || b == GUNS ? BUTTON_GROUP_GAP : 0.0f);
+		m_groups[button.group].height = std::max(m_groups[button.group].height, button.offset + BUTTON_SIZE);
 	}
 	bool buttons_made = true;
 	for (ButtonGroup& group : m_groups)
@@ -107,7 +109,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
 		!buttons_made || !m_cursor.Create(xr, device, gpu, queue, queue_family_index, CURSOR_PX, CURSOR_PX) ||
 		!m_beam.Create(xr, device, gpu, queue, queue_family_index, BEAM_W_PX, BEAM_H_PX) ||
-		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX))
+		!m_tooltip.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX) ||
+		!m_notice.Create(xr, device, gpu, queue, queue_family_index, TOOLTIP_W_PX, TOOLTIP_H_PX))
 	{
 		Destroy();
 		return false;
@@ -162,6 +165,7 @@ void VrMenu::Destroy()
 	m_created = false;
 	m_show_tooltip = false;
 	m_tooltip.Destroy();
+	m_notice.Destroy();
 	m_beam.Destroy();
 	m_cursor.Destroy();
 	for (ButtonGroup& group : m_groups)
@@ -184,7 +188,7 @@ void VrMenu::DrawGroup(int group)
 	c.Clear();
 	for (const Button& button : m_buttons)
 	{
-		if (button.group != group)
+		if (button.group != group || !button.shown)
 			continue;
 		const float top = std::round(button.offset / METERS_PER_PX);
 		const float mid = 0.5f * BUTTON_PX;
@@ -311,6 +315,32 @@ void VrMenu::OnGameChanged()
 	UpdatePauseButton();
 }
 
+void VrMenu::ShowNotice(std::string text, float seconds)
+{
+	if (!m_created)
+		return;
+	// A pill as wide as the text, centred in the layer.
+	Canvas& c = m_notice_canvas;
+	c.Resize(TOOLTIP_W_PX, TOOLTIP_H_PX);
+	c.Clear();
+	const float text_w = m_text.Measure(text, TOOLTIP_TEXT_SIZE);
+	const float pill_w = std::min(text_w + 2.0f * TOOLTIP_PAD_PX, static_cast<float>(TOOLTIP_W_PX));
+	const Rect pill{0.5f * (TOOLTIP_W_PX - pill_w), 0.0f, pill_w, static_cast<float>(TOOLTIP_H_PX)};
+	c.FillRect(pill, Theme::panel.WithAlpha(0.9f), 0.5f * TOOLTIP_H_PX);
+	c.StrokeRect(pill, Theme::accent, 0.5f * TOOLTIP_H_PX, 2.0f);
+	c.SetClip(pill.Inset(TOOLTIP_PAD_PX, 0.0f));
+	c.DrawText(m_text, TOOLTIP_TEXT_SIZE, pill.x + TOOLTIP_PAD_PX, 0.5f * (TOOLTIP_H_PX - m_text.LineHeight(TOOLTIP_TEXT_SIZE)),
+		text, Theme::text);
+	c.ResetClip();
+	m_notice.Upload(c);
+	m_notice.SetSize(TOOLTIP_W_PX * METERS_PER_PX, TOOLTIP_H_PX * METERS_PER_PX);
+	XrPosef pose = m_screen;
+	pose.position = Transform(m_screen, {0.0f, -0.5f * m_screen_height - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
+	m_notice.SetPose(pose);
+	m_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(seconds * 1000.0f));
+	Console.WriteLnFmt("Menu: notice \"{}\"", text);
+}
+
 void VrMenu::SetGunState(bool has_game, bool on, bool chosen, int guns)
 {
 	if (m_settings_menu)
@@ -370,6 +400,9 @@ void VrMenu::Open(Panel panel)
 		Emu::SetPaused(true);
 	m_on_button[0] = m_on_button[1] = -1;
 	m_open = panel;
+	if (panel == Panel::Games)
+		m_back_to_games = false;
+	UpdateShownButtons();
 	if (panel == Panel::Settings)
 	{
 		m_settings_menu->SetFrameControllers(m_xr->HasFrameControllers());
@@ -390,9 +423,30 @@ void VrMenu::OpenGameList()
 void VrMenu::Close()
 {
 	m_open = Panel::None;
+	m_back_to_games = false;
+	m_on_button[0] = m_on_button[1] = -1;
+	UpdateShownButtons();
 	if (m_pauses_game && !m_user_paused)
 		Emu::SetPaused(false);
 	Console.WriteLn("Menu: closed");
+}
+
+void VrMenu::UpdateShownButtons()
+{
+	for (int b = 0; b < NUM_BUTTONS; b++)
+	{
+		m_buttons[b].shown = m_open == Panel::None || (m_open == Panel::Games && (b == GEAR || b == POWER));
+		m_buttons[b].hovered = false;
+	}
+	m_show_tooltip = false;
+	for (int g = 0; g < NUM_GROUPS; g++)
+		DrawGroup(g);
+}
+
+float VrMenu::ButtonX() const
+{
+	const float width = m_open != Panel::None ? std::max(m_screen_width, m_panel.Size().width) : m_screen_width;
+	return 0.5f * width + BUTTON_MARGIN + 0.5f * BUTTON_SIZE;
 }
 
 void VrMenu::PlacePointer(XrTime time, int hand, const XrPosef& aim, const Hit& hit, const XrQuaternionf& facing)
@@ -432,6 +486,13 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		return result;
 	m_screen = screen;
 	m_screen_width = screen_width;
+	m_screen_height = screen_height;
+	if (m_notice.HasImage())
+	{
+		XrPosef pose = screen;
+		pose.position = Transform(screen, {0.0f, -0.5f * screen_height - TOOLTIP_GAP - 0.5f * m_notice.Size().height, 0.0f});
+		m_notice.SetPose(pose);
+	}
 	m_pointers = pointers;
 
 	// A game from the list that would not start: back to the list, which says why.
@@ -451,28 +512,25 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	}
 
 	// The buttons, one above the other just outside the screen's right edge: the top group from level
-	// with its top, the bottom one down to level with its bottom (kept below the top one on a small screen).
-	const float button_x = 0.5f * screen_width + BUTTON_MARGIN + 0.5f * BUTTON_SIZE;
+	// with its top, the 3D button at mid height, the bottom group down to level with its bottom; on a
+	// small screen each is kept below the one above.
+	const auto below = [](const ButtonGroup& above) { return above.top_y - above.height - BUTTON_GAP - BUTTON_GROUP_GAP; };
 	m_groups[0].top_y = 0.5f * screen_height - 0.5f * BUTTON_SIZE;
-	m_groups[1].top_y = std::min(-0.5f * screen_height - 0.5f * BUTTON_SIZE + m_groups[1].height,
-		m_groups[0].top_y - m_groups[0].height - BUTTON_GAP - BUTTON_GROUP_GAP);
+	m_groups[1].top_y = std::min(0.0f, below(m_groups[0]));
+	m_groups[2].top_y = std::min(-0.5f * screen_height - 0.5f * BUTTON_SIZE + m_groups[2].height, below(m_groups[1]));
 	for (Button& button : m_buttons)
 		button.y = m_groups[button.group].top_y - button.offset;
-	for (ButtonGroup& group : m_groups)
-	{
-		XrPosef pose = screen;
-		pose.position = Transform(screen, {button_x, group.top_y + 0.5f * BUTTON_SIZE - 0.5f * group.height, 0.0f});
-		group.layer.SetPose(pose);
-	}
 	UpdateModeButton();
 	if (m_open != Panel::None && m_reanchor)
 		AnchorPanel();
 	m_reanchor = false;
+	float button_x = ButtonX();
 
 	// Where each controller points: on the open panel's plane, else on the screen's. Without a
 	// menu, the pointer is out while a controller points anywhere but at the game.
 	XrPosef aim[2] = {{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}, {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}};
 	Hit hits[2];
+	Hit button_hits[2]; // on the screen's plane, where the buttons are
 	bool pointing[2] = {}; // at the panel, or away from the game
 	const auto on_panel = [&](const Hit& hit) {
 		return hit.hit && std::abs(hit.x) <= 0.5f * m_panel.Size().width && std::abs(hit.y) <= 0.5f * m_panel.Size().height;
@@ -482,6 +540,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		if (!pointers[h].valid)
 			continue;
 		aim[h] = pointers[h].pose;
+		button_hits[h] = HitPlane(screen, aim[h]);
 		if (m_open != Panel::None)
 		{
 			hits[h] = HitPlane(m_panel.Pose(), aim[h]);
@@ -489,7 +548,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		}
 		else
 		{
-			hits[h] = HitPlane(screen, aim[h]);
+			hits[h] = button_hits[h];
 			pointing[h] = !hits[h].hit || std::abs(hits[h].x) > 0.5f * screen_width ||
 			              std::abs(hits[h].y) > 0.5f * screen_height;
 		}
@@ -503,30 +562,33 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	}
 	const int hand = m_hand;
 
-	bool just_opened = false;
-	if (m_open == Panel::None)
+	// The button each hand points at, if any (not through the open panel): the nearest shown one,
+	// within its circle, or within the hold radius of the one it was already on.
+	int on_button[2] = {-1, -1};
+	for (int h = 0; h < 2; h++)
 	{
-		// The button each hand points at, if any: the nearest, within its circle, or within the hold
-		// radius of the one it was already on.
-		int on_button[2] = {-1, -1};
-		for (int h = 0; h < 2; h++)
+		const Hit& hit = button_hits[h];
+		int nearest = -1;
+		float distance = 0.0f;
+		for (int b = 0; b < NUM_BUTTONS && pointers[h].valid && hit.hit && !(m_open != Panel::None && pointing[h]); b++)
 		{
-			const Hit& hit = hits[h];
-			int nearest = -1;
-			float distance = 0.0f;
-			for (int b = 0; b < NUM_BUTTONS && pointers[h].valid && hit.hit; b++)
+			if (!m_buttons[b].shown)
+				continue;
+			const float d = std::hypot(hit.x - button_x, hit.y - m_buttons[b].y);
+			if (nearest < 0 || d < distance)
 			{
-				const float d = std::hypot(hit.x - button_x, hit.y - m_buttons[b].y);
-				if (nearest < 0 || d < distance)
-				{
-					nearest = b;
-					distance = d;
-				}
+				nearest = b;
+				distance = d;
 			}
-			const float reach = nearest == m_on_button[h] ? BUTTON_HOLD_RADIUS : 0.5f * BUTTON_SIZE;
-			on_button[h] = nearest >= 0 && distance < reach ? nearest : -1;
-			m_on_button[h] = on_button[h];
 		}
+		const float reach = nearest == m_on_button[h] ? BUTTON_HOLD_RADIUS : 0.5f * BUTTON_SIZE;
+		on_button[h] = nearest >= 0 && distance < reach ? nearest : -1;
+		m_on_button[h] = on_button[h];
+	}
+
+	bool just_opened = false;
+	if (m_open == Panel::None || m_open == Panel::Games)
+	{
 		const int hovered = on_button[hand];
 		for (int b = 0; b < NUM_BUTTONS; b++)
 		{
@@ -548,7 +610,7 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			{
 				result.block_trigger[h] = true;
 				result.on_ui[h] = true;
-				result.ui_point[h] = hits[h].point;
+				result.ui_point[h] = button_hits[h].point;
 			}
 		}
 		if (hovered >= 0 && pressed[hand] && !m_swallow[hand] && !m_buttons[hovered].disabled)
@@ -581,25 +643,21 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			}
 			else
 			{
-				// The gear, the game list, or the power button's confirmation.
+				// The gear, the game list, or the power button's confirmation; from the game list, the
+				// settings go back to it.
+				const bool from_games = m_open == Panel::Games;
 				Open(hovered == GAMES ? Panel::Games : Panel::Settings);
+				m_back_to_games = from_games;
 				if (hovered == POWER)
 					m_settings_menu->ShowQuitDialog();
-				for (Button& button : m_buttons)
-				{
-					if (button.hovered)
-					{
-						button.hovered = false;
-						DrawButton(button);
-					}
-				}
 				ShowTooltip(-1, button_x);
 				just_opened = true;
 				hits[hand] = HitPlane(m_panel.Pose(), aim[hand]);
 				pointing[hand] = on_panel(hits[hand]);
+				on_button[hand] = -1;
 			}
 		}
-		else if (pointing[hand] && pointers[hand].valid)
+		else if (m_open == Panel::None && pointing[hand] && pointers[hand].valid)
 			PlacePointer(time, hand, aim[hand], hits[hand], screen.orientation);
 	}
 
@@ -628,10 +686,16 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		gui.pressed = usable && pressed[hand];
 		gui.released = released[hand];
 
+		// Either thumbstick scrolls a list (a stick being mapped is an input, not a scroll).
+		const ControllerState& c = input.controller;
+		const float stick = std::abs(c.left_stick.y) > std::abs(c.right_stick.y) ? c.left_stick.y : c.right_stick.y;
+		const float scroll = std::abs(stick) > 0.2f && !mapping ? -stick * SCROLL_SPEED : 0.0f;
 		bool close = false;
 		if (m_open == Panel::Settings)
 		{
 			m_settings_menu->SetControllerState(input.controller);
+			if (scroll != 0.0f)
+				m_settings_menu->Scroll(scroll);
 			if (m_settings_menu->Update(gui) || just_opened)
 				m_panel.Upload(m_settings_menu->GetCanvas());
 			result.recenter = m_settings_menu->TakeRecenterRequest(); // the panel follows (Reanchor)
@@ -647,17 +711,36 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		}
 		else
 		{
-			// Either thumbstick scrolls the list.
-			const ControllerState& c = input.controller;
-			const float stick = std::abs(c.left_stick.y) > std::abs(c.right_stick.y) ? c.left_stick.y : c.right_stick.y;
-			if (std::abs(stick) > 0.2f)
-				m_game_list->Scroll(-stick * SCROLL_SPEED);
+			if (scroll != 0.0f)
+				m_game_list->Scroll(scroll);
 			if (m_game_list->Update(gui) || just_opened)
 				m_panel.Upload(m_game_list->GetCanvas());
 			close = m_game_list->TakeCloseRequest();
+			// Nothing to play yet: on to the Wi-Fi transfer settings, which come back here. The panel
+			// shows the list until they have drawn, next frame.
+			if (!close && m_game_list->TakeWifiRequest())
+			{
+				Open(Panel::Settings);
+				m_settings_menu->ShowTransferPage();
+				m_back_to_games = true;
+				just_opened = true;
+			}
 		}
-		if (close || (usable && pressed[hand] && !hand_on_panel))
-			Close();
+		if (close || (usable && pressed[hand] && !hand_on_panel && on_button[hand] < 0))
+		{
+			if (m_open == Panel::Settings && m_back_to_games && !m_has_game)
+			{
+				Open(Panel::Games);
+				just_opened = true;
+			}
+			else
+				Close();
+		}
+		else if (on_button[hand] >= 0)
+		{
+			if (pointers[hand].valid)
+				PlacePointer(time, hand, aim[hand], button_hits[hand], screen.orientation);
+		}
 		else if (pointers[hand].valid) // no beam from a controller not tracked yet
 			PlacePointer(time, hand, aim[hand], panel_hit, m_panel.Pose().orientation);
 		if (just_opened || m_open == Panel::None)
@@ -668,6 +751,15 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 		}
 	}
 
+	// The button groups, beside the screen (or the panel open now).
+	button_x = ButtonX();
+	for (ButtonGroup& group : m_groups)
+	{
+		XrPosef pose = screen;
+		pose.position = Transform(screen, {button_x, group.top_y + 0.5f * BUTTON_SIZE - 0.5f * group.height, 0.0f});
+		group.layer.SetPose(pose);
+	}
+
 	for (int h = 0; h < 2; h++)
 		result.block_trigger[h] |= m_swallow[h];
 	return result;
@@ -675,22 +767,24 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 4 + NUM_GROUPS, "the panel, the button groups, the tooltip, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 5 + NUM_GROUPS, "the panel, the button groups, the tooltip, the notice, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
 		return;
 	if (m_open != Panel::None && m_panel.HasImage())
 		slots[0] = m_panel.Layer();
-	for (int g = 0; m_open == Panel::None && g < NUM_GROUPS; g++)
+	for (const Button& button : m_buttons)
 	{
-		if (m_groups[g].layer.HasImage())
-			slots[1 + g] = m_groups[g].layer.Layer();
+		if (button.shown && m_groups[button.group].layer.HasImage())
+			slots[1 + button.group] = m_groups[button.group].layer.Layer();
 	}
-	if (m_show_tooltip && m_open == Panel::None && m_tooltip.HasImage())
+	if (m_show_tooltip && m_tooltip.HasImage())
 		slots[1 + NUM_GROUPS] = m_tooltip.Layer();
+	if (m_notice.HasImage() && std::chrono::steady_clock::now() < m_notice_until)
+		slots[2 + NUM_GROUPS] = m_notice.Layer();
 	if (m_show_pointer)
-		slots[2 + NUM_GROUPS] = m_beam.Layer();
+		slots[3 + NUM_GROUPS] = m_beam.Layer();
 	if (m_show_cursor)
-		slots[3 + NUM_GROUPS] = m_cursor.Layer();
+		slots[4 + NUM_GROUPS] = m_cursor.Layer();
 }
