@@ -1025,10 +1025,10 @@ int main(int argc, char* argv[])
 		};
 		static_assert(NUM_SLOTS <= std::tuple_size_v<decltype(pads)>, "a pad per slot");
 		std::array<const XrCompositionLayerBaseHeader*, NUM_SLOTS> slots{};
-		// Passthrough: where SteamVR offers it, its layer is there with passthrough off too (the void
-		// then shows through it), so that switching it moves no layer in the list. Its image is the
-		// menu's invisible pad.
-		if (XrCompositionLayerQuad clear; xr.SupportsPassthrough() && menu.GetPadLayer(&clear))
+		// Passthrough: SteamVR shows the room only behind a projection layer, whose image is the menu's
+		// invisible pad. It covers both eyes' whole view, which the compositor pays for every frame, so
+		// it is only there with passthrough on; off, the slot's pad quad keeps the other layers in place.
+		if (XrCompositionLayerQuad clear; vr.passthrough && xr.SupportsPassthrough() && menu.GetPadLayer(&clear))
 			slots[SLOT_BACK] = xr.BackLayer(frame.display_time, clear.subImage);
 		{
 			// Volumetric: each eye its own picture. Flat (no parallax: both are the same), or while one
