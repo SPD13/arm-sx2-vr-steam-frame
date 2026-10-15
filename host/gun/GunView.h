@@ -17,17 +17,27 @@
 
 #include <cstdint>
 #include <span>
+#include <vector>
 
 class GunView
 {
 public:
+	// What of the shapes an eye can see, with a margin around its view: appends to out points (LOCAL
+	// space) whose directions from the eye cover it. Shape k is the convex hull of points
+	// [shape_ends[k - 1], shape_ends[k]) (LOCAL space): a model's bounds, a beam. What is out of view
+	// is left out, so it neither widens the quad (blurring the picture) nor gets the quad to its
+	// widest, where what goes past is cut.
+	static void Visible(const XrPosef& eye, const XrFovf& fov, std::span<const XrVector3f> points,
+		std::span<const uint32_t> shape_ends, std::vector<XrVector3f>* out);
+
 	// A new quad, distance meters in front of eye, facing it and covering points (LOCAL space) with a
-	// margin; its picture gets pixels_per_degree, at most max_pixels on a side. False when there is
-	// nothing to show.
+	// margin; its picture gets pixels_per_degree at its centre, at most max_pixels on a side. False
+	// when there is nothing to show.
 	bool Fit(const XrVector3f& eye, std::span<const XrVector3f> points, float distance, float pixels_per_degree,
 		uint32_t max_pixels);
-	// Whether the points, seen from eye, are still well inside the quad, and it is not much larger
-	// than they need.
+	// Whether the points, seen from eye, are still well inside the quad, it is not much larger than
+	// they need, and a quad fitted to them now would not be much sharper (after the guns were far
+	// out, its picture spread over a wide quad).
 	bool Fits(const XrVector3f& eye, std::span<const XrVector3f> points) const;
 	bool IsValid() const { return m_valid; }
 	void Reset() { m_valid = false; }
@@ -53,4 +63,8 @@ private:
 	// Sides that reached the widest view when fitted: nothing beyond them can be taken in.
 	bool m_at_limit[4] = {}; // left, right, bottom, top
 	uint32_t m_width = 16, m_height = 16;
+	// Its picture's pixels per radian at its centre, and what Fit was given for it.
+	float m_sharpness = 0.0f;
+	float m_pixels_per_radian = 0.0f;
+	uint32_t m_max_pixels = 0;
 };

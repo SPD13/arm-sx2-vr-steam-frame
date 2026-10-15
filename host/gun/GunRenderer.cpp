@@ -768,35 +768,53 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 		return;
 	}
 
-	// What each eye's view has to take in: every gun, the end of its beam and its dot, and the controllers.
-	std::vector<XrVector3f> points;
+	// What there is to show, as shapes: every gun, its beam (or the dot alone), and the controllers.
+	std::vector<XrVector3f> shapes;
+	std::vector<uint32_t> shape_ends;
 	for (int h = 0; h < 2; h++)
 	{
 		if (!hand_shown[h])
 			continue;
 		for (const XrVector3f& corner : m_controllers[h].model.BoundsCorners())
-			points.push_back(Transform(hands[h].pose, corner));
+			shapes.push_back(Transform(hands[h].pose, corner));
+		shape_ends.push_back(static_cast<uint32_t>(shapes.size()));
 	}
 	for (const Gun& gun : guns)
 	{
 		if (!gun.visible)
 			continue;
 		for (const XrVector3f& corner : m_model.BoundsCorners())
-			points.push_back(Transform(gun.pose, corner));
+			shapes.push_back(Transform(gun.pose, corner));
+		shape_ends.push_back(static_cast<uint32_t>(shapes.size()));
+		if (gun.beam)
+			shapes.push_back(MuzzlePose(gun.pose).position);
 		if (gun.beam || gun.dot)
-			points.push_back(gun.beam_end);
+		{
+			shapes.push_back(gun.beam_end);
+			shape_ends.push_back(static_cast<uint32_t>(shapes.size()));
+		}
 	}
 
 	// Each eye's panes: the one fitted last frame shows the guns from now on; when they near its
 	// edges, the other is fitted (and stays empty this frame), once it has been empty for a frame.
+	// A pane takes in what its eye can see; with nothing in view, its panes go once they were empty
+	// for a frame.
 	m_frame++;
+	std::vector<XrVector3f> points;
 	for (int i = 0; i < 2; i++)
 	{
 		if (m_fitted[i] >= 0)
 			m_showing[i] = std::exchange(m_fitted[i], -1);
+		points.clear();
+		GunView::Visible(views[i].pose, views[i].fov, shapes, shape_ends, &points);
 		if (points.empty())
 		{
 			m_showing[i] = -1;
+			for (const int p : {i, i + 2})
+			{
+				if (m_panes[p].shown < m_frame - 1)
+					m_panes[p].view.Reset();
+			}
 			continue;
 		}
 		const XrVector3f& eye = views[i].pose.position;
