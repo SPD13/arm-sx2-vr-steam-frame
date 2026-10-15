@@ -427,21 +427,24 @@ void SettingsMenu::RunStereo()
 	VrSettings vr = m_settings.Get();
 	bool changed = false;
 
-	static constexpr std::array<std::string_view, 2> modes = {"Flat", "Volumetric"};
-	int mode = vr.stereo ? 1 : 0;
+	static constexpr std::array<std::string_view, 3> modes = {"Flat", "Volumetric", "Volumetric+"};
+	int mode = vr.Mode3D();
 	if (m_gui.Segmented(GuiId("stereo"),
 			Row("3D mode", "Volumetric draws the game for each eye, so the world sits behind the screen like a "
-						   "window. Flat shows a flat picture. The cube button beside the screen switches it too.",
+						   "window. Volumetric+ (test) gives the world its full depth, and leaning in shows more of "
+						   "it. Flat shows a flat picture. The cube button beside the screen switches it too.",
 				52.0f),
 			modes, &mode))
 	{
-		vr.stereo = mode == 1;
+		vr.SetMode3D(mode);
 		changed = true;
 	}
 
-	changed |= m_gui.Slider(GuiId("stereo_depth"),
-		Row("Depth", "How far behind the screen the farthest scenery appears."), &vr.stereo_depth, 0.0f, 5.0f, 0.1f,
-		fmt::format("{:.1f} m", vr.stereo_depth));
+	// Volumetric+ takes its depth from the screen distance: the farthest scenery is at infinity.
+	if (!vr.stereo_plus || !vr.stereo)
+		changed |= m_gui.Slider(GuiId("stereo_depth"),
+			Row("Depth", "How far behind the screen the farthest scenery appears."), &vr.stereo_depth, 0.0f, 5.0f, 0.1f,
+			fmt::format("{:.1f} m", vr.stereo_depth));
 
 	Section("ADVANCED");
 	// In the game's normalised Z (the depth buffer).

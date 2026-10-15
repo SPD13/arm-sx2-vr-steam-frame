@@ -120,6 +120,7 @@ static void PrintUsage(const char* argv0)
 		"  --screen-width M       Virtual screen width in meters (default 2.4)\n"
 		"  --screen-distance M    Virtual screen distance in meters (default 2.2)\n"
 		"  --flat                 Start in flat 2D instead of volumetric 3D (the menu switches it live)\n"
+		"  --volumetric-plus      Start in Volumetric+ (the scene at a fixed size, seen from where the eyes are)\n"
 		"  --stereo-depth M       How far behind the screen the farthest geometry appears (default 3)\n"
 		"  --stereo-conv F        Normalised Z on the screen plane (default 0.12)\n"
 		"  --sdl-pad              Drive pad 1 from the first SDL gamepad (testing)\n"
@@ -165,6 +166,11 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 			debug->depth_log_ms = std::max(100, std::atoi(argv[++i]));
 		else if (!std::strcmp(arg, "--flat"))
 			set("stereo", "false");
+		else if (!std::strcmp(arg, "--volumetric-plus"))
+		{
+			set("stereo", "true");
+			set("stereo_plus", "true");
+		}
 		else if (!std::strcmp(arg, "--stereo-depth") && has_value)
 			set("stereo_depth", argv[++i]);
 		else if (!std::strcmp(arg, "--stereo-conv") && has_value)
@@ -252,7 +258,7 @@ static XrPosef PushScreen(const XrPosef& screen, float delta)
 }
 
 // The GS always draws both eyes (multiview), with the parallax driven by Z; flat mode just gives
-// both eyes no parallax (see the eye views in the frame loop).
+// both eyes no parallax (see the eye views in the frame loop). Volumetric+ is the GS's portal.
 static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr)
 {
 	GSVolumetric::StereoSettings stereo;
@@ -260,6 +266,7 @@ static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr)
 	stereo.multiview = true;
 	stereo.z_mode = true;
 	stereo.convergence = vr.stereo_convergence;
+	stereo.portal = vr.stereo && vr.stereo_plus;
 	return stereo;
 }
 
@@ -349,7 +356,7 @@ int main(int argc, char* argv[])
 	VKLibretro::Active = true;
 	GSVolumetric::SetEnabled(false); // depth, only for the light guns (see apply_gun_depth)
 	GSVolumetric::SetStereo(GSStereo(vr));
-	Console.WriteLnFmt("3D: starts {}, depth {} m, convergence {}", vr.stereo ? "volumetric" : "flat", vr.stereo_depth,
+	Console.WriteLnFmt("3D: starts {}, depth {} m, convergence {}", vr.Mode3DName(), vr.stereo_depth,
 		vr.stereo_convergence);
 
 	Emu::Start(emu_options);
@@ -501,8 +508,8 @@ int main(int argc, char* argv[])
 			}
 			apply_settings();
 			apply_gun_depth();
-			if (vr.stereo != applied.stereo)
-				Console.WriteLnFmt("3D: {}", vr.stereo ? "volumetric" : "flat");
+			if (vr.Mode3D() != applied.Mode3D())
+				Console.WriteLnFmt("3D: {}", vr.Mode3DName());
 			if (vr.passthrough != applied.passthrough)
 				Console.WriteLnFmt("Passthrough: {}", vr.passthrough ? "on" : "off");
 			// A new distance moves the screen along its axis; a new width moves the panels beside it.
@@ -736,6 +743,8 @@ int main(int argc, char* argv[])
 				gun_stereo.z_mode = true;
 				gun_stereo.convergence = vr.stereo_convergence;
 				gun_stereo.depth = vr.stereo_depth;
+				gun_stereo.portal = vr.stereo_plus;
+				gun_stereo.portal_distance = vr.screen_distance;
 				gun_stereo.left_eye = eye_views[0].pose.position;
 				// A grid from a few frames back still fits; older (a menu, a movie), the glass will do.
 				depth_grid = gun_depth.Latest();
@@ -925,13 +934,15 @@ int main(int argc, char* argv[])
 					const float lx = c * dx - s * dz;
 					const float lz = s * dx + c * dz;
 					const float distance = std::max(lz, 0.1f);
-					// Far geometry follows the eye on the screen (NDC y points down).
-					GSVolumetric::SetEyeView(i, lx / half_w, -dy / half_h,
-						vr.stereo_depth / (distance + vr.stereo_depth));
+					// Far geometry follows the eye on the screen (NDC y points down). Volumetric+: the
+					// farthest is at infinity, and the eye's distance over the screen distance scales
+					// the scene for leaning in or out.
+					const float depth_factor = vr.stereo_plus ? 1.0f : vr.stereo_depth / (distance + vr.stereo_depth);
+					const float distance_ratio = vr.stereo_plus ? distance / std::max(vr.screen_distance, 0.1f) : 1.0f;
+					GSVolumetric::SetEyeView(i, lx / half_w, -dy / half_h, depth_factor, distance_ratio);
 					if (log_eyes)
-						Console.WriteLnFmt("Stereo: eye {} at ({:.3f}, {:.3f}) m, {:.2f} m from the screen -> offset ({:.3f}, {:.3f}) NDC, depth factor {:.3f}",
-							i, lx, dy, distance, lx / half_w, -dy / half_h,
-							vr.stereo_depth / (distance + vr.stereo_depth));
+						Console.WriteLnFmt("Stereo: eye {} at ({:.3f}, {:.3f}) m, {:.2f} m from the screen -> offset ({:.3f}, {:.3f}) NDC, depth factor {:.3f}, distance ratio {:.3f}",
+							i, lx, dy, distance, lx / half_w, -dy / half_h, depth_factor, distance_ratio);
 				}
 			}
 		}

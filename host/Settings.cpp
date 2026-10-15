@@ -14,10 +14,11 @@
 #include <array>
 #include <cstdio>
 
-static constexpr std::array<VrSettingInfo, 18> s_settings = {{
+static constexpr std::array<VrSettingInfo, 19> s_settings = {{
 	{"Screen", "screen_width", &VrSettings::screen_width, nullptr, 0.3f, 10.0f, false},
 	{"Screen", "screen_distance", &VrSettings::screen_distance, nullptr, 0.3f, 10.0f, false},
 	{"Mode", "stereo", nullptr, &VrSettings::stereo, 0.0f, 0.0f, false},
+	{"Mode", "stereo_plus", nullptr, &VrSettings::stereo_plus, 0.0f, 0.0f, false},
 	{"Mode", "passthrough", nullptr, &VrSettings::passthrough, 0.0f, 0.0f, false},
 	{"Stereo", "stereo_depth", &VrSettings::stereo_depth, nullptr, 0.0f, 20.0f, false},
 	{"Stereo", "stereo_convergence", &VrSettings::stereo_convergence, nullptr, 0.01f, 1.0f, false},

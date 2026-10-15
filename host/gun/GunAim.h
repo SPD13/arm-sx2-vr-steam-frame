@@ -10,6 +10,10 @@
 // (1 - g) behind the screen, on the line from the screen centre's viewer through S. So the beam is
 // marched into the portal: each step is seen from the left eye, whose image the depth grid comes
 // from, until it reaches the surface there; the GunCon gets that surface point's unshifted S.
+//
+// Volumetric+ (the GS's portal) places S's point D0 (1/u - 1) behind the screen, u = Znorm /
+// convergence, for the screen distance D0, and draws it at S r / den + eye (1 - u) / den from an eye
+// D = r D0 away, den = 1 + u (r - 1); the march is the same with that surface and that image.
 
 #pragma once
 
@@ -47,6 +51,8 @@ struct GunStereo
 	bool z_mode = false; // only Z mode can be marched: the depth grid holds Z, not Q
 	float convergence = 1.0f;
 	float depth = 1.0f; // R, meters
+	bool portal = false; // Volumetric+: depth from portal_distance instead
+	float portal_distance = 2.2f; // D0, meters
 	XrVector3f left_eye{}; // LOCAL space
 };
 

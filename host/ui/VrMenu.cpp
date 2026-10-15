@@ -56,6 +56,7 @@ namespace
 	constexpr uint32_t GEAR_ICON = 0xf013;
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
 	constexpr uint32_t VOLUMETRIC_ICON = 0xf1b2; // cube
+	constexpr uint32_t VOLUMETRIC_PLUS_ICON = 0xf1b3; // cubes
 	constexpr uint32_t FLAT_ICON = 0xf0c8; // square
 	constexpr uint32_t PASSTHROUGH_ICON = 0xf06e; // eye
 	constexpr uint32_t VOID_ICON = 0xf070; // eye-slash
@@ -99,6 +100,12 @@ namespace
 			para = para_end + 1;
 		}
 		return lines;
+	}
+
+	// The 3D button's icon for VrSettings::Mode3D.
+	uint32_t ModeIcon(int mode)
+	{
+		return mode == 2 ? VOLUMETRIC_PLUS_ICON : mode == 1 ? VOLUMETRIC_ICON : FLAT_ICON;
 	}
 } // namespace
 
@@ -210,7 +217,7 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_buttons[GEAR].icon = GEAR_ICON;
 	m_buttons[GAMES].icon = GAMES_ICON;
 	m_buttons[MODE_3D].lit = m_settings.Get().stereo;
-	m_buttons[MODE_3D].icon = m_buttons[MODE_3D].lit ? VOLUMETRIC_ICON : FLAT_ICON;
+	m_buttons[MODE_3D].icon = ModeIcon(m_settings.Get().Mode3D());
 	m_buttons[PASSTHROUGH].disabled = !xr.SupportsPassthrough();
 	m_buttons[PASSTHROUGH].lit = m_settings.Get().passthrough && xr.SupportsPassthrough();
 	m_buttons[PASSTHROUGH].icon = m_buttons[PASSTHROUGH].lit ? PASSTHROUGH_ICON : VOID_ICON;
@@ -309,7 +316,7 @@ std::string VrMenu::TooltipText(int button) const
 		case GAMES:
 			return m_open == Panel::Games && m_has_game ? "Back to the game" : "Game list";
 		case MODE_3D:
-			return m_settings.Get().stereo ? "3D: volumetric" : "3D: flat";
+			return std::string("3D: ") + m_settings.Get().Mode3DName();
 		case PASSTHROUGH:
 			if (!m_xr->SupportsPassthrough())
 				return "Passthrough (SteamVR offers none here)";
@@ -364,11 +371,11 @@ void VrMenu::ShowTooltip(int button, float button_x)
 void VrMenu::UpdateModeButton()
 {
 	Button& button = m_buttons[MODE_3D];
-	const bool volumetric = m_settings.Get().stereo;
-	if (button.lit == volumetric)
+	const int mode = m_settings.Get().Mode3D();
+	if (button.lit == (mode > 0) && button.icon == ModeIcon(mode))
 		return;
-	button.lit = volumetric;
-	button.icon = volumetric ? VOLUMETRIC_ICON : FLAT_ICON;
+	button.lit = mode > 0;
+	button.icon = ModeIcon(mode);
 	DrawButton(button);
 }
 
@@ -817,8 +824,9 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			}
 			else if (hovered == MODE_3D)
 			{
+				// Flat, volumetric, volumetric+, and round again.
 				VrSettings vr = m_settings.Get();
-				vr.stereo = !vr.stereo;
+				vr.SetMode3D((vr.Mode3D() + 1) % 3);
 				m_settings.Set(vr);
 				UpdateModeButton();
 				m_swallow[hand] = true;

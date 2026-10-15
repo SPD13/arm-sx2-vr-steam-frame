@@ -29,6 +29,10 @@ struct VrSettings
 	// Mode: volumetric (geometric stereo: the GS draws the game from where each eye is, parallax by
 	// Z), or flat (the same picture for both eyes). The GS always draws both eyes, so it switches live.
 	bool stereo = true;
+	// Volumetric+ (with stereo on): a test mode, the scene at a fixed size in the room behind the
+	// screen, seen from wherever the eyes are, leaning in or out too (GSVolumetric's portal). Depth
+	// then comes from the screen distance and the screen plane, not stereo_depth.
+	bool stereo_plus = false;
 	// What surrounds the screen: the room through the headset's cameras (passthrough), or the dark void.
 	// The last choice is kept in VR.ini for the next start.
 	bool passthrough = true;
@@ -51,6 +55,15 @@ struct VrSettings
 	uint32_t gun_color = 0x8C8C91; // gray
 	uint32_t gun_color_2p = 0xC0282D; // red
 	uint32_t gun2_color = 0x2F5FD0; // blue
+
+	// The 3D mode as one value: 0 flat, 1 volumetric, 2 volumetric+.
+	int Mode3D() const { return stereo ? (stereo_plus ? 2 : 1) : 0; }
+	void SetMode3D(int mode)
+	{
+		stereo = mode > 0;
+		stereo_plus = mode > 1;
+	}
+	const char* Mode3DName() const { return stereo ? (stereo_plus ? "volumetric+" : "volumetric") : "flat"; }
 };
 
 // One setting, for the code that handles them all alike (the ini, the command line, later the menu).

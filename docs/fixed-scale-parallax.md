@@ -165,3 +165,39 @@ Option A gives fixed-scale depth for the least work and leaves Option B as an up
 - [ ] Add d0 to the game profile and the auto-calibration with a reset in the settings menu.
 - [ ] Compare adaptive and fixed scale on the Frame in TC2: stepping out of cover, corridors versus open areas.
 - [ ] Survey a few more games for constant Q, linear Z and mixed projections before deciding on Option B.
+
+## Volumetric+: the true portal in the multiview path
+
+2026-10-14
+
+The depth-map window this document starts from was removed on 2026-10-13. Volumetric is now the multiview geometric stereo: the GS draws every displayed draw once per eye and shifts each vertex by its Z (`GSVolumetric::StereoSettings`, `VRStereoPlace` in `tfx.glsl`). Volumetric+ is a third mode that applies this document's true portal there. It is a test mode, next to Volumetric, and can be removed.
+
+**What Volumetric does.** For an eye at offset e from the screen centre (NDC), D in front of the screen, with u = Znorm / convergence:
+
+```math
+p' = p + e \cdot \frac{R}{D + R} \cdot (1 - u)
+```
+
+Most games write Z as roughly 1/w, so u ≈ d0 / d, and 1 − u is the doc's "bounded, linear in disparity" mapping already. Two things keep it from being a true portal:
+
+- **Compressed depth.** The factor R / (D + R) (0.58 with the defaults R = 3 m, D = 2.2 m) scales every disparity down, so infinity sits R behind the glass and the whole scene is shallower than its picture says.
+- **Shift only.** The picture moves sideways with the eye but never changes size. A real window shows more of the world when you lean in, because far scenery shrinks against the frame while scenery at the glass stays put. Volumetric has no such term, so leaning in or out feels like looking at a moving picture, not through a hole.
+
+**What Volumetric+ does.** It takes the game's camera to be where the viewer stood at the screen distance D0 (`screen_distance`). Then the screen-plane depth sits on the glass, and the geometry the picture shows at u lies D0 (1/u − 1) behind it, out to infinity at u = 0: a fixed size in the room, with no depth_range. Projecting that point onto the glass from the eye's real position, D = r · D0 away, gives:
+
+```math
+p' = \frac{r \cdot p + e \cdot (1 - u)}{1 + u \cdot (r - 1)}
+```
+
+- At D = D0 (r = 1) this is Volumetric's shift with a depth factor of 1: full disparity, far scenery at infinity. Each eye's far shift equals its own offset, so the eyes never diverge.
+- At the glass (u = 1), p' = p whatever the eye does.
+- Leaning in (r < 1), far scenery (u → 0) shrinks to r · p: the window reveals more around its edges. Leaning back enlarges it.
+- The host passes r per eye; it rides in the sign of the stereo constants' w, so the constant buffer layout doesn't change. The light gun's beam march uses the same placement.
+
+**What to judge in the headset** (TC2, default screen plane 0.12):
+
+- Does the full depth look right, or too deep? Infinity at infinity is what makes it a portal, but stereo-only depth on a 2.4 m screen may feel exaggerated. If so, a scale on D0 (a "world size" slider) is the knob to add.
+- Leaning in: the reveal at the edges is real geometry, but the game never drew outside its frame, so far scenery leaves an empty border at the window's edges (about (1 − r)/2 of the width on each side). Whether that border spoils it decides whether the dolly term stays.
+- The scale is taken about the render target's centre, which is the displayed picture's centre only when the game displays its whole target.
+
+**Known limits.** It inherits the Z ≈ 1/w assumption: a game whose Z has a large offset A (Z = A + B/w) or is linear in w gets the wrong depths, more visibly than in Volumetric because nothing compresses them. The Z–Q fit (Option A above) is the fix for that, and it would also replace the screen-plane setting with a measured d0.

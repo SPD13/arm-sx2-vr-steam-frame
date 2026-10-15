@@ -64,7 +64,7 @@ Round buttons sit just outside the screen, on its right side, so they never cove
 | 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
 | 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
-| ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once: **Volumetric** (cube, lit) or **Flat** (square) |
+| ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once, in turn: **Flat** (square), **Volumetric** (cube, lit) and **Volumetric+** (cubes, lit) |
 | 👁 Eye (below the cube) | Switches [passthrough](#display) at once: your room around the screen (eye, lit) or the dark void (crossed-out eye). Greyed when SteamVR offers no passthrough |
 | ⏸ Pause (bottom, above power) | Pauses or resumes the game; lit (a play icon) while paused. Menus opened meanwhile leave it paused, and another game starts unpaused |
 | ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit** |
@@ -95,11 +95,11 @@ A navigation bar on the left lists the categories, with **Exit** last.
 
 | Option | Values | Notes |
 |---|---|---|
-| 3D mode | Flat · Volumetric | **Volumetric** draws the game from each eye, so the world sits behind the screen like a window. **Flat** shows a flat picture. Applies at once, as the cube button beside the screen. |
-| Depth | 0 – 5 m | How far behind the screen the farthest scenery appears (default 3 m). |
+| 3D mode | Flat · Volumetric · Volumetric+ | **Volumetric** draws the game from each eye, so the world sits behind the screen like a window. **Volumetric+** *(test)* gives the world behind the window its full depth, at a fixed size in the room: the farthest scenery is at infinity, and leaning in shows more of the world around the edges, as through a real window. **Flat** shows a flat picture. Applies at once, as the cube button beside the screen. |
+| Depth | 0 – 5 m | How far behind the screen the farthest scenery appears (default 3 m). Not in Volumetric+, whose depth comes from the screen distance. |
 | Screen plane *(advanced)* | 0.01 – 1 | Which depth in the scene (the game's normalised Z) sits on the screen glass. Set it so the nearest objects just touch the glass. Default 0.12, for Time Crisis II. |
 
-These are the only two modes. The emulator always draws both eyes (multiview); Flat gives them no parallax and shows the same picture to both, which is why it can switch without a restart.
+The emulator always draws both eyes (multiview); Flat gives them no parallax and shows the same picture to both, which is why the modes switch without a restart. Volumetric+ is an experiment and may go away; how it differs from Volumetric is in [`docs/fixed-scale-parallax.md`](docs/fixed-scale-parallax.md#volumetric-the-true-portal-in-the-multiview-path).
 
 ### Graphics
 
@@ -340,6 +340,7 @@ Values are read in this order, each overriding the one before: built-in defaults
 | `[Screen]` | `screen_width` | 2.4 | 0.3 – 10 m | `--screen-width` | live |
 | | `screen_distance` | 2.2 | 0.3 – 10 m | `--screen-distance` | live |
 | `[Mode]` | `stereo` | true | true volumetric, false flat | `--flat` | live |
+| | `stereo_plus` | false | true for Volumetric+ (with `stereo`) | `--volumetric-plus` | live |
 | `[Stereo]` | `stereo_depth` | 3.0 | 0 – 20 m | `--stereo-depth` | live |
 | | `stereo_convergence` | 0.12 | 0.01 – 1 | `--stereo-conv` | live |
 | `[Web]` | `web_enabled` | false | | | at launch (Wi-Fi transfer on when the app last closed) |
@@ -371,7 +372,7 @@ Without a disc image, the game list opens.
 | `--no-fast-boot` | Run the BIOS intro before the game |
 | `--upscale N` | Internal resolution multiplier, 1 – 8 (saved to `PCSX2.ini`) |
 | `--screen-width M`, `--screen-distance M` | Screen size and distance, for this run |
-| `--flat`, `--stereo-depth M`, `--stereo-conv F` | Start in flat mode; volumetric depth and screen plane, for this run |
+| `--flat`, `--volumetric-plus`, `--stereo-depth M`, `--stereo-conv F` | Start in flat mode or Volumetric+; volumetric depth and screen plane, for this run |
 | `--sdl-pad` | Drive pad 1 from the first SDL gamepad (testing without the headset) |
 
 Debugging only:

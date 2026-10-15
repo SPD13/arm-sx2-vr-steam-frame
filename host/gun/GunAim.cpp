@@ -14,6 +14,7 @@ namespace
 	constexpr int REFINE_STEPS = 8;
 	constexpr float MIN_EYE_DISTANCE = 0.1f; // as main.cpp gives the GS
 	constexpr float MAX_PLANE_DISTANCE = 6.0f; // beside the screen, the beam ends on its plane up to this far
+	constexpr float PORTAL_FAR_U = 0.02f; // Volumetric+: the march ends 49 screen distances behind the glass
 } // namespace
 
 float GunDepthGrid::Sample(float u, float v) const
@@ -52,12 +53,14 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 		const XrVector3f eye = Rotate(to_screen, stereo->left_eye - screen.pose.position);
 		const float distance = std::max(eye.z, MIN_EYE_DISTANCE);
 		const float k = stereo->depth / (distance + stereo->depth);
-		// A point P behind the glass, seen from the eye: its image I on the glass, g there, and how
-		// far behind the glass the surface the eye sees there is.
+		const float d0 = std::max(stereo->portal_distance, MIN_EYE_DISTANCE);
+		const float ratio = distance / d0; // portal
+		// A point P behind the glass, seen from the eye: its image I on the glass, g and the scale
+		// there (I = S scale + eye g), and how far behind the glass the surface the eye sees there is.
 		struct Probe
 		{
 			bool inside = false;
-			float ix = 0.0f, iy = 0.0f, g = 0.0f, surface = 0.0f;
+			float ix = 0.0f, iy = 0.0f, g = 0.0f, scale = 1.0f, surface = 0.0f;
 		};
 		const auto probe = [&](const XrVector3f& p) {
 			Probe r;
@@ -71,17 +74,33 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 			const float z = depth->Sample(u, v);
 			// Outside the picture (no depth): as far as it goes.
 			const float f = z < 0.0f ? 1.0f : std::clamp(1.0f - z / stereo->convergence, 0.0f, 1.0f);
+			if (stereo->portal)
+			{
+				const float den = 1.0f + (1.0f - f) * (ratio - 1.0f);
+				r.g = f / den;
+				r.scale = ratio / den;
+				r.surface = f < 1.0f ? d0 * f / (1.0f - f) : INFINITY;
+				return r;
+			}
 			r.g = k * f;
 			r.surface = r.g * distance / (1.0f - r.g);
 			return r;
 		};
-		// From the glass to just past the farthest surface (R behind it, where f = 1).
+		// From the glass to just past the farthest surface (R behind it, where f = 1). The portal's
+		// goes to infinity: its steps are even in u, out to PORTAL_FAR_U.
 		const float t_end = t_glass + 1.02f * stereo->depth / -d.z;
+		const auto step_t = [&](int i) {
+			const float s = static_cast<float>(i) / MARCH_STEPS;
+			if (!stereo->portal)
+				return t_glass + (t_end - t_glass) * s;
+			const float u = 1.0f - s * (1.0f - PORTAL_FAR_U);
+			return t_glass + d0 * (1.0f / u - 1.0f) / -d.z;
+		};
 		float t_prev = t_glass;
 		bool hit = false;
 		for (int i = 0; i <= MARCH_STEPS && !hit; i++)
 		{
-			const float t = t_glass + (t_end - t_glass) * static_cast<float>(i) / MARCH_STEPS;
+			const float t = step_t(i);
 			const XrVector3f p = o + d * t;
 			const Probe r = probe(p);
 			if (!r.inside)
@@ -102,8 +121,8 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 				if (m.inside)
 				{
 					end = q;
-					sx = m.ix - eye.x * m.g;
-					sy = m.iy - eye.y * m.g;
+					sx = (m.ix - eye.x * m.g) / m.scale;
+					sy = (m.iy - eye.y * m.g) / m.scale;
 					aim.through_depth = true;
 				}
 				hit = true;
