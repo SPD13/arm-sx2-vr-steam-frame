@@ -11,7 +11,7 @@ The project directory is currently empty. The plan rests on web and source resea
 - Base: ARMSX2, so the project is GPLv3.
 - Volumetric method: depth-map reprojection.
 - App shape: a custom native OpenXR app with the emulator built in.
-- Hardware: a Steam Frame devkit is available.
+- Hardware: a retail Steam Frame.
 
 ## Research findings (summary)
 

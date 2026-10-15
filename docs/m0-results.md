@@ -3,7 +3,7 @@
 Date: 2026-10-11. Verdict: **GO**. ARMSX2 runs Time Crisis II gameplay at full speed natively on the Frame, with large CPU and GPU headroom left for the VR side.
 
 ## Setup
-- Headset: Steam Frame devkit, SteamOS 0.4.5 (build 20261007), kernel 6.18 aarch64, **4K pages**, 8 cores, 15 GB RAM.
+- Headset: Steam Frame (retail), SteamOS 0.4.5 (build 20261007), kernel 6.18 aarch64, **4K pages**, 8 cores, 15 GB RAM.
 - GPU: Adreno 750 with Mesa Turnip 26.3-devel, Vulkan 1.4.362. GPU devfreq `simple_ondemand`, 231–903 MHz.
 - Emulator: ARMSX2 nightly-20261008 (b1f3196b9e), the Linux arm64 4K-pages AppImage, extracted and run as `squashfs-root/AppRun`.
   - All recompilers on: `ee_rec=1 iop_rec=1 vu0_rec=1 vu1_rec=1 fastmem=1`.
