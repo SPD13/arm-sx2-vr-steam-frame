@@ -468,6 +468,7 @@ int main(int argc, char* argv[])
 	std::array<std::optional<XrPosef>, 2> last_gun_pose;
 	int pose_logs = 0; // rate limit
 	bool ui_open_last = false;
+	int frames_copied_by_gs = 0, frames_copied_here = 0; // the present copy, for the pacing log
 	std::array<bool, 2> beam_on_ui{}; // per hand, last frame (to log changes)
 	Clock::time_point gun_action_at{}, gun_action_until{};
 	Clock::time_point gun_script_start{}; // --gun-script: when the game started
@@ -993,12 +994,19 @@ int main(int argc, char* argv[])
 			}
 			if (emu_frame.right_image)
 			{
-				// Multiview: both eyes in one frame.
-				screen.Update(emu_frame);
-				VKLibretro::Frame right_frame = emu_frame;
-				right_frame.image = emu_frame.right_image;
-				right_frame.view = emu_frame.right_view;
-				screen_right.Update(right_frame);
+				// Multiview: both eyes in one frame, copied by the GS into the images armed below, or
+				// here when it did not. Flat mode shows the left picture to both eyes.
+				const bool left_copied = screen.ReleaseArmed(emu_frame.copied_left);
+				if (!left_copied)
+					screen.Update(emu_frame);
+				(left_copied ? frames_copied_by_gs : frames_copied_here)++;
+				if (!screen_right.ReleaseArmed(emu_frame.copied_right) && vr.stereo)
+				{
+					VKLibretro::Frame right_frame = emu_frame;
+					right_frame.image = emu_frame.right_image;
+					right_frame.view = emu_frame.right_view;
+					screen_right.Update(right_frame);
+				}
 				last_eye_frame[0] = last_eye_frame[1] = Clock::now();
 			}
 			else if (emu_frame.stereo_eye == 1)
@@ -1009,6 +1017,16 @@ int main(int argc, char* argv[])
 				last_eye_frame[emu_frame.stereo_eye] = Clock::now();
 			if (gun_mode)
 				gun_light.Process(emu_frame);
+		}
+
+		// The next frame's copies, done by the GS at the end of its present (ScreenLayer::Arm).
+		// $PS2V_NO_PRESENT_COPY keeps them here instead, for a measurement.
+		static const bool present_copy = !std::getenv("PS2V_NO_PRESENT_COPY");
+		if (present_copy)
+		{
+			screen.Arm(0);
+			if (vr.stereo)
+				screen_right.Arm(1);
 		}
 
 		const Clock::time_point t_emu_done = Clock::now();
@@ -1100,6 +1118,35 @@ int main(int argc, char* argv[])
 								   "render {:.1f}, end {:.1f} ms){}",
 					period, ms(t_start, t_begun), ms(t_begun, t_input_done), ms(t_input_done, t_emu_done),
 					ms(t_emu_done, t_rendered), ms(t_rendered, t_end), ui_open_last ? ", menu open" : "");
+			}
+		}
+		// Pacing, every 10 s: the display slots this app's frames skipped (the compositor showed an old
+		// frame again there), and what was on, to tell which feature costs the compositor its slot.
+		{
+			static XrTime last_display = 0;
+			static int pacing_frames = 0, pacing_missed = 0, pacing_worst = 0, pacing_max_layers = 0;
+			static Clock::time_point next_pacing_log = Clock::now() + std::chrono::seconds(10);
+			if (last_display != 0 && frame.display_period > 0 && frame.display_time > last_display)
+			{
+				const int slots_moved = static_cast<int>(
+					(frame.display_time - last_display + frame.display_period / 2) / frame.display_period);
+				pacing_missed += std::max(slots_moved - 1, 0);
+				pacing_worst = std::max(pacing_worst, slots_moved - 1);
+			}
+			last_display = frame.display_time;
+			pacing_frames++;
+			pacing_max_layers = std::max(pacing_max_layers, static_cast<int>(layer_count));
+			if (Clock::now() >= next_pacing_log)
+			{
+				next_pacing_log = Clock::now() + std::chrono::seconds(10);
+				Console.WriteLnFmt("Pacing: {} frames, {} display slots missed ({:.1f}%), worst gap {}, up to {} layers, "
+								   "game frames copied by the GS {} / here {} | 3D {}, passthrough {}, gun {}, Wi-Fi {}, controllers {}{}",
+					pacing_frames, pacing_missed, 100.0f * pacing_missed / std::max(pacing_frames + pacing_missed, 1), pacing_worst,
+					pacing_max_layers, frames_copied_by_gs, frames_copied_here, vr.Mode3DName(), vr.passthrough ? "on" : "off",
+					gun_mode ? "on" : "off", vr.web_enabled ? "on" : "off", vr.show_controllers ? "on" : "off",
+					ui_open_last ? ", menu open" : "");
+				frames_copied_by_gs = frames_copied_here = 0;
+				pacing_frames = pacing_missed = pacing_worst = pacing_max_layers = 0;
 			}
 		}
 		if (static int frames_logged = 0; frame.should_render && frames_logged < 3)

@@ -59,6 +59,7 @@ public:
 	struct Frame
 	{
 		XrTime display_time = 0;
+		XrDuration display_period = 0; // the runtime's predicted time between two displayed frames
 		bool should_render = false;
 	};
 	Frame BeginFrame();

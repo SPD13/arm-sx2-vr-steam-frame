@@ -528,6 +528,7 @@ XrApp::Frame XrApp::BeginFrame()
 		xrBeginFrame(m_session, nullptr);
 	}
 	frame.display_time = state.predictedDisplayTime;
+	frame.display_period = state.predictedDisplayPeriod;
 	frame.should_render = state.shouldRender;
 	return frame;
 }

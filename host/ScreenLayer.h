@@ -24,6 +24,15 @@ public:
 	// Copies a newly published emulator frame into the swapchain.
 	void Update(const VKLibretro::Frame& frame);
 
+	// The present copy (VKLibretro::ArmPresentCopy): rather than copying each frame here, behind
+	// whatever the GS queued since, the next image is acquired ahead and handed to the GS, which
+	// copies the frame into it at the end of its present. Arm acquires and hands over an image for
+	// the eye (0 left, 1 right) once the swapchain fits the frames; ReleaseArmed releases it when
+	// the consumed frame was copied into it (its Frame::copied_left/right id) and returns whether it
+	// was. Otherwise Update copies the frame into that same image.
+	void Arm(int eye);
+	bool ReleaseArmed(uint64_t copied_id);
+
 	bool HasImage() const { return m_has_image; }
 
 	// Screen placement in LOCAL space; the quad faces +Z of the pose.
@@ -48,6 +57,16 @@ private:
 	std::vector<XrSwapchainImageVulkanKHR> m_images;
 	uint32_t m_width_px = 0, m_height_px = 0;
 	bool m_has_image = false;
+
+	// The present copy's image: acquired (m_armed), and handed to the GS for m_armed_eye.
+	bool AcquireArmed();
+	void DisarmGiven();
+	bool m_armed = false;
+	bool m_armed_given = false;
+	int m_armed_eye = 0;
+	uint32_t m_armed_index = 0;
+	uint64_t m_armed_id = 0;
+	static inline uint64_t s_next_armed_id = 1;
 
 	static constexpr size_t NUM_CMD = 3;
 	VkCommandPool m_pool = VK_NULL_HANDLE;

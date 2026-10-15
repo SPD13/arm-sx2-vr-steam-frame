@@ -123,10 +123,72 @@ bool ScreenLayer::CreateSwapchain(uint32_t width, uint32_t height)
 	return true;
 }
 
+bool ScreenLayer::AcquireArmed()
+{
+	uint32_t index = 0;
+	{
+		std::lock_guard lock(GraphicsQueueMutex());
+		if (XR_FAILED(xrAcquireSwapchainImage(m_swapchain, nullptr, &index)))
+			return false;
+	}
+	XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+	wait.timeout = XR_INFINITE_DURATION;
+	if (XR_FAILED(xrWaitSwapchainImage(m_swapchain, &wait)))
+		return false; // still acquired: released with the next Update or with the swapchain
+	m_armed = true;
+	m_armed_given = false;
+	m_armed_index = index;
+	m_armed_id = s_next_armed_id++;
+	return true;
+}
+
+void ScreenLayer::DisarmGiven()
+{
+	if (!m_armed_given)
+		return;
+	VKLibretro::DisarmPresentCopy(m_armed_eye);
+	m_armed_given = false;
+}
+
+void ScreenLayer::Arm(int eye)
+{
+	if (!m_swapchain || (!m_armed && !AcquireArmed()))
+		return;
+	if (m_armed_given && m_armed_eye == eye)
+		return;
+	DisarmGiven();
+	VKLibretro::PresentCopyTarget target;
+	target.image = m_images[m_armed_index].image;
+	target.width = m_width_px;
+	target.height = m_height_px;
+	target.id = m_armed_id;
+	VKLibretro::ArmPresentCopy(eye, target);
+	m_armed_given = true;
+	m_armed_eye = eye;
+}
+
+bool ScreenLayer::ReleaseArmed(uint64_t copied_id)
+{
+	if (!m_armed || copied_id == 0 || copied_id != m_armed_id)
+		return false;
+	// The GS submitted the copy before publishing the frame, and took the target off the eye.
+	m_armed = false;
+	m_armed_given = false;
+	XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+	{
+		std::lock_guard lock(GraphicsQueueMutex());
+		xrReleaseSwapchainImage(m_swapchain, &release);
+	}
+	m_has_image = true;
+	return true;
+}
+
 void ScreenLayer::DestroySwapchain()
 {
 	if (!m_swapchain)
 		return;
+	DisarmGiven();
+	m_armed = false;
 	std::lock_guard lock(GraphicsQueueMutex());
 	vkQueueWaitIdle(m_queue);
 	xrDestroySwapchain(m_swapchain);
@@ -146,16 +208,13 @@ void ScreenLayer::Update(const VKLibretro::Frame& frame)
 			return;
 	}
 
-	uint32_t index = 0;
-	XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-	wait.timeout = XR_INFINITE_DURATION;
-	{
-		std::lock_guard lock(GraphicsQueueMutex());
-		if (XR_FAILED(xrAcquireSwapchainImage(m_swapchain, nullptr, &index)))
-			return;
-	}
-	if (XR_FAILED(xrWaitSwapchainImage(m_swapchain, &wait)))
+	// The image acquired for the present copy, if the GS did not copy into it; taken back first if
+	// it was handed over, so the GS cannot write it after it is released below.
+	DisarmGiven();
+	if (!m_armed && !AcquireArmed())
 		return;
+	const uint32_t index = m_armed_index;
+	m_armed = false;
 
 	const size_t slot = m_cmd_index;
 	m_cmd_index = (m_cmd_index + 1) % NUM_CMD;
