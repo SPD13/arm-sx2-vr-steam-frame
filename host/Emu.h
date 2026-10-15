@@ -112,6 +112,8 @@ namespace Emu
 	void RefreshSaveSlots();
 	std::vector<SaveSlot> GetSaveSlots(); // NUM_SAVE_SLOTS entries, slot 1 first
 	void SaveState(int slot);
+	// Debugging: saves a state to <data>/debug/<name> (the headless test harness loads those).
+	void SaveDebugState(const std::string& name);
 	void LoadState(int slot);
 	void ResetGame();
 	// A short message for the user about the last of those, once; empty when there is none.

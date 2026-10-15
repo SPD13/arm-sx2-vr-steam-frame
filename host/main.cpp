@@ -1160,6 +1160,15 @@ int main(int argc, char* argv[])
 						light.lit_share * 100.0f, light.brightest);
 				}
 				frames_copied_by_gs = frames_copied_here = 0;
+				// The first stretch at half rate (or worse) in a game: a state of that scene, to replay it
+				// headless (--load-state debug/state-stutter.p2s).
+				static bool stutter_state_saved = false;
+				if (!stutter_state_saved && pacing_frames < 600 && !Emu::GetSerial().empty() && !ui_open_last)
+				{
+					stutter_state_saved = true;
+					Emu::SaveDebugState("state-stutter.p2s");
+					Console.WriteLn("Pacing: frames came at half rate; saving debug/state-stutter.p2s");
+				}
 				pacing_frames = pacing_missed = pacing_worst = pacing_max_layers = 0;
 			}
 		}

@@ -164,10 +164,21 @@ static void HandleSignal(int)
 // a snapshot of the presented frame to <data>/debug/snapNNN.png.
 static std::atomic<int> s_debug_request{0};
 static std::string s_debug_dir;
+static std::mutex s_debug_state_mutex;
+static std::string s_debug_state_name = "state.p2s"; // what the next save request writes
 
 static void HandleDebugSignal(int sig)
 {
 	s_debug_request.store(sig == SIGUSR1 ? 1 : 2, std::memory_order_release);
+}
+
+void Emu::SaveDebugState(const std::string& name)
+{
+	{
+		std::lock_guard lock(s_debug_state_mutex);
+		s_debug_state_name = name;
+	}
+	s_debug_request.store(1, std::memory_order_release);
 }
 
 static void ServiceDebugRequest()
@@ -178,7 +189,12 @@ static void ServiceDebugRequest()
 	FileSystem::EnsureDirectoryExists(s_debug_dir.c_str(), true);
 	if (request == 1)
 	{
-		const std::string path = Path::Combine(s_debug_dir, "state.p2s");
+		std::string name;
+		{
+			std::lock_guard lock(s_debug_state_mutex);
+			name = std::exchange(s_debug_state_name, "state.p2s");
+		}
+		const std::string path = Path::Combine(s_debug_dir, name);
 		VMManager::SaveState(path.c_str(), false, false, [](const std::string& error) {
 			Console.ErrorFmt("Debug: save state failed: {}", error);
 		});
