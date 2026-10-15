@@ -38,6 +38,6 @@ The installer's log is in the user cache folder, under `armsx2-frame-installer/i
 1. Commit, push `main` and the ARMSX2 submodule's `ps2v` branch: `SOURCE.md` names both commits, as the GPL requires.
 2. Run `tools/steam-frame/make-release.sh` and `tools/steam-frame/make-installer.sh`.
 3. Test before publishing: run the installer with `--archive build/release/armsx2-steam-frame-<version>.tar.gz`, which installs that file instead of the latest release. `--gameid` installs under another id; `--browser` opens the page in the browser.
-4. Create a GitHub release on `SPD13/ps2-volumetric`. Attach the `.tar.gz` and the four installer files. The installer always takes the latest release's `armsx2-steam-frame-*.tar.gz` and checks it against GitHub's SHA-256 digest.
+4. Create a GitHub release on `SPD13/arm-sx2-vr-steam-frame`. Attach the `.tar.gz` and the four installer files. The installer always takes the latest release's `armsx2-steam-frame-*.tar.gz` and checks it against GitHub's SHA-256 digest.
 
-The installer downloads without signing in to GitHub, so `SPD13/ps2-volumetric` must be public before players can use it. Until then, only `--archive` installs work.
+The installer downloads without signing in to GitHub, so `SPD13/arm-sx2-vr-steam-frame` must be public before players can use it. Until then, only `--archive` installs work.

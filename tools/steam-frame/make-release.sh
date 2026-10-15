@@ -6,7 +6,7 @@
 # Usage: tools/steam-frame/make-release.sh [version]      (default: <date>-<short commit>)
 # Output: build/release/armsx2-steam-frame-<version>.tar.gz, unpacking to a folder of that name (see stage-release.sh)
 #
-# Attach it to a GitHub release of SPD13/ps2-volumetric with the installer app's files: the installer picks the latest release's
+# Attach it to a GitHub release of SPD13/arm-sx2-vr-steam-frame with the installer app's files: the installer picks the latest release's
 # armsx2-steam-frame-*.tar.gz. Check a release before publishing it with the installer's --archive option.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/frame-common.sh"
@@ -35,7 +35,7 @@ cat > "$out/SOURCE.md" <<EOT
 
 ARMSX2 - Steam Frame Edition $version was built from:
 
-- https://github.com/SPD13/ps2-volumetric, commit \`$commit\`: the VR app (\`host/\`), the build script
+- https://github.com/SPD13/arm-sx2-vr-steam-frame, commit \`$commit\`: the VR app (\`host/\`), the build script
   (\`tools/build-frame.sh\`) and these install scripts (\`tools/steam-frame/\`)
 - https://github.com/SPD13/armsx2-steam-frame, branch \`ps2v\`, commit \`$core_commit\`: ARMSX2 with the patches the
   app needs, a fork of https://github.com/ARMSX2/ARMSX2 (itself a fork of PCSX2)

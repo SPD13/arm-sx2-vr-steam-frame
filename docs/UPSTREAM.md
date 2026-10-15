@@ -16,7 +16,7 @@ Three rules make that work:
 
 | Where | Branch / tag | Role |
 |---|---|---|
-| `SPD13/ps2-volumetric` (private) | `main` | The host, tools, assets, docs and the submodule pin. Upstream never sees it. |
+| `SPD13/arm-sx2-vr-steam-frame` | `main` | The host, tools, assets, docs and the submodule pin. Upstream never sees it. |
 | `SPD13/armsx2-steam-frame` (public fork) | `master` | An exact mirror of `upstream/master`. Never commit to it. |
 | | `ps2v` | The product: upstream plus our patches. Only fast-forwards and merges; no force-push. |
 | | feature branches (`lightgun`, …) | Branched from `ps2v` and merged back into it. Use the same name as the matching branch in this repo. |

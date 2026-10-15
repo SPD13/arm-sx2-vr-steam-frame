@@ -23,7 +23,7 @@ This document covers:
 7. the debug tools left in the code;
 8. open follow-ups.
 
-Repos: `SPD13/armsx2-steam-frame` branch `ps2v` (the GS changes) and `SPD13/ps2-volumetric` (host, tools, this document).
+Repos: `SPD13/armsx2-steam-frame` branch `ps2v` (the GS changes) and `SPD13/arm-sx2-vr-steam-frame` (host, tools, this document).
 
 ## 1. What was built
 

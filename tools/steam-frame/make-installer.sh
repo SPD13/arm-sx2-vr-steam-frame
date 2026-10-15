@@ -2,7 +2,7 @@
 # Builds the installer app (installer/, in Go) for Windows, macOS and Linux, for the GitHub release beside the game archive
 # (make-release.sh). The app downloads the latest release's .tar.gz itself, so the same build serves later releases: attach
 # these files to each new release (their names stay the same, so
-# https://github.com/SPD13/ps2-volumetric/releases/latest/download/<name> always gives the newest).
+# https://github.com/SPD13/arm-sx2-vr-steam-frame/releases/latest/download/<name> always gives the newest).
 #
 # Usage: tools/steam-frame/make-installer.sh [version]      (default: <date>-<short commit>)
 # Output: build/installer/

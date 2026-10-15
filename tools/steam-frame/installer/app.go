@@ -28,8 +28,8 @@ import (
 
 const (
 	// The releases of the main project, which must be public for anonymous downloads (--archive works without)
-	projectURL   = "https://github.com/SPD13/ps2-volumetric"
-	releaseAPI   = "https://api.github.com/repos/SPD13/ps2-volumetric/releases/latest"
+	projectURL   = "https://github.com/SPD13/arm-sx2-vr-steam-frame"
+	releaseAPI   = "https://api.github.com/repos/SPD13/arm-sx2-vr-steam-frame/releases/latest"
 	libraryName  = "ARMSX2 - Steam Frame Edition"
 	defaultUser  = "steamos"
 	defaultHost  = "frame.local"
