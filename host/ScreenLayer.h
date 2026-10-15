@@ -30,8 +30,15 @@ public:
 	// the eye (0 left, 1 right) once the swapchain fits the frames; ReleaseArmed releases it when
 	// the consumed frame was copied into it (its Frame::copied_left/right id) and returns whether it
 	// was. Otherwise Update copies the frame into that same image.
-	void Arm(int eye);
+	// readable: the GS leaves the image for sampling (ArmedView, SHADER_READ_ONLY_OPTIMAL), which
+	// ReleaseArmed then moves to the layout the runtime takes it in.
+	void Arm(int eye, bool readable = false);
 	bool ReleaseArmed(uint64_t copied_id);
+	// The armed image, while it is: its id, an RGBA8 UNORM view of it (null when the swapchain is not
+	// mutable-format), and whether the GS was asked to leave it readable.
+	uint64_t ArmedId() const { return m_armed ? m_armed_id : 0; }
+	VkImageView ArmedView() const { return m_armed && m_armed_index < m_views.size() ? m_views[m_armed_index] : VK_NULL_HANDLE; }
+	bool ArmedReadable() const { return m_armed && m_armed_readable; }
 
 	bool HasImage() const { return m_has_image; }
 
@@ -55,6 +62,10 @@ private:
 
 	XrSwapchain m_swapchain = XR_NULL_HANDLE;
 	std::vector<XrSwapchainImageVulkanKHR> m_images;
+	// Mutable-format swapchain: the GS draws straight into its images through RGBA8 UNORM views
+	// (it writes sRGB-encoded values), and these views of our own let the light gun sensor read them.
+	bool m_mutable = false;
+	std::vector<VkImageView> m_views;
 	uint32_t m_width_px = 0, m_height_px = 0;
 	bool m_has_image = false;
 
@@ -63,6 +74,7 @@ private:
 	void DisarmGiven();
 	bool m_armed = false;
 	bool m_armed_given = false;
+	bool m_armed_readable = false;
 	int m_armed_eye = 0;
 	uint32_t m_armed_index = 0;
 	uint64_t m_armed_id = 0;

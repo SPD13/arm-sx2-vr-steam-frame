@@ -992,10 +992,20 @@ int main(int argc, char* argv[])
 						at(1.0f), near, vr.stereo_convergence, emu_frame.depth_scale);
 				}
 			}
+			// The light gun's sensor reads the picture. Drawn straight into the screen's armed image
+			// (no view of its own in the frame), it is read there, before that image is released.
+			if (gun_mode)
+			{
+				VKLibretro::Frame light_frame = emu_frame;
+				if (!light_frame.view && emu_frame.copied_left && emu_frame.copied_left == screen.ArmedId() &&
+					screen.ArmedReadable())
+					light_frame.view = screen.ArmedView();
+				gun_light.Process(light_frame);
+			}
 			if (emu_frame.right_image)
 			{
-				// Multiview: both eyes in one frame, copied by the GS into the images armed below, or
-				// here when it did not. Flat mode shows the left picture to both eyes.
+				// Multiview: both eyes in one frame, drawn or copied by the GS into the images armed
+				// below, or copied here when it did not. Flat mode shows the left picture to both eyes.
 				const bool left_copied = screen.ReleaseArmed(emu_frame.copied_left);
 				if (!left_copied)
 					screen.Update(emu_frame);
@@ -1011,12 +1021,10 @@ int main(int argc, char* argv[])
 			}
 			else if (emu_frame.stereo_eye == 1)
 				screen_right.Update(emu_frame);
-			else
+			else if (!screen.ReleaseArmed(emu_frame.copied_left))
 				screen.Update(emu_frame);
 			if (emu_frame.stereo_eye >= 0)
 				last_eye_frame[emu_frame.stereo_eye] = Clock::now();
-			if (gun_mode)
-				gun_light.Process(emu_frame);
 		}
 
 		// The next frame's copies, done by the GS at the end of its present (ScreenLayer::Arm).
@@ -1024,7 +1032,7 @@ int main(int argc, char* argv[])
 		static const bool present_copy = !std::getenv("PS2V_NO_PRESENT_COPY");
 		if (present_copy)
 		{
-			screen.Arm(0);
+			screen.Arm(0, gun_mode); // readable for the light gun's sensor
 			if (vr.stereo)
 				screen_right.Arm(1);
 		}
@@ -1145,6 +1153,12 @@ int main(int argc, char* argv[])
 					pacing_max_layers, frames_copied_by_gs, frames_copied_here, vr.Mode3DName(), vr.passthrough ? "on" : "off",
 					gun_mode ? "on" : "off", vr.web_enabled ? "on" : "off", vr.show_controllers ? "on" : "off",
 					ui_open_last ? ", menu open" : "");
+				if (gun_mode)
+				{
+					const GunLight::Reading& light = gun_light.Latest();
+					Console.WriteLnFmt("Pacing: light sensor {}, {:.1f}% lit, brightest {:.2f}", light.valid ? "reading" : "no reading",
+						light.lit_share * 100.0f, light.brightest);
+				}
 				frames_copied_by_gs = frames_copied_here = 0;
 				pacing_frames = pacing_missed = pacing_worst = pacing_max_layers = 0;
 			}

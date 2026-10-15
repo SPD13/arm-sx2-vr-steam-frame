@@ -93,8 +93,8 @@ void ScreenLayer::Destroy()
 bool ScreenLayer::CreateSwapchain(uint32_t width, uint32_t height)
 {
 	XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-	info.usageFlags =
-		XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+	info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT |
+					  XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
 	info.format = m_format;
 	info.sampleCount = 1;
 	info.width = width;
@@ -104,11 +104,17 @@ bool ScreenLayer::CreateSwapchain(uint32_t width, uint32_t height)
 	info.mipCount = 1;
 	{
 		std::lock_guard lock(GraphicsQueueMutex());
-		if (XR_FAILED(xrCreateSwapchain(m_xr->Session(), &info, &m_swapchain)))
+		m_mutable = XR_SUCCEEDED(xrCreateSwapchain(m_xr->Session(), &info, &m_swapchain));
+		if (!m_mutable)
 		{
-			Console.ErrorFmt("XR: xrCreateSwapchain {}x{} failed", width, height);
-			m_swapchain = XR_NULL_HANDLE;
-			return false;
+			// Without a mutable format the GS only copies into the images.
+			info.usageFlags &= ~XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
+			if (XR_FAILED(xrCreateSwapchain(m_xr->Session(), &info, &m_swapchain)))
+			{
+				Console.ErrorFmt("XR: xrCreateSwapchain {}x{} failed", width, height);
+				m_swapchain = XR_NULL_HANDLE;
+				return false;
+			}
 		}
 	}
 	uint32_t count = 0;
@@ -119,7 +125,23 @@ bool ScreenLayer::CreateSwapchain(uint32_t width, uint32_t height)
 	m_width_px = width;
 	m_height_px = height;
 	m_has_image = false;
-	Console.WriteLnFmt("XR: screen swapchain {}x{} ({} images)", width, height, count);
+	m_views.clear();
+	if (m_mutable)
+	{
+		for (const XrSwapchainImageVulkanKHR& image : m_images)
+		{
+			VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+			view_info.image = image.image;
+			view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+			view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+			VkImageView view = VK_NULL_HANDLE;
+			vkCreateImageView(m_device, &view_info, nullptr, &view);
+			m_views.push_back(view);
+		}
+	}
+	Console.WriteLnFmt("XR: screen swapchain {}x{} ({} images, {})", width, height, count,
+		m_mutable ? "the GS draws into them" : "copied into");
 	return true;
 }
 
@@ -150,11 +172,11 @@ void ScreenLayer::DisarmGiven()
 	m_armed_given = false;
 }
 
-void ScreenLayer::Arm(int eye)
+void ScreenLayer::Arm(int eye, bool readable)
 {
 	if (!m_swapchain || (!m_armed && !AcquireArmed()))
 		return;
-	if (m_armed_given && m_armed_eye == eye)
+	if (m_armed_given && m_armed_eye == eye && m_armed_readable == readable)
 		return;
 	DisarmGiven();
 	VKLibretro::PresentCopyTarget target;
@@ -162,8 +184,11 @@ void ScreenLayer::Arm(int eye)
 	target.width = m_width_px;
 	target.height = m_height_px;
 	target.id = m_armed_id;
+	target.readable = readable;
+	target.drawable = m_mutable;
 	VKLibretro::ArmPresentCopy(eye, target);
 	m_armed_given = true;
+	m_armed_readable = readable;
 	m_armed_eye = eye;
 }
 
@@ -171,12 +196,46 @@ bool ScreenLayer::ReleaseArmed(uint64_t copied_id)
 {
 	if (!m_armed || copied_id == 0 || copied_id != m_armed_id)
 		return false;
-	// The GS submitted the copy before publishing the frame, and took the target off the eye.
+	// The GS submitted its work on the image before publishing the frame, and took the target off
+	// the eye. A readable one goes back to the layout the runtime takes, after anything that sampled
+	// it on this queue.
 	m_armed = false;
 	m_armed_given = false;
+	VkCommandBuffer cmd = VK_NULL_HANDLE;
+	size_t slot = 0;
+	if (m_armed_readable)
+	{
+		slot = m_cmd_index;
+		m_cmd_index = (m_cmd_index + 1) % NUM_CMD;
+		vkWaitForFences(m_device, 1, &m_fences[slot], VK_TRUE, UINT64_MAX);
+		vkResetFences(m_device, 1, &m_fences[slot]);
+		cmd = m_cmd[slot];
+		vkResetCommandBuffer(cmd, 0);
+		VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkBeginCommandBuffer(cmd, &begin);
+		VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+		b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		b.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+		b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		b.image = m_images[m_armed_index].image;
+		b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+		vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+			0, nullptr, 1, &b);
+		vkEndCommandBuffer(cmd);
+	}
 	XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
 	{
 		std::lock_guard lock(GraphicsQueueMutex());
+		if (cmd)
+		{
+			VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+			submit.commandBufferCount = 1;
+			submit.pCommandBuffers = &cmd;
+			vkQueueSubmit(m_queue, 1, &submit, m_fences[slot]);
+		}
 		xrReleaseSwapchainImage(m_swapchain, &release);
 	}
 	m_has_image = true;
@@ -191,6 +250,12 @@ void ScreenLayer::DestroySwapchain()
 	m_armed = false;
 	std::lock_guard lock(GraphicsQueueMutex());
 	vkQueueWaitIdle(m_queue);
+	for (VkImageView view : m_views)
+	{
+		if (view)
+			vkDestroyImageView(m_device, view, nullptr);
+	}
+	m_views.clear();
 	xrDestroySwapchain(m_swapchain);
 	m_swapchain = XR_NULL_HANDLE;
 	m_images.clear();
