@@ -487,6 +487,18 @@ void SettingsMenu::RunGraphics()
 		core.texture_filtering = filter_values[static_cast<size_t>(filter)];
 		SetCore(core);
 	}
+
+	// AccBlendLevel 0..3; Full and Maximum cost far too much here.
+	static constexpr std::array<std::string_view, 4> blendings = {"Minimum", "Basic", "Medium", "High"};
+	int blending = std::clamp(core.blending, 0, 3);
+	if (m_gui.Segmented(GuiId("blending"),
+			Row("Blending accuracy", "How exactly see-through effects are drawn. Higher levels draw some effects "
+									 "piece by piece, which can make busy scenes stutter."),
+			blendings, &blending))
+	{
+		core.blending = blending;
+		SetCore(core);
+	}
 }
 
 void SettingsMenu::RunTextures()

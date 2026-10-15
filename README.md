@@ -107,6 +107,7 @@ The emulator always draws both eyes (multiview); Flat gives them no parallax and
 |---|---|---|
 | Internal resolution | Native · 2x · 3x · 4x | `PCSX2.ini`, `[EmuCore/GS] upscale_multiplier` |
 | Texture filtering | Nearest · PS2 · Smooth | `PCSX2.ini`, `[EmuCore/GS] filter` (0, 2, 1) |
+| Blending accuracy | Minimum · Basic · Medium · High | `PCSX2.ini`, `[EmuCore/GS] accurate_blending_unit` (0 – 3). Minimum by default: higher levels draw some effects piece by piece, which made Time Crisis II's gunfights stutter |
 
 Both apply while the game runs. Settings that only one renderer supports, or that could break the stereo rendering (renderer choice, aspect ratio, widescreen patches, deinterlacing), are left out on purpose.
 

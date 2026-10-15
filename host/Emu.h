@@ -88,6 +88,7 @@ namespace Emu
 	{
 		int upscale = 1; // internal resolution multiplier
 		int texture_filtering = 2; // BiFiltering: 0 nearest, 1 bilinear forced, 2 bilinear as the PS2 asks
+		int blending = 0; // AccBlendLevel: 0 minimum, 1 basic, 2 medium, 3 high (4 full, 5 maximum)
 		int volume = 100; // percent
 		bool muted = false;
 		// Texture packs (LoadTextureReplacements, LoadTextureReplacementsAsync, PrecacheTextureReplacements).

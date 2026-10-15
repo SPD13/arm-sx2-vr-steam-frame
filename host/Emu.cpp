@@ -270,6 +270,10 @@ bool Emu::InitializeConfig(const Options& options)
 	{
 		Console.WriteLnFmt("Initialising fresh config at {}.", ini_path);
 		VMManager::SetDefaultSettings(*s_base_settings, true, true, true, true, true);
+		// Minimum blending accuracy: at Basic, effects that read the framebuffer are split into a draw
+		// and a barrier per primitive, and with the per-eye render passes Time Crisis II's gunfights
+		// overloaded the Frame's GPU (SteamVR then halves the frame rate). Settings > Graphics.
+		s_base_settings->SetIntValue("EmuCore/GS", "accurate_blending_unit", static_cast<int>(AccBlendLevel::Minimum));
 	}
 
 	const std::string secrets_path = Path::Combine(EmuFolders::Settings, "secrets.ini");
@@ -576,6 +580,8 @@ Emu::CoreSettings Emu::GetCoreSettings()
 		return settings;
 	settings.upscale = static_cast<int>(s_base_settings->GetFloatValue("EmuCore/GS", "upscale_multiplier", 1.0f));
 	settings.texture_filtering = s_base_settings->GetIntValue("EmuCore/GS", "filter", static_cast<int>(BiFiltering::PS2));
+	settings.blending =
+		s_base_settings->GetIntValue("EmuCore/GS", "accurate_blending_unit", static_cast<int>(AccBlendLevel::Minimum));
 	settings.volume = static_cast<int>(s_base_settings->GetUIntValue("SPU2/Output", "StandardVolume", 100));
 	settings.muted = s_base_settings->GetBoolValue("SPU2/Output", "OutputMuted", false);
 	settings.texture_packs = s_base_settings->GetBoolValue("EmuCore/GS", "LoadTextureReplacements", false);
@@ -592,6 +598,7 @@ void Emu::SetCoreSettings(const CoreSettings& settings)
 			return;
 		s_base_settings->SetFloatValue("EmuCore/GS", "upscale_multiplier", static_cast<float>(settings.upscale));
 		s_base_settings->SetIntValue("EmuCore/GS", "filter", settings.texture_filtering);
+		s_base_settings->SetIntValue("EmuCore/GS", "accurate_blending_unit", settings.blending);
 		s_base_settings->SetUIntValue("SPU2/Output", "StandardVolume", static_cast<u32>(settings.volume));
 		s_base_settings->SetBoolValue("SPU2/Output", "OutputMuted", settings.muted);
 		s_base_settings->SetBoolValue("EmuCore/GS", "LoadTextureReplacements", settings.texture_packs);
