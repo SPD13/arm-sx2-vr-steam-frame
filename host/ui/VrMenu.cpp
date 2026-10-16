@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string_view>
 
 namespace
@@ -52,6 +53,11 @@ namespace
 	constexpr float MESSAGE_GAP_PX = 8.0f; // between two messages
 	constexpr float METERS_PER_PX = BUTTON_SIZE / static_cast<float>(BUTTON_PX);
 	constexpr int ATLAS_GUTTER_PX = 2; // transparent, between the atlas's parts: filtering does not bleed across
+	// The sheet's image at most this wide and high: the pieces are scaled down to fit a large screen's
+	// surroundings (on the default 2.4 m screen to 1.26 mm per pixel, about 30 px per degree at 2.2 m).
+	constexpr int SHEET_PX = 2048;
+	// The beam, the dot and the pad at the top of the atlas and of the sheet's image alike; the rest below.
+	constexpr int STRIP_PX = 64 + ATLAS_GUTTER_PX;
 	constexpr float BUTTON_GROUP_GAP = 0.05f; // more between the menu buttons and the light gun's
 	constexpr uint32_t GEAR_ICON = 0xf013;
 	constexpr uint32_t GAMES_ICON = 0xf11b; // gamepad
@@ -100,6 +106,18 @@ namespace
 			para = para_end + 1;
 		}
 		return lines;
+	}
+
+	// A sheet piece's pose: its centre, meters right of and above the screen's centre.
+	XrPosef OnScreen(float x, float y)
+	{
+		return {{0.0f, 0.0f, 0.0f, 1.0f}, {x, y, 0.0f}};
+	}
+
+	// The panel's width for a screen this wide: readable on a small one, not huge on a big one.
+	float PanelWidth(float screen_width)
+	{
+		return std::clamp(0.8f * screen_width, 1.4f, 2.4f);
 	}
 
 	// The 3D button's icon for VrSettings::Mode3D.
@@ -153,34 +171,34 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 		button.offset = slot_of[b] * spacing + (b == GUN_MODE || b == GUNS ? BUTTON_GROUP_GAP : 0.0f);
 		m_groups[button.group].height = std::max(m_groups[button.group].height, button.offset + BUTTON_SIZE);
 	}
-	// The atlas: the button groups side by side; right of them the tooltip, the Wi-Fi line and the
-	// notice one above the other, then the beam, the dot and the pad; the messages below all of it.
+	// The atlas: the beam, the dot and the pad along the top (where the sheet's image has them too);
+	// below them the button groups side by side; right of them the tooltip, the Wi-Fi line and the
+	// notice one above the other; the messages below all of it.
 	const auto place = [](OverlayLayer::Part& part, int x, int y, int w, int h) {
 		part.rect = {{x, y}, {w, h}};
 		part.size = {w * METERS_PER_PX, h * METERS_PER_PX};
 		return y + h + ATLAS_GUTTER_PX; // the next part's y below it
 	};
+	static_assert(CURSOR_PX + ATLAS_GUTTER_PX <= STRIP_PX && BEAM_H_PX <= CURSOR_PX, "the strip holds the beam and the dot");
+	place(m_beam, 0, 0, BEAM_W_PX, BEAM_H_PX);
+	place(m_cursor, BEAM_W_PX + ATLAS_GUTTER_PX, 0, CURSOR_PX, CURSOR_PX);
+	place(m_pad, BEAM_W_PX + CURSOR_PX + 2 * ATLAS_GUTTER_PX, 0, 4, 4);
 	int x = 0, groups_bottom = 0;
 	for (ButtonGroup& group : m_groups)
 	{
 		const int px = static_cast<int>(std::lround(group.height / METERS_PER_PX));
-		groups_bottom = std::max(groups_bottom, place(group.part, x, 0, BUTTON_PX, px));
+		groups_bottom = std::max(groups_bottom, place(group.part, x, STRIP_PX, BUTTON_PX, px));
 		group.canvas.Resize(BUTTON_PX, px);
 		x += BUTTON_PX + ATLAS_GUTTER_PX;
 	}
-	int y = place(m_tooltip, x, 0, TOOLTIP_W_PX, TOOLTIP_H_PX);
-	const int below_y = y;
+	const int below_y = place(m_tooltip, x, STRIP_PX, TOOLTIP_W_PX, TOOLTIP_H_PX);
 	place(m_web_line, x, below_y, TOOLTIP_W_PX, WEB_LINE_H_PX);
-	y = place(m_notice, x, below_y + WEB_LINE_H_PX + NOTICE_GAP_PX, TOOLTIP_W_PX, TOOLTIP_H_PX);
-	place(m_below, x, below_y, TOOLTIP_W_PX, WEB_LINE_H_PX + NOTICE_GAP_PX + TOOLTIP_H_PX);
-	place(m_beam, x, y, BEAM_W_PX, BEAM_H_PX);
-	place(m_cursor, x + BEAM_W_PX + ATLAS_GUTTER_PX, y, CURSOR_PX, CURSOR_PX);
-	y = place(m_pad, x + BEAM_W_PX + CURSOR_PX + 2 * ATLAS_GUTTER_PX, y, 4, 4) - 4 + CURSOR_PX;
+	const int y = place(m_notice, x, below_y + WEB_LINE_H_PX + NOTICE_GAP_PX, TOOLTIP_W_PX, TOOLTIP_H_PX);
 	const int messages_y = std::max(groups_bottom, y);
 	place(m_messages, 0, messages_y, MESSAGES_W_PX, MESSAGES_H_PX);
 	const int atlas_w = std::max(x + TOOLTIP_W_PX, MESSAGES_W_PX), atlas_h = messages_y + MESSAGES_H_PX;
 	if (!m_panel.Create(xr, device, gpu, queue, queue_family_index, SettingsMenu::WIDTH, SettingsMenu::HEIGHT) ||
-		!m_atlas.Create(xr, device, gpu, queue, queue_family_index, atlas_w, atlas_h))
+		!m_sheet.Create(xr, device, gpu, queue, queue_family_index, SHEET_PX, STRIP_PX + SHEET_PX))
 	{
 		Destroy();
 		return false;
@@ -234,9 +252,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_created = true;
 	for (int g = 0; g < NUM_GROUPS; g++)
 		DrawGroup(g);
-	// Uploaded now, so the pad is there from the first frame.
-	m_atlas.Upload(m_atlas_canvas);
-	m_atlas_dirty = false;
+	// Composed now, so the pad is there from the first frame.
+	ComposeSheet();
 	return true;
 }
 
@@ -250,7 +267,9 @@ void VrMenu::Destroy()
 {
 	m_created = false;
 	m_show_tooltip = false;
-	m_atlas.Destroy();
+	m_sheet.Destroy();
+	m_sheet_blits.clear();
+	m_sheet_shown = false;
 	m_atlas_dirty = false;
 	m_web_line_text.clear();
 	m_messages_text.clear();
@@ -363,9 +382,7 @@ void VrMenu::ShowTooltip(int button, float button_x)
 		Put(m_tooltip, c);
 		m_tooltip_text = std::move(text);
 	}
-	m_tooltip.pose = m_screen;
-	m_tooltip.pose.position = Transform(m_screen,
-		{button_x + 0.5f * BUTTON_SIZE + TOOLTIP_GAP + 0.5f * m_tooltip.size.width, m_buttons[button].y, 0.0f});
+	m_tooltip.pose = OnScreen(button_x + 0.5f * BUTTON_SIZE + TOOLTIP_GAP + 0.5f * m_tooltip.size.width, m_buttons[button].y);
 }
 
 void VrMenu::UpdateModeButton()
@@ -441,8 +458,7 @@ void VrMenu::UpdateWebLine()
 		}
 	}
 	m_web_line_y = -0.5f * m_screen_height - TOOLTIP_GAP - 0.5f * WEB_LINE_H_PX * METERS_PER_PX;
-	m_web_line.pose = m_screen;
-	m_web_line.pose.position = Transform(m_screen, {0.0f, m_web_line_y, 0.0f});
+	m_web_line.pose = OnScreen(0.0f, m_web_line_y);
 }
 
 void VrMenu::UpdateMessages()
@@ -491,9 +507,7 @@ void VrMenu::UpdateMessages()
 	float top = 0.5f * m_screen_height;
 	if (m_open != Panel::None)
 		top = std::max(top, 0.5f * m_panel.Size().height);
-	XrPosef pose = m_screen;
-	pose.position = Transform(m_screen, {0.0f, top + TOOLTIP_GAP + 0.5f * m_messages.size.height, 0.0f});
-	m_messages.pose = pose;
+	m_messages.pose = OnScreen(0.0f, top + TOOLTIP_GAP + 0.5f * m_messages.size.height);
 }
 
 void VrMenu::ShowNotice(std::string text, float seconds)
@@ -561,9 +575,8 @@ VrMenu::Hit VrMenu::HitPlane(const XrPosef& quad, const XrPosef& aim)
 
 void VrMenu::AnchorPanel()
 {
-	// Sized from the screen, but readable on a small one and not huge on a big one. It stays put
-	// while open, so a slider that resizes or moves the screen does not move it under the pointer.
-	const float width = std::clamp(0.8f * m_screen_width, 1.4f, 2.4f);
+	// Sized from the screen (PanelWidth). It stays put while open, so a slider that resizes or moves the screen does not move it under the pointer.
+	const float width = PanelWidth(m_screen_width);
 	XrPosef pose = m_screen;
 	pose.position = Transform(m_screen, {0.0f, 0.0f, PANEL_LIFT});
 	m_panel.SetPose(pose);
@@ -666,15 +679,11 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	m_screen_height = screen_height;
 	UpdateWebLine();
 	UpdateMessages();
-	// The notice below the screen, and below the Wi-Fi line when it shows: then both are one quad,
-	// from the Wi-Fi line's top.
+	// The notice below the screen, and below the Wi-Fi line when it shows.
 	const float web_line_top = m_web_line_y + 0.5f * m_web_line.size.height;
 	const float notice_top = m_web_line_text.empty() ? -0.5f * screen_height - TOOLTIP_GAP :
 	                                                   web_line_top - (WEB_LINE_H_PX + NOTICE_GAP_PX) * METERS_PER_PX;
-	m_notice.pose = screen;
-	m_notice.pose.position = Transform(screen, {0.0f, notice_top - 0.5f * m_notice.size.height, 0.0f});
-	m_below.pose = screen;
-	m_below.pose.position = Transform(screen, {0.0f, web_line_top - 0.5f * m_below.size.height, 0.0f});
+	m_notice.pose = OnScreen(0.0f, notice_top - 0.5f * m_notice.size.height);
 	m_pointers = pointers;
 
 	// A game from the list that would not start: back to the list, which says why.
@@ -973,61 +982,104 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	// The button groups, beside the screen (or the panel open now).
 	button_x = ButtonX();
 	for (ButtonGroup& group : m_groups)
-	{
-		XrPosef pose = screen;
-		pose.position = Transform(screen, {button_x, group.top_y + 0.5f * BUTTON_SIZE - 0.5f * group.height, 0.0f});
-		group.part.pose = pose;
-	}
+		group.part.pose = OnScreen(button_x, group.top_y + 0.5f * BUTTON_SIZE - 0.5f * group.height);
 
 	for (int h = 0; h < 2; h++)
 		result.block_trigger[h] |= m_swallow[h];
 	return result;
 }
 
+void VrMenu::ComposeSheet()
+{
+	// Its bounds, meters from the screen's centre: every place a piece can be, whether it shows or not.
+	// They change with the screen's size only (and an open panel's, after a resize), since SteamVR
+	// applies a quad's new pose and size a frame after its new picture.
+	static_assert(MESSAGES_W_PX >= TOOLTIP_W_PX, "the messages are the widest centred piece");
+	static_assert(TOOLTIP_H_PX * METERS_PER_PX <= BUTTON_SIZE, "a tooltip is no higher than its button");
+	const float panel_w = std::max(PanelWidth(m_screen_width), m_open != Panel::None ? m_panel.Size().width : 0.0f);
+	const float panel_h = panel_w * static_cast<float>(SettingsMenu::HEIGHT) / static_cast<float>(SettingsMenu::WIDTH);
+	const float left = -0.5f * MESSAGES_W_PX * METERS_PER_PX;
+	const float right = 0.5f * std::max(m_screen_width, panel_w) + BUTTON_MARGIN + BUTTON_SIZE + TOOLTIP_GAP +
+	                    TOOLTIP_W_PX * METERS_PER_PX;
+	const float top = 0.5f * std::max(m_screen_height, panel_h) + TOOLTIP_GAP + MESSAGES_H_PX * METERS_PER_PX;
+	float bottom = -0.5f * m_screen_height - TOOLTIP_GAP - (WEB_LINE_H_PX + NOTICE_GAP_PX + TOOLTIP_H_PX) * METERS_PER_PX;
+	for (const Button& button : m_buttons)
+		bottom = std::min(bottom, button.y - 0.5f * BUTTON_SIZE);
+	// Pixels per meter: the atlas's, or fewer when that would not fit.
+	const float ppm = std::min(1.0f / METERS_PER_PX, SHEET_PX / std::max(right - left, top - bottom));
+	const int w_px = std::min(SHEET_PX, static_cast<int>(std::ceil((right - left) * ppm)));
+	const int h_px = std::min(SHEET_PX, static_cast<int>(std::ceil((top - bottom) * ppm)));
+	m_sheet_part.rect = {{0, STRIP_PX}, {w_px, h_px}};
+	m_sheet_part.size = {w_px / ppm, h_px / ppm};
+	m_sheet_part.pose = m_screen;
+	m_sheet_part.pose.position =
+		Transform(m_screen, {left + 0.5f * m_sheet_part.size.width, top - 0.5f * m_sheet_part.size.height, 0.0f});
+
+	// The beam, the dot and the pad as they are, for their own quads; then the pieces that show.
+	std::vector<OverlayLayer::Blit> blits;
+	for (const OverlayLayer::Part* part : {&m_beam, &m_cursor, &m_pad})
+		blits.push_back({part->rect, part->rect});
+	const size_t num_strip = blits.size();
+	const auto put = [&](const OverlayLayer::Part& piece) {
+		const float x = piece.pose.position.x - 0.5f * piece.size.width - left;
+		const float y = top - piece.pose.position.y - 0.5f * piece.size.height;
+		const float scale = METERS_PER_PX * ppm;
+		XrRect2Di to;
+		to.offset = {static_cast<int32_t>(std::lround(x * ppm)), STRIP_PX + static_cast<int32_t>(std::lround(y * ppm))};
+		to.extent = {static_cast<int32_t>(std::lround(piece.rect.extent.width * scale)),
+			static_cast<int32_t>(std::lround(piece.rect.extent.height * scale))};
+		blits.push_back({piece.rect, to});
+	};
+	for (int g = 0; g < NUM_GROUPS; g++)
+	{
+		if (std::any_of(m_buttons.begin(), m_buttons.end(), [g](const Button& b) { return b.group == g && b.shown; }))
+			put(m_groups[g].part);
+	}
+	if (m_show_tooltip)
+		put(m_tooltip);
+	if (!m_web_line_text.empty())
+		put(m_web_line);
+	if (std::chrono::steady_clock::now() < m_notice_until)
+		put(m_notice);
+	if (!m_messages_text.empty())
+		put(m_messages);
+	m_sheet_shown = blits.size() > num_strip;
+
+	// A new image only when something changed.
+	const bool moved = blits.size() != m_sheet_blits.size() ||
+	                   std::memcmp(blits.data(), m_sheet_blits.data(), blits.size() * sizeof(blits[0])) != 0;
+	if (m_atlas_dirty || moved || !m_sheet.HasImage())
+	{
+		m_sheet.Compose(m_atlas_dirty || !m_sheet.HasImage() ? &m_atlas_canvas : nullptr, blits);
+		m_atlas_dirty = false;
+		m_sheet_blits = std::move(blits);
+	}
+}
+
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 6 + NUM_GROUPS,
-		"the panel, the button groups, the tooltip, below the screen, the messages, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 4, "the panel, the sheet, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
 		return;
-	// What changed in the atlas since the last frame, in one upload.
-	if (m_atlas_dirty)
-	{
-		m_atlas.Upload(m_atlas_canvas);
-		m_atlas_dirty = false;
-	}
+	ComposeSheet();
 	if (m_open != Panel::None && m_panel.HasImage())
 		slots[0] = m_panel.Layer();
-	if (!m_atlas.HasImage())
+	if (!m_sheet.HasImage())
 		return;
-	for (const Button& button : m_buttons)
-	{
-		if (button.shown)
-			slots[1 + button.group] = m_atlas.Layer(m_groups[button.group].part);
-	}
-	if (m_show_tooltip)
-		slots[1 + NUM_GROUPS] = m_atlas.Layer(m_tooltip);
-	const bool notice = std::chrono::steady_clock::now() < m_notice_until;
-	if (notice && !m_web_line_text.empty())
-		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_below);
-	else if (notice)
-		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_notice);
-	else if (!m_web_line_text.empty())
-		slots[2 + NUM_GROUPS] = m_atlas.Layer(m_web_line);
-	if (!m_messages_text.empty())
-		slots[3 + NUM_GROUPS] = m_atlas.Layer(m_messages);
+	if (m_sheet_shown)
+		slots[1] = m_sheet.Layer(m_sheet_part);
 	if (m_show_pointer)
-		slots[4 + NUM_GROUPS] = m_atlas.Layer(m_beam);
+		slots[2] = m_sheet.Layer(m_beam);
 	if (m_show_cursor)
-		slots[5 + NUM_GROUPS] = m_atlas.Layer(m_cursor);
+		slots[3] = m_sheet.Layer(m_cursor);
 }
 
 bool VrMenu::GetPadLayer(XrCompositionLayerQuad* quad)
 {
-	if (!m_created || !m_atlas.HasImage())
+	if (!m_created || !m_sheet.HasImage())
 		return false;
-	*quad = *reinterpret_cast<const XrCompositionLayerQuad*>(m_atlas.Layer(m_pad));
+	*quad = *reinterpret_cast<const XrCompositionLayerQuad*>(m_sheet.Layer(m_pad));
 	return true;
 }

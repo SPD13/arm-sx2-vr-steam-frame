@@ -89,12 +89,12 @@ public:
 	// The screen was placed again: an open panel moves with it.
 	void Reanchor() { m_reanchor = true; }
 
-	// Its layers, each always in the same slot (null when hidden): the panel, the three button groups, the
-	// tooltip, what shows below the screen (the Wi-Fi line, the notice, or both in one quad), the
-	// emulator's messages above the screen, the pointer's beam and its dot. SteamVR shows quad layers as
-	// overlays matched by their place in the layer list, so a layer that moved in the list was shown for
-	// a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 9;
+	// Its layers, each always in the same slot (null when hidden): the panel; the sheet, one quad in the
+	// screen's plane around it with the buttons, the tooltip, what shows below the screen (the Wi-Fi
+	// line, the notice) and the emulator's messages above it; the pointer's beam and its dot. SteamVR
+	// shows quad layers as overlays matched by their place in the layer list, so a layer that moved in
+	// the list was shown for a frame where another had been.
+	static constexpr int NUM_LAYER_SLOTS = 4;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 	// An invisible quad, to stand in for a hidden layer and keep the others in their place in the
 	// list (see main.cpp). False until Create.
@@ -146,9 +146,8 @@ private:
 		POWER,
 		NUM_BUTTONS
 	};
-	// Buttons share a quad layer per group (there are only 16 layers): the top ones (the gear, the
-	// game list and the light gun's), the middle ones (3D and passthrough), and the bottom ones (pause
-	// and power).
+	// Buttons are drawn per group, each a piece of the sheet: the top ones (the gear, the game list and
+	// the light gun's), the middle ones (3D and passthrough), and the bottom ones (pause and power).
 	struct ButtonGroup
 	{
 		OverlayLayer::Part part;
@@ -192,14 +191,23 @@ private:
 	std::unique_ptr<SettingsMenu> m_settings_menu;
 	std::unique_ptr<GameListMenu> m_game_list;
 	OverlayLayer m_panel; // whichever menu is open
-	// Every other layer is a part of one image, the atlas: a swapchain each would be too many
-	// (SteamVR on the Frame allows 16). The panel keeps its own: it is most of the pixels, and
-	// redraws every frame while it scrolls.
-	OverlayLayer m_atlas;
+	// Every other picture is a part of one canvas, the atlas, uploaded to the GPU, from which the sheet's
+	// image is composed: the pieces that show, scaled into their places around the screen, and along its
+	// top the beam, the dot and the pad, shown as quads of their own. One layer (SteamVR on the Frame
+	// allows 16) and one swapchain (16 too) for all of them. The panel keeps its own: it is most of the
+	// pixels, redraws every frame while it scrolls, and only shows while the game is paused.
+	OverlayLayer m_sheet;
+	OverlayLayer::Part m_sheet_part; // the sheet's quad: its part of the image, pose and size
+	std::vector<OverlayLayer::Blit> m_sheet_blits; // what the last image was composed from
+	bool m_sheet_shown = false; // a piece shows
+	// Composes a new image when a piece changed, showed, hid or moved.
+	void ComposeSheet();
 	Canvas m_atlas_canvas;
 	bool m_atlas_dirty = false;
 	// Copies canvas (as large as the part) into the part's place in the atlas, uploaded with the next frame's layers.
 	void Put(const OverlayLayer::Part& part, const Canvas& canvas);
+	// The atlas's parts. The sheet's pieces have their pose relative to the screen (their centre, meters
+	// right of and above its centre); the beam, the dot and the pad, quads of their own, in LOCAL space.
 	OverlayLayer::Part m_pad; // transparent
 	std::array<Button, NUM_BUTTONS> m_buttons;
 	std::array<ButtonGroup, NUM_GROUPS> m_groups;
@@ -218,11 +226,8 @@ private:
 	bool m_web_line_drawn_hovered = false; // as drawn
 	float m_web_line_width = 0.0f; // the pill's, meters
 	float m_web_line_y = 0.0f; // its centre, meters above the screen's centre
-	OverlayLayer::Part m_notice;
+	OverlayLayer::Part m_notice; // below the Wi-Fi line when it shows
 	Canvas m_notice_canvas;
-	// The Wi-Fi line and the notice below it in one quad, when both show: they lie in the atlas as they
-	// do below the screen (a layer fewer, for passthrough's).
-	OverlayLayer::Part m_below;
 	std::chrono::steady_clock::time_point m_notice_until{};
 	// The emulator's messages (Emu::GetMessages), stacked above the screen: outside the game's
 	// picture, where the light gun's sensor does not see them.
