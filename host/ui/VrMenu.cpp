@@ -252,6 +252,8 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_created = true;
 	for (int g = 0; g < NUM_GROUPS; g++)
 		DrawGroup(g);
+	if (!m_perf.Create(xr, device, gpu, queue, queue_family_index, &m_text, METERS_PER_PX))
+		Console.Error("Menu: the performance window is unavailable.");
 	// Composed now, so the pad is there from the first frame.
 	ComposeSheet();
 	return true;
@@ -267,6 +269,8 @@ void VrMenu::Destroy()
 {
 	m_created = false;
 	m_show_tooltip = false;
+	m_perf.Destroy();
+	m_show_perf = false;
 	m_sheet.Destroy();
 	m_sheet_blits.clear();
 	m_sheet_shown = false;
@@ -718,6 +722,18 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 	m_reanchor = false;
 	float button_x = ButtonX();
 
+	// The performance window, left of the screen (or of an open panel wider than it), level with its top.
+	m_show_perf = m_settings.Get().show_perf;
+	m_perf.Update(m_show_perf);
+	{
+		const float wide = m_open != Panel::None ? std::max(screen_width, m_panel.Size().width) : screen_width;
+		const XrExtent2Df size = m_perf.Size();
+		XrPosef pose = screen;
+		pose.position =
+			Transform(screen, {-0.5f * wide - BUTTON_MARGIN - 0.5f * size.width, 0.5f * (screen_height - size.height), 0.0f});
+		m_perf.SetPose(pose);
+	}
+
 	// Where each controller points: on the open panel's plane, else on the screen's. Without a
 	// menu, the pointer is out while a controller points anywhere but at the game.
 	XrPosef aim[2] = {{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}, {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}};
@@ -1058,7 +1074,7 @@ void VrMenu::ComposeSheet()
 
 void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 {
-	static_assert(NUM_LAYER_SLOTS == 4, "the panel, the sheet, the beam and the dot");
+	static_assert(NUM_LAYER_SLOTS == 5, "the panel, the sheet, the performance window, the beam and the dot");
 	for (int i = 0; i < NUM_LAYER_SLOTS; i++)
 		slots[i] = nullptr;
 	if (!m_created)
@@ -1066,14 +1082,16 @@ void VrMenu::GetLayers(const XrCompositionLayerBaseHeader** slots)
 	ComposeSheet();
 	if (m_open != Panel::None && m_panel.HasImage())
 		slots[0] = m_panel.Layer();
+	if (m_show_perf)
+		slots[2] = m_perf.Layer();
 	if (!m_sheet.HasImage())
 		return;
 	if (m_sheet_shown)
 		slots[1] = m_sheet.Layer(m_sheet_part);
 	if (m_show_pointer)
-		slots[2] = m_sheet.Layer(m_beam);
+		slots[3] = m_sheet.Layer(m_beam);
 	if (m_show_cursor)
-		slots[3] = m_sheet.Layer(m_cursor);
+		slots[4] = m_sheet.Layer(m_cursor);
 }
 
 bool VrMenu::GetPadLayer(XrCompositionLayerQuad* quad)

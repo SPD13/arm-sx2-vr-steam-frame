@@ -54,6 +54,7 @@
 #include "pcsx2/Host.h"
 #include "pcsx2/INISettingsInterface.h"
 #include "pcsx2/ImGui/FullscreenUI.h"
+#include "pcsx2/PerformanceMetrics.h"
 #include "pcsx2/ImGui/ImGuiFullscreen.h"
 #include "pcsx2/ImGui/ImGuiManager.h"
 #include "pcsx2/Input/InputManager.h"
@@ -1297,8 +1298,24 @@ void Host::OnGameChanged(const std::string& title, const std::string& elf_overri
 		s_guns_policy_serial.clear();
 }
 
+static std::mutex s_perf_mutex;
+static Emu::PerfMetrics s_perf;
+
 void Host::OnPerformanceMetricsUpdated()
 {
+	std::lock_guard lock(s_perf_mutex);
+	s_perf.updates++;
+	s_perf.fps = PerformanceMetrics::GetFPS();
+	s_perf.ee = static_cast<float>(PerformanceMetrics::GetCPUThreadUsage());
+	s_perf.gs = PerformanceMetrics::GetGSThreadUsage();
+	s_perf.vu = PerformanceMetrics::GetVUThreadUsage();
+	s_perf.gpu = PerformanceMetrics::GetGPUUsage();
+}
+
+Emu::PerfMetrics Emu::GetPerfMetrics()
+{
+	std::lock_guard lock(s_perf_mutex);
+	return s_perf;
 }
 
 void Host::OnSaveStateLoading(const std::string_view filename)

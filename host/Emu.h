@@ -123,6 +123,17 @@ namespace Emu
 	// would see them (GunLight). Any thread.
 	std::vector<std::string> GetMessages();
 
+	// The emulator's performance as PCSX2 measures it, every 0.5 s of emulation (none while paused).
+	// Any thread.
+	struct PerfMetrics
+	{
+		uint64_t updates = 0; // how many measurements so far: a new one when it changes
+		float fps = 0.0f; // the game's frames per second
+		float ee = 0.0f, gs = 0.0f, vu = 0.0f; // busy share of the core, GS and VU1 (MTVU) threads, %
+		float gpu = 0.0f; // the emulator's GPU time, % of the elapsed time
+	};
+	PerfMetrics GetPerfMetrics();
+
 	// DualShock 2 state for port 1, applied from the XR thread each frame.
 	struct PadState
 	{

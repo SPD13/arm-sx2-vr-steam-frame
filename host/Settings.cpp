@@ -14,7 +14,7 @@
 #include <array>
 #include <cstdio>
 
-static constexpr std::array<VrSettingInfo, 19> s_settings = {{
+static constexpr std::array<VrSettingInfo, 20> s_settings = {{
 	{"Screen", "screen_width", &VrSettings::screen_width, nullptr, 0.3f, 10.0f, false},
 	{"Screen", "screen_distance", &VrSettings::screen_distance, nullptr, 0.3f, 10.0f, false},
 	{"Mode", "stereo", nullptr, &VrSettings::stereo, 0.0f, 0.0f, false},
@@ -25,6 +25,7 @@ static constexpr std::array<VrSettingInfo, 19> s_settings = {{
 	{"Web", "web_enabled", nullptr, &VrSettings::web_enabled, 0.0f, 0.0f, false},
 	{"Web", "web_require_code", nullptr, &VrSettings::web_require_code, 0.0f, 0.0f, false},
 	{"Controllers", "show_controllers", nullptr, &VrSettings::show_controllers, 0.0f, 0.0f, false},
+	{"Graphics", "performance_window", nullptr, &VrSettings::show_perf, 0.0f, 0.0f, false},
 	{"LightGun", "gun_players", &VrSettings::gun_players, nullptr, 1.0f, 2.0f, false},
 	{"LightGun", "gun_left_hand", nullptr, &VrSettings::gun_left_hand, 0.0f, 0.0f, false},
 	{"LightGun", "gun_beam", &VrSettings::gun_beam, nullptr, 0.0f, 2.0f, false},

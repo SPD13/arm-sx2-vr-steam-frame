@@ -44,6 +44,8 @@ struct VrSettings
 	bool web_require_code = true; // the page asks for a 6-digit code shown in the menu
 	// Controllers
 	bool show_controllers = true; // the hands without a light gun show SteamVR's controller models
+	// Graphics
+	bool show_perf = false; // the performance window left of the screen (PerfWindow)
 	// Light gun (whether it is on is per game, in lightgun.ini: see GunGames)
 	float gun_players = 1.0f; // 1 or 2 guns, one per hand
 	bool gun_left_hand = false; // the first gun is in the left hand

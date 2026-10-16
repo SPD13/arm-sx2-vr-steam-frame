@@ -500,6 +500,12 @@ void SettingsMenu::RunGraphics()
 		core.blending = blending;
 		SetCore(core);
 	}
+
+	VrSettings vr = m_settings.Get();
+	if (m_gui.Toggle(GuiId("perf_window"),
+			Row("Performance window", "Left of the screen: the frame rate, CPU and GPU use, with their last 3 minutes."),
+			&vr.show_perf))
+		SetVr(vr);
 }
 
 void SettingsMenu::RunTextures()

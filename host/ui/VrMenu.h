@@ -30,6 +30,7 @@
 #include "ui/Font.h"
 #include "ui/GameListMenu.h"
 #include "ui/OverlayLayer.h"
+#include "ui/PerfWindow.h"
 #include "ui/SettingsMenu.h"
 
 #include <array>
@@ -91,10 +92,11 @@ public:
 
 	// Its layers, each always in the same slot (null when hidden): the panel; the sheet, one quad in the
 	// screen's plane around it with the buttons, the tooltip, what shows below the screen (the Wi-Fi
-	// line, the notice) and the emulator's messages above it; the pointer's beam and its dot. SteamVR
+	// line, the notice) and the emulator's messages above it; the performance window; the pointer's
+	// beam and its dot. SteamVR
 	// shows quad layers as overlays matched by their place in the layer list, so a layer that moved in
 	// the list was shown for a frame where another had been.
-	static constexpr int NUM_LAYER_SLOTS = 4;
+	static constexpr int NUM_LAYER_SLOTS = 5;
 	void GetLayers(const XrCompositionLayerBaseHeader** slots);
 	// An invisible quad, to stand in for a hidden layer and keep the others in their place in the
 	// list (see main.cpp). False until Create.
@@ -202,6 +204,10 @@ private:
 	bool m_sheet_shown = false; // a piece shows
 	// Composes a new image when a piece changed, showed, hid or moved.
 	void ComposeSheet();
+	// Left of the screen, when Settings > Graphics > Performance window is on (its own layer: it
+	// redraws every 0.5 s).
+	PerfWindow m_perf;
+	bool m_show_perf = false;
 	Canvas m_atlas_canvas;
 	bool m_atlas_dirty = false;
 	// Copies canvas (as large as the part) into the part's place in the atlas, uploaded with the next frame's layers.

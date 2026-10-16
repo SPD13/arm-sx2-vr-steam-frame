@@ -55,6 +55,8 @@ add_executable(ps2v
 	ui/Gui.h
 	ui/OverlayLayer.cpp
 	ui/OverlayLayer.h
+	ui/PerfWindow.cpp
+	ui/PerfWindow.h
 	ui/SettingsMenu.cpp
 	ui/SettingsMenu.h
 	ui/VrMenu.cpp
