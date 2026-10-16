@@ -1,4 +1,5 @@
-"""Build the Steam library artwork for "ARMSX2 - Steam Frame Edition" into assets/steam/.
+"""Build the Steam library artwork for "ARMSX2 - Steam Frame Edition" into assets/steam/, the regular set without the
+Alpha badge into assets/steam-final/, and the installer page's hero.jpg and logo.png.
 Usage: python make_art.py <repo root>
 Sources: the ARMSX2 app icon (glowing pillar), the Bebas Neue font from the ARMSX2 Android app
 and assets/lightgun.glb. Needs Python 3 with numpy and pillow."""
@@ -14,9 +15,15 @@ PILLAR = os.path.join(ARMSX2, 'platforms/ios/app/src/main/assets/app_icons/icon.
 BEBAS = os.path.join(ARMSX2, 'platforms/android/app/src/main/res/font/bebas_neue.ttf')
 GLB = os.path.join(ROOT, 'assets/lightgun.glb')
 OUT = os.path.join(ROOT, 'assets/steam')
+FINAL = os.path.join(ROOT, 'assets/steam-final')
+UI = os.path.join(ROOT, 'tools/steam-frame/installer/ui')
+
+# While the project is in Alpha, the art that ships (assets/steam/, the installer page) carries an ALPHA badge.
+# Leaving Alpha: set this to False and rerun (or copy assets/steam-final/ over assets/steam/).
+ALPHA = True
 
 TITLE, SUBTITLE = 'ARMSX2', 'STEAM FRAME EDITION'
-CYAN = (90, 200, 255); VIOLET = (170, 80, 255); RED = (255, 40, 30)
+CYAN = (90, 200, 255); VIOLET = (170, 80, 255); RED = (255, 40, 30); AMBER = (255, 170, 30)
 
 # ---------- helpers ----------
 
@@ -93,6 +100,32 @@ def put_title(canvas, blk, pos, glow_r):
     canvas.alpha_composite(blk, pos)
     return canvas
 
+def alpha_badge(height):
+    """Amber 'ALPHA' pill, `height` px tall, with a transparent margin of half its height for its halo."""
+    k = 4  # drawn 4x larger, then scaled down, for smooth edges
+    h = height * k
+    txt = text_layer('ALPHA', ImageFont.truetype(BEBAS, 200), tracking=22, fill=(8, 12, 40, 255))
+    th = round(h * 0.54)
+    txt = txt.resize((round(txt.width * th / txt.height), th), Image.LANCZOS)
+    w, m = txt.width + round(h * 0.95), h // 2
+    pill = Image.new('RGBA', (w + 2 * m, h + 2 * m), (0, 0, 0, 0))
+    ImageDraw.Draw(pill).rounded_rectangle((m, m, m + w - 1, m + h - 1), radius=h // 2, fill=AMBER + (255,))
+    pill.alpha_composite(txt, (m + (w - txt.width) // 2, m + (h - txt.height) // 2))
+    return pill.resize((pill.width // k, pill.height // k), Image.LANCZOS)
+
+def put_badge(canvas, height, right, top):
+    """The Alpha badge with its top-right corner at (right, top): a dark shadow, an amber halo, then the pill."""
+    b = alpha_badge(height)
+    m = height // 2
+    pos = (right - b.width + m, top - m)
+    shadow = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+    sh = Image.new('RGBA', b.size, (0, 0, 10, 0)); sh.putalpha(b.getchannel('A').point(lambda v: v * 0.8))
+    shadow.alpha_composite(sh, (pos[0], pos[1] + max(2, height // 12)))
+    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(height / 6)))
+    canvas = add(canvas, glow(b, height / 4, AMBER, 0.6), pos)
+    canvas.alpha_composite(b, pos)
+    return canvas
+
 def portal(canvas, box, width, pillar_h=None):
     """The volumetric window: a glowing frame with the ARMSX2 pillar standing inside it."""
     x0, y0, x1, y1 = box
@@ -149,7 +182,7 @@ def solve_shot(yaw, pitch, size, fill, pos, target):
 
 # ---------- the five images ----------
 
-def capsule():
+def capsule(badge=False):
     """Library capsule, 600x900 (<appid>p.png)."""
     W, H = 600, 900
     c = background(W, H, (0.5, 0.33))
@@ -159,9 +192,10 @@ def capsule():
     s = solve_shot(-0.6, 0.3, size, 0.95, pos, target)
     c = place_gun(c, s, pos, target, beam_w=3)
     blk = title_block(470)
-    return put_title(c, blk, ((W - blk.width) // 2, H - blk.height - 6), 14)
+    c = put_title(c, blk, ((W - blk.width) // 2, H - blk.height - 6), 14)
+    return put_badge(c, 40, W - 22, 10) if badge else c
 
-def wide():
+def wide(badge=False):
     """Wide capsule / library header, 920x430 (<appid>.png)."""
     W, H = 920, 430
     c = background(W, H, (0.68, 0.45))
@@ -171,9 +205,10 @@ def wide():
     s = solve_shot(-0.7, 0.3, size, 0.95, pos, target)
     c = place_gun(c, s, pos, target, beam_w=3)
     blk = title_block(330)
-    return put_title(c, blk, (22, (H - blk.height) // 2 - 5), 10)
+    c = put_title(c, blk, (22, (H - blk.height) // 2 - 5), 10)
+    return put_badge(c, 34, W - 20, 18) if badge else c
 
-def hero():
+def hero(badge=False):
     """Game page hero, 1920x620 (<appid>_hero.png). No text: Steam draws the logo over its left side."""
     W, H = 1920, 620
     c = background(W, H, (0.6, 0.45))
@@ -188,29 +223,49 @@ def hero():
     dark = Image.fromarray((shade * 255).astype(np.uint8), 'L')
     black = Image.new('RGBA', (W, H), (1, 2, 12, 255)); black.putalpha(dark)
     c.alpha_composite(black)
-    return c
+    # inset so it survives Steam cropping the hero to the window's shape
+    return put_badge(c, 56, W - 115, 62) if badge else c
 
-def logo():
+def logo(badge=False):
     """Transparent logo for the game page (<appid>_logo.png): the title with a soft dark halo."""
     blk = title_block(1100)
     halo = Image.new('RGBA', blk.size, (0, 0, 8, 0))
     halo.putalpha(blk.getchannel('A').filter(ImageFilter.GaussianBlur(10)).point(lambda v: min(255, v * 1.2)))
     c = Image.new('RGBA', blk.size, (0, 0, 0, 0))
     c.alpha_composite(halo, (0, 5)); c.alpha_composite(blk)
+    if badge:  # under the right end of STEAM FRAME EDITION, in the block's bottom padding
+        pad, bh = round(1100 * 0.08), 64
+        room = Image.new('RGBA', (c.width, c.height + bh), (0, 0, 0, 0)); room.alpha_composite(c)
+        c = put_badge(room, bh, c.width - pad - 4, c.height - pad + 30)
     return c.crop(c.getbbox())
 
-def icon():
+def icon(badge=False):
     """Square icon, 256x256: the ARMSX2 pillar with the light gun in front."""
     S = 512
     c = Image.open(PILLAR).convert('RGBA').resize((S, S), Image.LANCZOS)
     s = gun.Shot(GLB, 0.7, 0.2, np.radians(-8), size=(330, 260), fill=0.98)
     c = place_gun(c, s, (S - 340, S - 250))
+    if badge:
+        c = put_badge(c, 84, S - 18, 18)
     return c.resize((256, 256), Image.LANCZOS)
 
+def save(im, folder, name):
+    if name != 'logo.png' and name != 'icon.png': im = im.convert('RGB')
+    im.save(os.path.join(folder, name), optimize=True)
+    print(os.path.relpath(os.path.join(folder, name), ROOT), im.size)
+
 if __name__ == '__main__':
-    os.makedirs(OUT, exist_ok=True)
+    os.makedirs(OUT, exist_ok=True); os.makedirs(FINAL, exist_ok=True)
+    shipped = {}
     for name, fn in [('capsule.png', capsule), ('wide.png', wide), ('hero.png', hero), ('logo.png', logo), ('icon.png', icon)]:
-        im = fn()
-        if name != 'logo.png' and name != 'icon.png': im = im.convert('RGB')
-        im.save(os.path.join(OUT, name), optimize=True)
-        print(name, im.size)
+        plain = fn()
+        save(plain, FINAL, name)
+        shipped[name] = fn(badge=True) if ALPHA else plain
+        save(shipped[name], OUT, name)
+    # The installer page shows the hero behind its header and the logo in it (at 96 px tall)
+    h = shipped['hero.png'].convert('RGB').resize((1500, 484), Image.LANCZOS)
+    h.save(os.path.join(UI, 'hero.jpg'), quality=88, optimize=True)
+    lg = shipped['logo.png']
+    lg = lg.resize((round(lg.width * 228 / lg.height), 228), Image.LANCZOS)
+    lg.save(os.path.join(UI, 'logo.png'), optimize=True)
+    print('installer ui: hero.jpg', h.size, 'logo.png', lg.size)

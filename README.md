@@ -2,7 +2,10 @@
 
 A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with GunCon 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping, HD texture packs and Wi-Fi transfer of games, BIOS files and texture packs (zip, 7z and RAR archives are unpacked on the headset).
 
-> **Status.** On the Steam Frame (headset tests on 2026-10-12 and 13): the menu, its buttons and tooltips, the game list and the pointer; volumetric and flat modes and switching between them; pause and quit; the light gun in Time Crisis II, with one gun (steady in the hand, the beam landing on what is behind the glass, calibration with the trigger, gun colours), and in Ninja Assault (the beam into the window); and HD texture packs sent over Wi-Fi. The rest of Wi-Fi transfer, every settings page, controller mapping and two-gun play still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
+> [!WARNING]
+> **Alpha.** This project is in its Alpha stage and needs more testing. Much of it has only been tried on a desktop or in a few games, so expect bugs, crashes and settings that change between releases. The Steam library art carries an **ALPHA** badge until testing is done. If you try it, please report what you find: the games you played, what went wrong, and the logs from `~/.local/share/ps2v/logs/`. Known gaps are in [Known limitations](#known-limitations).
+
+> **Status: Alpha.** What has been tried on the Steam Frame (headset tests on 2026-10-12 and 13): the menu, its buttons and tooltips, the game list and the pointer; volumetric and flat modes and switching between them; pause and quit; the light gun in Time Crisis II, with one gun (steady in the hand, the beam landing on what is behind the glass, calibration with the trigger, gun colours), and in Ninja Assault (the beam into the window); and HD texture packs sent over Wi-Fi. The rest of Wi-Fi transfer, every settings page, controller mapping and two-gun play still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
 
 ## Contents
 
@@ -46,7 +49,7 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ### Install in the Steam library
 
-The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. Players use the installer app for Windows, macOS and Linux. It finds the Frame on the network, signs in, and installs or updates the latest GitHub release in one click. For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
+The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. While the project is in Alpha, that art carries an **ALPHA** badge; the same art without the badge is kept in `assets/steam-final/` for the first release after Alpha (see [`tools/steam-art/README.md`](tools/steam-art/README.md)). Players use the installer app for Windows, macOS and Linux. It finds the Frame on the network, signs in, and installs or updates the latest GitHub release in one click. For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
 
 ### First run
 
@@ -403,7 +406,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 
 ## Known limitations
 
-- **Only partly tested in the headset.** See the status note at the top; the rest was tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
+- **Alpha: only partly tested in the headset.** See the Alpha and status notes at the top; the rest was tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
 - If the runtime rejects the controllers' aim pose, the gamepad still works but menus cannot be pointed at. The log says "no aim pose …; the menu pointer is unavailable."
 - In volumetric mode, both eyes may show the same picture while a menu has the game paused.
 - Flat mode still has the emulator draw both eyes, so it costs as much GPU time as volumetric.
