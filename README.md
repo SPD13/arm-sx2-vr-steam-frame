@@ -22,40 +22,100 @@ A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https:
 - [Command line](#command-line)
 - [How it works](#how-it-works)
 - [Known limitations](#known-limitations)
+- [Building from source](#building-from-source)
 - [License](#license)
 
 ## Getting started
 
-### Build
+The game is not on the Steam store. You install it on the Frame from a computer on the same network, with the **installer app**. The app finds the Frame and checks that it is ready. It then downloads the latest version of the game and installs it in the Steam library, with its name and artwork. The same app updates the game later. Nothing is installed on the computer itself.
 
-The app is built on the Steam Frame itself (or any ARM64 Linux machine), inside Valve's Steam Runtime 4 ARM64 SDK container, with rootless Podman:
+### What you need
 
-```sh
-tools/sync-frame.sh          # from your computer: mirror this repo to steamos@frame.local:ps2-volumetric/repo
-# then, on the headset (ssh steamos@frame.local):
-tools/build-frame.sh         # first run builds ARMSX2's dependencies into build/deps
-```
+- A Steam Frame and a computer on the **same network**.
+- A computer with **Windows 10 or 11** (64-bit), **macOS 12 or later** (Apple silicon or Intel) or **Linux**. Nothing else is needed: the installer app brings everything it uses.
+- An internet connection: the app downloads the game (about 20 MB) from this repository's [releases](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases). The Frame needs about 800 MB free while installing.
+- Your own PS2 BIOS dump and your own games: none are included.
 
-The result is `build/frame/bin/ps2v`, with `resources/` (game database, shaders, fonts) and `profiles/` beside it. `FRAME_HOST` and `FRAME_DIR` change where `sync-frame.sh` copies to.
+### 1. Turn on Developer Mode on the Frame
 
-### Run
+1. On the Frame, open **Settings > System** and turn on **Enable Developer Mode**.
+2. In the **Developer** section that appears, choose **Set User Password** and pick a password. The installer asks for it.
 
-```sh
-tools/run-frame.sh                    # opens the game list
-tools/run-frame.sh path/to/game.iso   # starts a game directly
-```
+Keep the headset on (or awake) while installing: it leaves the network when it goes to sleep.
 
-`run-frame.sh` starts `ps2v` inside the Steam Linux Runtime 4 ARM64 (install it from the Steam library) and logs to `~/.local/share/ps2v/logs/ps2v.log`. The emulator's own log is `~/.local/share/ps2v/logs/emulog.txt`.
+### 2. Install the Steam Linux Runtime 4.0 ARM64
 
-### Install in the Steam library
+The game runs inside Valve's **Steam Linux Runtime 4.0 ARM64**. Steam does not fetch it by itself for games added outside the store, so install it once: in the Frame's Steam library, search for **Steam Linux Runtime 4.0** and install the ARM64 one. If it is missing, the game closes as soon as it starts.
 
-The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. While the project is in Alpha, that art carries an **ALPHA** badge; the same art without the badge is kept in `assets/steam-final/` for the first release after Alpha (see [`tools/steam-art/README.md`](tools/steam-art/README.md)). Players use the installer app for Windows, macOS and Linux. It finds the Frame on the network, signs in, and installs or updates the latest GitHub release in one click. For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
+### 3. Download the installer app
 
-### First run
+| Computer | Download |
+| --- | --- |
+| Windows 10, 11 | [ARMSX2-Frame-Installer-Windows.exe](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases/latest/download/ARMSX2-Frame-Installer-Windows.exe) |
+| macOS 12 or later | [ARMSX2-Frame-Installer-macOS.zip](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases/latest/download/ARMSX2-Frame-Installer-macOS.zip) |
+| Linux (PC, Steam Deck) | [ARMSX2-Frame-Installer-Linux-x86_64.tar.gz](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases/latest/download/ARMSX2-Frame-Installer-Linux-x86_64.tar.gz) |
+| Linux (ARM64) | [ARMSX2-Frame-Installer-Linux-arm64.tar.gz](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases/latest/download/ARMSX2-Frame-Installer-Linux-arm64.tar.gz) |
 
-1. Put the headset on: the screen appears ahead of you, facing the room's forward direction (SteamVR's recenter sets it), and with no game given, the game list opens.
-2. You need your own PS2 BIOS dump. Open **Settings › Wi-Fi Transfer**, switch it on, open the address it shows in a browser on your computer or phone, and upload the BIOS in the **BIOS** tab. The emulator picks the first BIOS it finds in the folder.
-3. Upload games in the **ROMs** tab. They appear in the game list.
+These links always give the latest version; the files are also on the [releases page](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases). You don't need a new installer for each new version of the game: it always installs the latest one.
+
+### 4. Run the installer app
+
+The app is not signed with a paid certificate, so Windows and macOS warn the first time it is opened:
+
+- **Windows:** double-click `ARMSX2-Frame-Installer-Windows.exe`. If Windows says "Windows protected your PC", choose **More info**, then **Run anyway**. If the browser warns that the file is not commonly downloaded, choose to keep it.
+- **macOS:** open the `.zip` (Safari may already have done it). You can move **ARMSX2 Installer** to your Applications folder; then double-click it. If macOS says it cannot verify the app ("Not Opened"), choose **Done**, open **System Settings > Privacy & Security**, scroll down to **Security**, choose **Open Anyway** next to the app's name and confirm. When the app asks to **find devices on local networks**, choose **Allow**: the app needs it to reach the Frame.
+- **Linux:** unpack the download and run the app, for example in a terminal: `tar -xzf ARMSX2-Frame-Installer-Linux-x86_64.tar.gz && ./ARMSX2-Frame-Installer`. It opens in your web browser and quits when the page is closed.
+
+The app has two steps.
+
+**Step 1, connect to your Steam Frame.** The app looks for the Frame on the network and fills in its address. Type **the password set in step 1** and choose **Connect**. Four checks turn green:
+
+1. **Frame found on the network**
+2. **Developer Mode is on**
+3. **Signed in to the Frame**
+4. **Frame ready for the game** (Steam running, enough free space)
+
+If a check turns red, it says what is wrong and what to do. For example, wake the headset, turn on Developer Mode, use the right password, or type the Frame's IP address in **Frame address** (the Frame shows it in **Settings > Network**). Fix it, then choose **Check again**.
+
+**Step 2, install or update the game.** The app shows what is on the Frame and the latest version on GitHub. Choose **Install**. The app downloads the game and sends it to the Frame, with a progress bar, then lists each step of the installation. It ends with **Installed! Put the headset on and play.**
+
+### 5. Play
+
+On the Frame, open **Library > Non-Steam > ARMSX2 - Steam Frame Edition**. While the project is in Alpha, its library art carries an **ALPHA** badge. If the library still shows plain artwork, restart the headset.
+
+Put the headset on: the screen appears ahead of you, facing the room's forward direction (SteamVR's recenter sets it), and the game list opens.
+
+### 6. Add your BIOS and games
+
+1. You need your own PS2 BIOS dump. In the headset, open **Settings › Wi-Fi Transfer** and switch it on. Then open the address it shows in a browser on your computer or phone, and upload the BIOS in the **BIOS** tab. The emulator uses the first BIOS it finds in the folder.
+2. Upload games in the **ROMs** tab. They appear in the game list. Zip, 7z and RAR archives are unpacked on the headset.
+
+See [Wi-Fi transfer](#wi-fi-transfer) for more. To copy files over ssh instead, [Files and folders](#files-and-folders) lists where they go.
+
+### Updating
+
+Open the installer app again and connect (step 1). When a newer version is out, step 2 shows **Update available**, with a button **Update to &lt;version&gt;**: choose it. **Up to date** means there is nothing to do. Your games, BIOS files, memory cards, save states, texture packs and settings are kept.
+
+### Uninstalling
+
+In the installer app, after step 1, choose **Uninstall the game from the Frame...** at the bottom of step 2, then **Uninstall**. This removes the game, its library entry and its artwork. Tick **Also delete its settings, controller mapping, caches and logs** to remove those too. Your games, BIOS files, memory cards, save states and texture packs in `~/.local/share/ps2v` are never deleted.
+
+### Troubleshooting
+
+| Problem | What to do |
+| --- | --- |
+| The Frame is not found, or "No answer from" its address | Wake the headset (put it on). Check that the Frame and the computer are on the same network: a guest Wi-Fi often keeps devices apart. Check that Developer Mode is on. Type the Frame's IP address in **Frame address**. |
+| "The Frame does not accept connections" | Developer Mode is off: turn it on (step 1). |
+| "The password was refused" | Type the password set in **Settings > Developer > Set User Password** (it is case sensitive), or set a new one there. |
+| "The Frame's identity has changed" | This is expected after the Frame was reset or reinstalled: choose **Trust the Frame's new key**. |
+| "Steam is not running on the Frame" | Put the headset on so it starts in its normal mode, then choose **Check again**. |
+| "Not enough free space" | Uninstall a game or delete files on the Frame, then choose **Check again**. |
+| macOS: the app "cannot be opened" or is "Not Opened" | **System Settings > Privacy & Security > Open Anyway** (see step 4). If it cannot find the Frame, allow it in **System Settings > Privacy & Security > Local Network**. |
+| The game is missing from the library | Look under **Library > Non-Steam**. Restart the headset if it is still missing. |
+| The game closes at once | Check that the Steam Linux Runtime 4.0 ARM64 is installed (step 2). Otherwise, read the game's log on the Frame: `ssh steamos@frame.local cat .local/share/ps2v/logs/ps2v.log` (the emulator's own log is `emulog.txt` beside it). |
+| Something else | The installer app keeps a log of what it did: `installer.log` in `%LOCALAPPDATA%\armsx2-frame-installer` (Windows), `~/Library/Caches/armsx2-frame-installer` (macOS) or `~/.cache/armsx2-frame-installer` (Linux). Attach it, with the game's logs, when you [report the problem](https://github.com/SPD13/arm-sx2-vr-steam-frame/issues). |
+
+Developer Mode stays on after the install: the installer needs it to install and update the game. Nobody has checked yet whether the game keeps working with Developer Mode turned off again.
 
 ## In the headset
 
@@ -418,6 +478,35 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 - **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), the cost of the depth copies it turns on in volumetric mode, and GunCon 2 games other than Time Crisis II and Ninja Assault. A game's depth is found with rules that fit those two (see [How it works](#how-it-works)); in a game that draws its depth another way the beam may stop on the glass, and `--depth-trace` shows why. Ninja Assault uses little of its depth range, so its scenery sits near the back of the window.
 - The guns see no light while the picture is black, as a real gun does: a shot fired during a fade to black counts as a shot off the screen (a reload in Time Crisis). Calibration with the trigger was only tried in Time Crisis II; the calibration shot (Y) works without the light check.
 - In flat mode the beam stops on the glass.
+
+## Building from source
+
+The app is built on the Steam Frame itself (or any ARM64 Linux machine). The scripts below run from a computer with this repository checked out, and reach the Frame over ssh as `steamos@frame.local`. Developer Mode must be on and the Frame must accept your ssh key.
+
+### Build
+
+The build runs inside Valve's Steam Runtime 4 ARM64 SDK container, with rootless Podman:
+
+```sh
+tools/sync-frame.sh          # from your computer: mirror this repo to steamos@frame.local:ps2-volumetric/repo
+# then, on the headset (ssh steamos@frame.local):
+tools/build-frame.sh         # first run builds ARMSX2's dependencies into build/deps
+```
+
+The result is `build/frame/bin/ps2v`, with `resources/` (game database, shaders, fonts) and `profiles/` beside it. `FRAME_HOST` and `FRAME_DIR` change where `sync-frame.sh` copies to.
+
+### Run
+
+```sh
+tools/run-frame.sh                    # opens the game list
+tools/run-frame.sh path/to/game.iso   # starts a game directly
+```
+
+`run-frame.sh` starts `ps2v` inside the Steam Linux Runtime 4 ARM64 (install it from the Steam library) and logs to `~/.local/share/ps2v/logs/ps2v.log`. The emulator's own log is `~/.local/share/ps2v/logs/emulog.txt`.
+
+### Install your build in the Steam library
+
+The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. While the project is in Alpha, that art carries an **ALPHA** badge; the same art without the badge is kept in `assets/steam-final/` for the first release after Alpha (see [`tools/steam-art/README.md`](tools/steam-art/README.md)). Players use the installer app (see [Getting started](#getting-started)). For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
 
 ## License
 
