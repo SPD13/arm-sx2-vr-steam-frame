@@ -67,7 +67,7 @@ Round buttons sit just outside the screen, on its right side, so they never cove
 | ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once, in turn: **Flat** (square), **Volumetric** (cube, lit) and **Volumetric+** (cubes, lit) |
 | 👁 Eye (below the cube) | Switches [passthrough](#display) at once: your room around the screen (eye, lit) or the dark void (crossed-out eye). Greyed when SteamVR offers no passthrough |
 | ⏸ Pause (bottom, above power) | Pauses or resumes the game; lit (a play icon) while paused. Menus opened meanwhile leave it paused, and another game starts unpaused |
-| ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit** |
+| ⏻ Power, red (bottom, level with the screen's bottom edge) | Asks "Quit ARMSX2 VR?" and quits on **Quit**; while a game runs, **Reset** instead starts it over (a console reset, same disc) |
 
 - **Pointing.** As soon as a controller points away from the game picture, its beam shows, with a dot where it meets the screen's plane; while a menu is open the beam is always out. Only the controller you clicked with last is the pointer; the other one takes over when you pull its trigger.
 - **Clicking.** Pull the trigger. A trigger is a menu click whenever a menu is open or the pointer is on one of the buttons; only otherwise does it act as the game button it is mapped to (L2 / R2 by default). Pulling the trigger off the screen anywhere but on a button still reaches the game, so light gun games still reload by shooting off-screen.
@@ -173,7 +173,7 @@ Under the GunCon controls, the gun's colour, from gray, black, white, red, blue,
 
 ### Exit
 
-Quits the emulator after a confirmation. Progress since the last save is lost.
+Quits the emulator after a confirmation, which also offers **Reset** while a game runs: the game starts over, as a console reset does. Either way, progress since the last save is lost.
 
 ## Game list
 

@@ -353,7 +353,7 @@ std::string VrMenu::TooltipText(int button) const
 				return "Pause (start a game first)";
 			return m_user_paused ? "Paused: click to resume" : "Pause the game";
 		case POWER:
-			return "Quit ARMSX2 VR";
+			return m_has_game ? "Quit ARMSX2 VR, or reset the game" : "Quit ARMSX2 VR";
 		default:
 			return {};
 	}

@@ -33,7 +33,8 @@ public:
 
 	// Reads the emulator's settings and save slots again, for a menu that is being opened.
 	void Refresh();
-	// After Refresh: show only the quit confirmation (the power button); dismissing it closes the menu.
+	// After Refresh: show only the quit confirmation (the power button), which also offers a reset while a game
+	// runs; dismissing it closes the menu.
 	void ShowQuitDialog();
 	// After Refresh: show the Wi-Fi transfer page (no game or BIOS yet; the Wi-Fi line below the screen).
 	void ShowTransferPage();
@@ -195,6 +196,7 @@ private:
 	bool m_packs_again = false; // read them again when the current read ends
 	std::string m_remove_pack; // the serial the remove dialog asks about, then removes
 	std::string m_running_serial;
+	bool m_game_running = false; // the quit dialog offers a reset
 	float m_packs_scroll = 0.0f;
 	float m_packs_overflow = 0.0f; // how far the list scrolls
 	bool m_web_busy = false; // an upload under way: the list changes when it ends

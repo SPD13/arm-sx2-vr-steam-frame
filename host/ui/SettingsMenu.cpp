@@ -89,6 +89,7 @@ void SettingsMenu::Refresh()
 	m_dialog_only = false;
 	m_mapping.reset();
 	m_running_serial = Emu::GetSerial();
+	m_game_running = !Emu::GetRunningGamePath().empty();
 	if (m_page == Page::Textures)
 		LoadTexturePacks();
 	m_needs_draw = true;
@@ -1067,7 +1068,10 @@ void SettingsMenu::RunDialog()
 {
 	const bool exit = m_dialog == Dialog::Exit;
 	const bool remove = m_dialog == Dialog::RemovePack;
-	const Rect box{0.5f * (WIDTH - 600.0f), 0.5f * (HEIGHT - 300.0f), 600.0f, 300.0f};
+	const bool reset = exit && m_game_running; // Reset beside Quit
+	const float bw = 200.0f, gap = 16.0f;
+	const float w = reset ? 80.0f + 3.0f * bw + 2.0f * gap : 600.0f;
+	const Rect box{0.5f * (WIDTH - w), 0.5f * (HEIGHT - 300.0f), w, 300.0f};
 	if (m_gui.Drawing())
 	{
 		Canvas& c = m_gui.Draw();
@@ -1075,8 +1079,9 @@ void SettingsMenu::RunDialog()
 		c.FillRect(box, Theme::nav, 24.0f);
 		c.StrokeRect(box, Theme::border, 24.0f, 2.0f);
 		std::string title = exit ? "Quit ARMSX2 VR?" : remove ? "Remove the texture pack?" : "Restart the game?";
-		std::string text = exit ? "The game stops. Progress since your last save is lost." :
-		                          "The game starts over. Progress since your last save is lost.";
+		std::string text = reset ? "Quit stops the game; Reset starts it over, as a console reset does. Progress since your last save is lost." :
+		                   exit  ? "The game stops. Progress since your last save is lost." :
+		                           "The game starts over. Progress since your last save is lost.";
 		if (remove)
 		{
 			const auto pack = std::find_if(m_packs.begin(), m_packs.end(), [this](const PackRow& p) { return p.serial == m_remove_pack; });
@@ -1086,15 +1091,15 @@ void SettingsMenu::RunDialog()
 		m_gui.Text(box.x + 40.0f, box.y + 36.0f, title, Theme::title_size - 4.0f);
 		m_gui.TextWrapped(box.x + 40.0f, box.y + 96.0f, box.w - 80.0f, text, Theme::body_size, Theme::text_muted);
 	}
-	const float bw = 200.0f, by = box.Bottom() - 40.0f - 56.0f;
+	const float by = box.Bottom() - 40.0f - 56.0f;
 	const auto dismiss = [this]() {
 		m_dialog = Dialog::None;
 		m_remove_pack.clear();
 		m_needs_draw = true;
 	};
-	if (m_gui.Button(GuiId("dialog_cancel"), {box.Right() - 40.0f - 2.0f * bw - 16.0f, by, bw, 56.0f}, "Cancel"))
-		dismiss();
-	if (m_gui.Button(GuiId("dialog_ok"), {box.Right() - 40.0f - bw, by, bw, 56.0f}, exit ? "Quit" : remove ? "Remove" : "Restart",
+	// Right to left: the confirming button, Reset (the quit dialog, a game running), Cancel.
+	float x = box.Right() - 40.0f - bw;
+	if (m_gui.Button(GuiId("dialog_ok"), {x, by, bw, 56.0f}, exit ? "Quit" : remove ? "Remove" : "Restart",
 			exit ? Icon::exit : remove ? Icon::trash : Icon::restart, Gui::Style::Danger))
 	{
 		if (exit)
@@ -1109,6 +1114,20 @@ void SettingsMenu::RunDialog()
 		m_dialog = Dialog::None;
 		m_needs_draw = true;
 	}
+	if (reset)
+	{
+		x -= bw + gap;
+		if (m_gui.Button(GuiId("dialog_reset"), {x, by, bw, 56.0f}, "Reset", Icon::restart))
+		{
+			Emu::ResetGame();
+			m_close_requested = true;
+			m_dialog = Dialog::None;
+			m_needs_draw = true;
+		}
+	}
+	x -= bw + gap;
+	if (m_gui.Button(GuiId("dialog_cancel"), {x, by, bw, 56.0f}, "Cancel"))
+		dismiss();
 	// A press outside the dialog dismisses it.
 	if (!m_gui.Drawing() && m_gui.Input().pressed && !m_gui.Hovered(box))
 		dismiss();

@@ -9,7 +9,7 @@
 // screen, a lit eye, or the dark void, a crossed-out eye; greyed where SteamVR offers no
 // passthrough). At the bottom, level with the screen's bottom edge: pause (lit while the
 // user paused the game; menus opened and closed meanwhile leave it paused) and, below it, a red
-// power button that quits after a confirmation. One controller is the pointer: the one that pulled its trigger last (the
+// power button that quits (or resets the game) after a confirmation. One controller is the pointer: the one that pulled its trigger last (the
 // other takes over by pulling its own). As soon as it points away from the game, its beam and dot
 // show; pointing at a button and pulling the trigger opens its panel in front of the screen and
 // pauses the game. A tooltip beside the button the pointer is on says what it does. Its trigger
