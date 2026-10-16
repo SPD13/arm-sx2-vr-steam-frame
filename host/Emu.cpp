@@ -34,6 +34,7 @@
 #include "common/FileSystem.h"
 #include "common/Path.h"
 #include "common/ProgressCallback.h"
+#include "common/ScopedGuard.h"
 #include "common/StringUtil.h"
 #include "common/SettingsWrapper.h"
 #include "common/Threading.h"
@@ -331,12 +332,157 @@ bool Emu::InitializeConfig(const Options& options)
 	return true;
 }
 
+// The core reads no cue sheets: it opens the .bin itself. A sheet with one data track in one file present beside it
+// says nothing the core needs, and would only list the game twice, the copy from the sheet failing to boot.
+static bool IsCueSheetUnnecessary(const std::filesystem::path& cue)
+{
+	const std::optional<std::string> text = FileSystem::ReadFileToString(cue.string().c_str());
+	if (!text)
+		return false;
+	std::string file;
+	int files = 0, tracks = 0;
+	bool data = false;
+	for (std::string_view line : StringUtil::SplitString(*text, '\n'))
+	{
+		line = StringUtil::StripWhitespace(line);
+		const std::string_view::size_type space = line.find_first_of(" \t");
+		if (space == std::string_view::npos)
+			continue;
+		const std::string keyword = StringUtil::toUpper(line.substr(0, space));
+		std::string_view rest = StringUtil::StripWhitespace(line.substr(space));
+		if (keyword == "FILE")
+		{
+			files++;
+			// FILE "name" BINARY, the quotes optional when the name has no spaces.
+			if (rest.starts_with('"'))
+				rest = rest.substr(1, rest.find('"', 1) - 1);
+			else
+				rest = rest.substr(0, rest.find_last_of(" \t"));
+			file = std::string(rest);
+		}
+		else if (keyword == "TRACK")
+		{
+			tracks++;
+			data = StringUtil::toUpper(rest).find("MODE") != std::string::npos;
+		}
+	}
+	if (files != 1 || tracks != 1 || !data || file.empty())
+		return false;
+	std::error_code ec;
+	const std::filesystem::path bin = cue.parent_path() / file;
+	return std::filesystem::is_regular_file(bin, ec) && VMManager::IsDiscFileName(bin.string());
+}
+
+static void DeleteUnnecessaryCueSheets()
+{
+	std::error_code ec;
+	for (auto it = std::filesystem::recursive_directory_iterator(Emu::GetGamesFolder(), ec);
+		 !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
+	{
+		std::string ext = it->path().extension().string();
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+		if (ext != ".cue" || !it->is_regular_file(ec) || !IsCueSheetUnnecessary(it->path()))
+			continue;
+		Error error;
+		if (FileSystem::DeleteFilePath(it->path().string().c_str(), &error))
+			Console.WriteLnFmt("Games: deleted {}, a single-track cue sheet the emulator does not need.", it->path().string());
+		else
+			Console.ErrorFmt("Games: could not delete {}: {}", it->path().string(), error.GetDescription());
+	}
+}
+
+// The serial of an uncompressed disc image, as SLUS-20492, read from the BOOT2 line of its SYSTEM.CNF without the core's
+// CDVD, which a running game holds. Empty for compressed images, PS1 discs and anything unreadable.
+static std::string ReadDiscSerial(const std::filesystem::path& path)
+{
+	std::string ext = path.extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+	if (ext != ".iso" && ext != ".bin" && ext != ".img" && ext != ".mdf")
+		return {};
+	std::FILE* fp = FileSystem::OpenCFile(path.string().c_str(), "rb");
+	if (!fp)
+		return {};
+	ScopedGuard close_fp([fp]() { std::fclose(fp); });
+
+	// 2048-byte sectors, or raw 2352-byte ones whose data follows the sync and header (mode 1) and a subheader (mode 2).
+	u32 block = 0, offset = 0;
+	u8 sector[2048];
+	const auto read_sector = [&](u32 lba) {
+		return FileSystem::FSeek64(fp, static_cast<s64>(lba) * block + offset, SEEK_SET) == 0 &&
+			   std::fread(sector, sizeof(sector), 1, fp) == 1;
+	};
+	static constexpr std::pair<u32, u32> layouts[] = {{2048, 0}, {2352, 24}, {2352, 16}};
+	bool found = false;
+	for (const auto& [layout_block, layout_offset] : layouts)
+	{
+		block = layout_block;
+		offset = layout_offset;
+		// The primary volume descriptor, at sector 16.
+		if (read_sector(16) && sector[0] == 1 && std::memcmp(sector + 1, "CD001", 5) == 0)
+		{
+			found = true;
+			break;
+		}
+	}
+	if (!found)
+		return {};
+	const auto le32 = [](const u8* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (static_cast<u32>(p[3]) << 24); };
+	const u32 root_lba = le32(sector + 156 + 2);
+	const u32 root_size = std::min<u32>(le32(sector + 156 + 10), 64 * 2048);
+
+	u32 cnf_lba = 0, cnf_size = 0;
+	for (u32 i = 0; i * 2048 < root_size && !cnf_lba; i++)
+	{
+		if (!read_sector(root_lba + i))
+			return {};
+		for (u32 pos = 0; pos + 33 <= 2048 && sector[pos] != 0;)
+		{
+			const u8 length = sector[pos];
+			const u8 name_length = sector[pos + 32];
+			if (pos + length > 2048 || 33 + name_length > length)
+				break;
+			const std::string_view name(reinterpret_cast<const char*>(sector + pos + 33), name_length);
+			if (StringUtil::compareNoCase(name.substr(0, name.find(';')), "SYSTEM.CNF"))
+			{
+				cnf_lba = le32(sector + pos + 2);
+				cnf_size = std::min<u32>(le32(sector + pos + 10), 2048);
+				break;
+			}
+			pos += length;
+		}
+	}
+	if (!cnf_lba || !read_sector(cnf_lba))
+		return {};
+
+	// BOOT2 = cdrom0:\SLUS_204.92;1 names SLUS-20492. PS1 discs have BOOT instead.
+	const std::string_view cnf(reinterpret_cast<const char*>(sector), cnf_size);
+	for (std::string_view line : StringUtil::SplitString(cnf, '\n'))
+	{
+		line = StringUtil::StripWhitespace(line);
+		if (!line.starts_with("BOOT2"))
+			continue;
+		std::string_view file = line.substr(line.find_last_of("\\:") + 1);
+		file = file.substr(0, file.find(';'));
+		std::string serial;
+		for (char c : file)
+		{
+			if (c == '_')
+				serial += '-';
+			else if (c != '.')
+				serial += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+		}
+		return serial;
+	}
+	return {};
+}
+
 // Fills the game list from the games folder, and looks for a BIOS. The scan needs the CDVD lock, which a running game
-// holds, so files added meanwhile only show by file name until no game runs.
+// holds, so files added meanwhile are named here from their own SYSTEM.CNF until no game runs.
 static void ListGames()
 {
 	// A BIOS sent over Wi-Fi meanwhile is found here too.
 	s_has_bios = PickBios();
+	DeleteUnnecessaryCueSheets();
 	GameList::Refresh(false, false, nullptr);
 
 	std::vector<Emu::GameInfo> games;
@@ -369,7 +515,10 @@ static void ListGames()
 		if ((ext == ".bin" && std::filesystem::exists(std::filesystem::path(path).replace_extension(".cue"), ec)) ||
 			(ext == ".mdf" && std::filesystem::exists(std::filesystem::path(path).replace_extension(".mds"), ec)))
 			continue;
-		games.push_back({path.string(), path.stem().string(), {}, static_cast<uint64_t>(it->file_size(ec)), 0, 0, 0});
+		std::string serial = ReadDiscSerial(path);
+		std::string title = Emu::GetGameTitle(serial);
+		games.push_back({path.string(), title.empty() ? path.stem().string() : std::move(title), std::move(serial),
+			static_cast<uint64_t>(it->file_size(ec)), 0, 0, 0});
 	}
 	// When each arrived: the inode change time, which a copy, move or upload into the folder sets
 	// even when it keeps the file's modification time.
