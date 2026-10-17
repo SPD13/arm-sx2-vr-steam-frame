@@ -2,6 +2,10 @@
 
 A standalone PlayStation 2 emulator for the Steam Frame. It runs entirely on the headset, so the Frame does not need to be connected to a PC to play: a computer is only used to install it and update it. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with GunCon 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping, HD texture packs and Wi-Fi transfer of games, BIOS files and texture packs (zip, 7z and RAR archives are unpacked on the headset).
 
+[![ARMSX2 VR Steam Frame Edition: the trailer](docs/images/steam-frame-trailer.jpg)](https://youtu.be/cGu4wy_Wa-Q)
+
+**▶ [Watch the trailer](https://youtu.be/cGu4wy_Wa-Q)** (1:01): volumetric 3D and the live switch from flat, the light gun from calibration to two guns, the menus in the headset, Wi-Fi transfer and the installer app.
+
 ## Thank You
 
 This project is deeply indebted to the [ARMSX2 team](https://github.com/ARMSX2/ARMSX2), whose native ARM64 recompilers make full-speed PS2 emulation possible on the Steam Frame, and to the [PCSX2 project](https://pcsx2.net) that ARMSX2 is built on, with its more than 20 years of hardcore development. Everything here builds on their work; none of it would exist without them.
