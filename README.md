@@ -158,11 +158,11 @@ A navigation bar on the left lists the categories, with **Exit** last.
 
 | Option | Values | Notes |
 |---|---|---|
-| 3D mode | Flat · Volumetric · Volumetric+ | **Volumetric** draws the game from each eye, so the world sits behind the screen like a window. **Volumetric+** *(test)* gives the world behind the window its full depth, at a fixed size in the room: the farthest scenery is at infinity, and leaning in shows more of the world around the edges, as through a real window. **Flat** shows a flat picture. Applies at once, as the cube button beside the screen. |
+| 3D mode | Flat · Volumetric · Volumetric+ | **Volumetric** draws the game from each eye, so the world sits behind the screen like a window. **Volumetric+** *(test)* gives the world behind the window its full depth, at a fixed size in the room: the farthest scenery is at infinity, and leaning in shows more of the world around the edges, as through a real window. **Flat** shows a flat picture. Applies at once (the game pauses for a moment), as the cube button beside the screen. |
 | Depth | 0 – 5 m | How far behind the screen the farthest scenery appears (default 3 m). Not in Volumetric+, whose depth comes from the screen distance. |
 | Screen plane *(advanced)* | 0.01 – 1 | Which depth in the scene (the game's normalised Z) sits on the screen glass. Set it so the nearest objects just touch the glass. Default 0.12, for Time Crisis II. |
 
-The emulator always draws both eyes (multiview); Flat gives them no parallax and shows the same picture to both, which is why the modes switch without a restart. Volumetric+ is an experiment and may go away; how it differs from Volumetric is in [`docs/fixed-scale-parallax.md`](docs/fixed-scale-parallax.md#volumetric-the-true-portal-in-the-multiview-path).
+Volumetric draws both eyes (multiview). Flat draws one picture the way stock ARMSX2 does, without the per-eye rendering, so it keeps stock compatibility. The modes switch live: the game pauses for a moment while the emulator rebuilds its render targets. Volumetric+ is an experiment and may go away; how it differs from Volumetric is in [`docs/fixed-scale-parallax.md`](docs/fixed-scale-parallax.md#volumetric-the-true-portal-in-the-multiview-path).
 
 ### Graphics
 

@@ -27,7 +27,8 @@ struct VrSettings
 	float screen_width = 2.4f; // meters
 	float screen_distance = 2.2f; // meters in front of the head
 	// Mode: volumetric (geometric stereo: the GS draws the game from where each eye is, parallax by
-	// Z), or flat (the same picture for both eyes). The GS always draws both eyes, so it switches live.
+	// Z), or flat (one picture for both eyes, drawn as stock ARMSX2 draws it). Switches live: the GS
+	// rebuilds its render targets at the next vsync (a short pause).
 	bool stereo = true;
 	// Volumetric+ (with stereo on): a test mode, the scene at a fixed size in the room behind the
 	// screen, seen from wherever the eyes are, leaning in or out too (GSVolumetric's portal). Depth

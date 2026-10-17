@@ -35,7 +35,17 @@ Repos: `SPD13/armsx2-steam-frame` branch `ps2v` (the GS changes) and `SPD13/arm-
 | `--stereo --stereo-alternate` | The old alternating-frame prototype. |
 | no `--stereo` | Mono; the stereo code paths stay off. |
 
-The multiview mode is selected through `GSVolumetric::StereoSettings::multiview` and fixed when the GS device is created. With multiview on, `GSDevice::m_stereo_layers` is 2.
+The multiview mode is selected through `GSVolumetric::StereoSettings::multiview`. With multiview on, `GSDevice::m_stereo_layers` is 2.
+
+**Since 2026-10-16, Flat draws one layer.** Before, Flat kept multiview on and only zeroed the eye offsets, so it ran every per-eye path described here.
+
+- **The device.** It turns the multiview feature on when it is created, if `multiview` is set. It starts with 2 layers in Volumetric and 1 in Flat (`stereo.enabled`).
+- **The switch.** `GSRendererHW::VolumetricEndVSync` runs after each present.
+  - It applies the host's pending settings (`GSVolumetric::ApplyStereo`).
+  - When the layer count must change, it writes the texture cache back to GS memory, drops the texture cache, the current frame and the pool, and calls `GSDevice::SetStereoLayers`.
+  - `SetStereoLayers` rebuilds the TFX render passes, TFX shaders/pipelines and the convert pipelines with `MULTIVIEW` variants.
+  - The game pauses briefly while this happens. The log says `3D: the GS now draws ... switched in N ms`.
+- **In Flat**, nothing in this document runs: there are no layered targets, no `MULTIVIEW` shaders, no per-layer loops and no pass restarts.
 
 **GS (fork):**
 
@@ -49,7 +59,11 @@ The multiview mode is selected through `GSVolumetric::StereoSettings::multiview`
   - TFX render passes are multiview (view mask 0b11, `VIEW_LOCAL` self-dependencies), and in-pass feedback barriers carry `VIEW_LOCAL`.
   - TFX shaders are compiled with `MULTIVIEW=1`. `tfx.glsl` samples every texture as an array (the eye's own layer, or layer 0 of a single-layer texture) and shifts vertices per view: left eye in `VRStereo.xy`, right eye in `VRStereo2.yz`.
   - The colour-clip setup/resolve and DATE prim-ID setup passes use a `MULTIVIEW` variant of `convert.glsl`.
-- **Utility passes.** Stretch, multi-stretch, merge, interlace, FXAA, shade boost and DATE setup run once per layer, on proxies. Copies and blits copy every layer. CAS/FSR/SGSR are turned off with multiview.
+- **Utility passes.**
+  - Stretch, multi-stretch, merge, interlace, FXAA, shade boost and DATE setup run once per layer, on proxies.
+  - Before the loop, `BeginStereoLayerWrite` hands the texture's load state to the proxies and marks the texture written. Before 2026-10-16 a target created without a clear stayed *Invalidated* after being written through its proxies: its next pass then loaded it as DONT_CARE, and the texture cache took it for empty.
+  - Copies and blits copy every layer.
+  - CAS/FSR/SGSR are turned off with multiview.
 - **Guard.** `CheckStereoRenderPass` logs any pass whose multiview-ness doesn't match its target's layer count. It never fired in testing.
 - **Present.** The left eye is the normal present into the libretro backbuffer, sampling layer 0. `PresentRightEye` blits layer 1 into a second backbuffer using the same present geometry. Both are published through `VKLibretro::Frame::right_image`.
 - **Which draws get the parallax shift.** Only draws into the displayed framebuffers (recent `DISPFB` bases) are shifted. The following are never shifted:

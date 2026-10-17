@@ -257,13 +257,14 @@ static XrPosef PushScreen(const XrPosef& screen, float delta)
 	return pose;
 }
 
-// The GS always draws both eyes (multiview), with the parallax driven by Z; flat mode just gives
-// both eyes no parallax (see the eye views in the frame loop). Volumetric+ is the GS's portal.
+// Volumetric: the GS draws both eyes (multiview), with the parallax driven by Z; Volumetric+ is the
+// GS's portal. Flat: the GS draws one picture, as stock ARMSX2 does (none of the per-eye rendering),
+// and switches between the two at the next vsync, rebuilding its targets (a short pause).
 static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr)
 {
 	GSVolumetric::StereoSettings stereo;
-	stereo.enabled = true;
-	stereo.multiview = true;
+	stereo.enabled = vr.stereo;
+	stereo.multiview = true; // the GS device can draw both eyes, whichever mode it starts in
 	stereo.z_mode = true;
 	stereo.convergence = vr.stereo_convergence;
 	stereo.portal = vr.stereo && vr.stereo_plus;
@@ -1025,6 +1026,8 @@ int main(int argc, char* argv[])
 				screen.Update(emu_frame);
 			if (emu_frame.stereo_eye >= 0)
 				last_eye_frame[emu_frame.stereo_eye] = Clock::now();
+			else if (!emu_frame.right_image)
+				last_eye_frame[0] = Clock::now(); // flat: one picture, in screen (not a stale right eye)
 		}
 
 		// The next frame's copies, done by the GS at the end of its present (ScreenLayer::Arm).
