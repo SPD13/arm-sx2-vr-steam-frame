@@ -32,12 +32,15 @@ func info(_ capture: Capture) {
     if let synthetic = capture.summary["synthetic"] as? Bool, synthetic { print("  (synthetic)") }
     let first = frames.first!.header
     print(String(format: "  %d frames over %.1f s, %dx%d pictures, depth %dx%d, %@",
-                 frames.count, capture.duration, first.width, first.height, first.depthWidth, first.depthHeight,
+                 first.time.isFinite ? frames.count : 0, capture.duration, first.width, first.height, first.depthWidth, first.depthHeight,
                  capture.summary["complete"] as? Bool == true ? "complete" : "NOT closed properly (the app did not exit cleanly)"))
     let dropped = frames.reduce(0) { $0 + $1.header.droppedBefore }
     if dropped > 0 { print("  \(dropped) frames dropped while capturing (the writers fell behind)") }
     print(capture.audio != nil ? String(format: "  sound: audio.wav, starting at %.2f s", capture.audioStart) : "  sound: none")
 
+    if !first.time.isFinite {
+        print(String(format: "  menus only, no game frames: %.1f s of headset frames", capture.duration))
+    } else {
     // Takes: stretches without a gap of more than a second (a menu pauses the game).
     print("  Takes:")
     var takeStart = 0
@@ -54,6 +57,7 @@ func info(_ capture: Capture) {
         takeStart = i
     }
     printTake(takeStart, frames.count - 1)
+    }
 
     for e in capture.events { print(String(format: "  %7.2f s  %@: %@", e.time, e.name, e.value)) }
     var shots: [Double] = []

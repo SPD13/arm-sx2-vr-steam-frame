@@ -175,7 +175,7 @@ final class ShotRenderer {
         case "orbit": return orbit(-28, 28, radius: 1.05, centre: SIMD3(0, 0, -0.15), height: 0.04)
         case "reveal": return orbit(0, 35, radius: 1.15, centre: SIMD3(0, 0, -0.45), height: 0.1)
         // The menus: the screen with the panel and the buttons beside it; the buttons up close.
-        case "menu": return [k(0, SIMD3(0.12, 0.04, 1.25), SIMD3(0.08, 0, 0)), k(1, SIMD3(0.04, 0.02, 1.1), SIMD3(0.06, 0, 0))]
+        case "menu": return [k(0, SIMD3(0.1, 0.03, 0.95), SIMD3(0.06, 0, 0)), k(1, SIMD3(0.03, 0.02, 0.8), SIMD3(0.05, 0, 0))]
         case "buttons": return [k(0, SIMD3(0.36, 0.06, 0.62), SIMD3(0.5, -0.02, 0)), k(1, SIMD3(0.42, 0.03, 0.5), SIMD3(0.52, -0.03, 0))]
         default: return nil
         }

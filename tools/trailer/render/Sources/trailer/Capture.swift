@@ -199,9 +199,6 @@ final class Capture {
             }
         }
         frames.sort { $0.header.time < $1.header.time }
-        if frames.isEmpty {
-            throw TrailerError("\(frameDir.path) holds no frames")
-        }
 
         if let text = try? String(contentsOf: dir.appendingPathComponent("poses.jsonl"), encoding: .utf8) {
             for line in text.split(separator: "\n") {
@@ -272,6 +269,21 @@ final class Capture {
             poses.sort { $0.time < $1.time }
         }
 
+        // Only menus (recorded before a game started): an empty screen, never shown, sized as placed.
+        if frames.isEmpty {
+            guard let first = poses.first(where: { $0.screen != nil }) else {
+                throw TrailerError("\(frameDir.path) holds no frames and no menus")
+            }
+            var h = FrameHeader()
+            h.time = .infinity
+            h.width = 64
+            h.height = max(1, Int((64 * first.screenSize.y / max(first.screenSize.x, 0.01)).rounded()))
+            h.drawRect = SIMD4(0, 0, Float(h.width), Float(h.height))
+            h.screenWidth = first.screenSize.x
+            h.screenHeight = first.screenSize.y
+            frames = [(dir.appendingPathComponent("frames/none"), h)]
+        }
+
         let wav = dir.appendingPathComponent("audio.wav")
         if FileManager.default.fileExists(atPath: wav.path) {
             audio = wav
@@ -284,7 +296,10 @@ final class Capture {
         }
     }
 
-    var duration: Double { frames.last!.header.time }
+    var duration: Double {
+        let last = frames.last!.header.time
+        return last.isFinite ? max(last, poses.last?.time ?? 0) : (poses.last?.time ?? 0)
+    }
 
     // The newest frame shown at `time` (seconds on the capture's clock).
     func frameIndex(at time: Double) -> Int {
@@ -300,6 +315,13 @@ final class Capture {
     func frame(_ index: Int) throws -> DecodedFrame {
         if let cache, cache.index == index { return cache.frame }
         let (url, header) = frames[index]
+        if !header.time.isFinite { // no game frames: a black picture behind the menus
+            let frame = DecodedFrame(header: header)
+            frame.left = [UInt8](repeating: 0, count: header.width * header.height * 4)
+            for i in stride(from: 3, to: frame.left.count, by: 4) { frame.left[i] = 255 }
+            cache = (index, frame)
+            return frame
+        }
         let data = try Data(contentsOf: url)
         let frame = DecodedFrame(header: header)
         for plane in header.planes {
