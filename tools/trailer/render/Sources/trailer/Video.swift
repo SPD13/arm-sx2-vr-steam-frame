@@ -142,6 +142,34 @@ func conformClip(_ input: URL, to url: URL, width: Int, height: Int, fps: Double
     try runFfmpeg(args)
 }
 
+// A still (a screenshot of the Wi-Fi page or the installer) as a shot: fitted into the frame on a dark
+// backdrop, pushing in slowly toward focus (0..1 of the frame), with a caption like the other shots.
+func imageShot(_ input: URL, to url: URL, width: Int, height: Int, fps: Double, duration: Double, zoom: Double,
+               focus: SIMD2<Double>, codec: Codec, fadeIn: Double, fadeOut: Double, caption: URL?, captionAt: Double) throws {
+    let frames = max(Int((duration * fps).rounded()), 1)
+    // Zoomed on a 4x canvas, so the slow push does not step from pixel to pixel.
+    let bw = width * 4, bh = height * 4
+    // With a caption the picture keeps to the right, the caption has the lower left to itself.
+    let fit = caption != nil ? "scale=\(bw * 62 / 100):\(bh * 88 / 100):force_original_aspect_ratio=decrease,pad=\(bw):\(bh):ow-iw-\(bw * 5 / 100):(oh-ih)/2" :
+        "scale=\(bw * 92 / 100):\(bh * 92 / 100):force_original_aspect_ratio=decrease,pad=\(bw):\(bh):(ow-iw)/2:(oh-ih)/2"
+    var v = "[0:v]\(fit):color=0x0b0d14," +
+        String(format: "zoompan=z='1+%.4f*on/%d':x='(iw-iw/zoom)*%.3f':y='(ih-ih/zoom)*%.3f':d=1:s=%dx%d:fps=%.3f,setsar=1,format=yuv420p",
+               zoom - 1, max(frames - 1, 1), focus.x, focus.y, width, height, fps)
+    if fadeIn > 0 { v += ",fade=t=in:st=0:d=\(fadeIn)" }
+    if fadeOut > 0 { v += String(format: ",fade=t=out:st=%.4f:d=%.4f", max(duration - fadeOut, 0), fadeOut) }
+    var args = ["-loop", "1", "-framerate", "\(fps)", "-i", input.path, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+    if let caption {
+        args += ["-loop", "1", "-i", caption.path]
+        let out = max(duration - fadeOut - 0.45, captionAt + 0.4)
+        v += "[base];[2:v]format=rgba,fade=t=in:st=\(captionAt):d=0.35:alpha=1," +
+            String(format: "fade=t=out:st=%.3f:d=0.35:alpha=1[cap];[base][cap]overlay=shortest=1:format=auto,format=yuv420p", out)
+    }
+    args += ["-filter_complex", v + "[vout]", "-map", "[vout]", "-map", "1:a", "-ac", "2",
+             "-t", String(format: "%.4f", duration)]
+    args += codec.videoArgs + codec.audioArgs + [url.path]
+    try runFfmpeg(args)
+}
+
 func videoDuration(_ url: URL) throws -> Double {
     let probe = Process()
     probe.executableURL = URL(fileURLWithPath: try ffmpegPath().replacingOccurrences(of: "ffmpeg", with: "ffprobe"))

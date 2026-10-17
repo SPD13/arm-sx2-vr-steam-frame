@@ -37,6 +37,8 @@ struct Shot {
     var fadeIn: Double = 0.25, fadeOut: Double = 0.25
     var volume: Double = 1
     var labels = ["Flat", "Volumetric"] // compare
+    var zoom: Double = 1.06 // image: how far it pushes in
+    var focus = SIMD2<Double>(0.5, 0.5) // image: toward where (0..1 of the frame)
 }
 
 struct EditList {
@@ -99,6 +101,8 @@ struct EditList {
             s.fadeOut = any["fade_out"] as? Double ?? any["fade"] as? Double ?? s.fadeOut
             s.volume = any["volume"] as? Double ?? 1
             if let labels = any["labels"] as? [String], labels.count == 2 { s.labels = labels }
+            s.zoom = any["zoom"] as? Double ?? s.zoom
+            if let f = any["focus"] as? [Double], f.count == 2 { s.focus = SIMD2(f[0], f[1]) }
             if let camera = any["camera"] as? String {
                 s.camera = camera
             } else if let keys = any["camera"] as? [[String: Any]] {
@@ -260,6 +264,19 @@ final class ShotRenderer {
             try conformClip(file, to: url, width: list.width, height: list.height, fps: list.fps, start: shot.start,
                             duration: shot.duration > 0 ? shot.duration : nil, codec: list.codec, fadeIn: shot.fadeIn,
                             fadeOut: shot.fadeOut, volume: shot.volume, caption: captionFile, captionAt: shot.captionAt)
+            if let captionFile { try? FileManager.default.removeItem(at: captionFile) }
+            return
+        case "image":
+            guard let file = shot.file else { throw TrailerError("image shot \(shot.index) has no file") }
+            var captionFile: URL?
+            if let text = shot.caption {
+                let bitmap = caption(width: list.width, height: list.height, text: text, detail: shot.captionDetail)
+                captionFile = url.deletingPathExtension().appendingPathExtension("caption.png")
+                try writePNG(bitmap.pixels, width: list.width, height: list.height, to: captionFile!, alpha: true)
+            }
+            try imageShot(file, to: url, width: list.width, height: list.height, fps: list.fps, duration: shot.duration,
+                          zoom: shot.zoom, focus: shot.focus, codec: list.codec, fadeIn: shot.fadeIn, fadeOut: shot.fadeOut,
+                          caption: captionFile, captionAt: shot.captionAt)
             if let captionFile { try? FileManager.default.removeItem(at: captionFile) }
             return
         case "title":

@@ -83,7 +83,8 @@ final class Renderer {
     private let solidPipeline: MTLRenderPipelineState
     private let floorPipeline: MTLRenderPipelineState
     private let uiPipeline: MTLRenderPipelineState
-    private var uiTextures: [Int: MTLTexture] = [:]
+    // By take and image number: each take numbers its menu images from 1.
+    private var uiTextures: [String: MTLTexture] = [:]
     private let depthWrite: MTLDepthStencilState
     private let depthRead: MTLDepthStencilState
     private let msaaColor: MTLTexture
@@ -340,7 +341,8 @@ final class Renderer {
     }
 
     private func uiTexture(_ id: Int, _ capture: Capture) -> MTLTexture? {
-        if let t = uiTextures[id] { return t }
+        let key = "\(capture.dir.path)#\(id)"
+        if let t = uiTextures[key] { return t }
         guard let image = capture.uiImage(id) else { return nil }
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: image.width, height: image.height, mipmapped: false)
         d.usage = .shaderRead
@@ -351,7 +353,7 @@ final class Renderer {
                       bytesPerRow: image.width * 4)
         }
         if uiTextures.count > 16 { uiTextures.removeAll() }
-        uiTextures[id] = t
+        uiTextures[key] = t
         return t
     }
 

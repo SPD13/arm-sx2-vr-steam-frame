@@ -186,7 +186,7 @@ do {
         for shot in list.shots {
             let safe = shot.name.replacingOccurrences(of: "[^A-Za-z0-9_-]+", with: "-", options: .regularExpression)
             let url = shotsDir.appendingPathComponent(String(format: "%02d-%@.%@", shot.index, safe, list.codec.ext))
-            if shot.type == "clip", let file = shot.file, !FileManager.default.fileExists(atPath: file.path) {
+            if shot.type == "clip" || shot.type == "image", let file = shot.file, !FileManager.default.fileExists(atPath: file.path) {
                 print("shot \(shot.index) (\(shot.name)): \(file.path) is missing; left out of the cut")
                 continue
             }

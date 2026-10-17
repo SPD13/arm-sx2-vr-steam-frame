@@ -70,10 +70,15 @@ The output folder holds `shots/NN-name.mov` (ProRes 422 HQ with sound, ready for
 | `wiggle` | The two eyes' real pictures, swapped `hz` times a second: depth without a headset. |
 | `title` | A card: `kicker`, `title`, `subtitle`. |
 | `clip` | An outside video, such as a screen recording, conformed to the cut: `file`, `start`, `duration` (all of it by default). |
+| `image` | A still, such as a screenshot of the Wi-Fi transfer page or the installer app, pushing in slowly: `file`, `duration`, `zoom` (default 1.06), `focus` (`[x, y]`, 0–1 of the frame). With a caption it keeps to the right of the frame. |
 
 Cameras (`camera`): `dolly`, `dolly-back`, `push`, `lean`, `orbit`, `reveal`, `front`, `gun` (over the shoulder of the first gun, looking down its beam), `menu` (the screen with an open panel and the buttons), `buttons` (the button column up close: the 3D and light gun buttons, the Wi-Fi line). A list of keyframes also works: `[{"t": 0, "pos": [x, y, z], "look": [x, y, z]}, ...]`. Coordinates are in meters in the screen's frame: the origin at the screen's centre, x right, y up, z toward the viewer.
 
 Any shot can carry a `caption` and a `detail` line (lower left, fading in at `caption_at`). Fades: `fade`, `fade_in`, `fade_out`. Picture options: `clip`, `fill`, `outline`, `floor`, `glass`, `guns`, `ui` (the menus, on by default), `flat`, `step` (grid, in pixels), `edge`, `eye` (0 = rebuild from the left eye, 1 = from the right).
+
+### Screenshots of the Wi-Fi page and the installer
+
+Both are web pages, so headless Chrome can capture them sharply from the Mac: open `http://<frame address>:8082/` while the game runs with Wi-Fi Transfer on (its tabs do not change the address, so click one with Chrome's debugging protocol first), and start the installer with `--browser --no-open`, which prints the address of its page. Use them as `image` shots.
 
 ### Footage the kit cannot record
 
