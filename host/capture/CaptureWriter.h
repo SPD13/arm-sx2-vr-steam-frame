@@ -36,6 +36,10 @@ public:
 		CaptureFormat::FrameHeader header{}; // the planes' kinds and raw sizes filled in; packed sizes are the writer's
 		std::array<const void*, CaptureFormat::MAX_PLANES> data{}; // each plane's bytes, valid until done runs
 		std::function<void()> done; // the planes may be reused (called on a worker thread)
+		// A menu image instead of a frame: written to image_path (relative to the capture's folder).
+		std::string image_path;
+		std::vector<uint32_t> image; // RGBA8
+		uint32_t image_width = 0, image_height = 0;
 	};
 	// Queues a frame; never blocks. Once the size limit is reached, frames are not written (done still runs).
 	void Submit(Job job);
@@ -52,6 +56,7 @@ private:
 	void WorkerLoop();
 	void LineLoop();
 	void WriteFrame(Job& job, std::vector<char>& buffer);
+	void WriteImage(Job& job, std::vector<char>& buffer);
 
 	std::string m_dir;
 	uint64_t m_max_bytes = 0;

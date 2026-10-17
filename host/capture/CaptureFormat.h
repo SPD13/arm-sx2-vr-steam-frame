@@ -9,12 +9,18 @@
 //                     when packed_size == raw_size
 //   poses.jsonl       a line per headset frame: the head, the eyes, the screen, the guns, the hands and
 //                     what was on (see TrailerCapture::RecordState), and events (a game starting)
+//   ui/NNNNNN.bin     a menu image (the open panel, or the atlas the pieces around the screen come
+//                     from), written when it was redrawn: a UiImageHeader, then its RGBA8 pixels
+//                     (premultiplied alpha, sRGB-encoded), LZ4-compressed unless packed_size == raw_size;
+//                     poses.jsonl's "ui" says which shows where
 //   audio.wav         the game's sound, recorded beside it (tools/trailer/capture-frame.sh)
 //
-// Planes: the left and right eye's pictures (RGBA8, sRGB-encoded as shown, width x height), and each
+// Planes: the left and right eye's pictures (RGBA8, sRGB-encoded as shown, width x height), each
 // eye's depth (float32 normalised Z, depth_width x depth_height over the same picture, larger is
-// nearer, -1 outside the game's picture). Flat captures have the left picture only; without depth (a
-// movie, a menu) there are no depth planes. All numbers are little-endian.
+// nearer, -1 outside the game's picture), and the HUD mask (one byte per picture pixel, rows of
+// (width + 3) & ~3 bytes: 1 where a HUD drawn after the depth snapshot left the Z maximum). Flat
+// captures have the left picture only; without depth (a movie, a menu) there are no depth planes.
+// All numbers are little-endian.
 
 #pragma once
 
@@ -31,6 +37,7 @@ namespace CaptureFormat
 		PLANE_COLOR_RIGHT = 2,
 		PLANE_DEPTH_LEFT = 3,
 		PLANE_DEPTH_RIGHT = 4,
+		PLANE_HUD_MASK = 5,
 	};
 
 	enum Mode : uint32_t
@@ -40,7 +47,7 @@ namespace CaptureFormat
 		MODE_VOLUMETRIC_PLUS = 2,
 	};
 
-	inline constexpr int MAX_PLANES = 4;
+	inline constexpr int MAX_PLANES = 5;
 
 	struct Plane
 	{
@@ -75,6 +82,16 @@ namespace CaptureFormat
 		Plane planes[MAX_PLANES];
 	};
 
+	inline constexpr char UI_MAGIC[8] = {'P', 'S', '2', 'V', 'U', 'I', '0', '1'};
+
+	struct UiImageHeader
+	{
+		char magic[8];
+		uint32_t width, height;
+		uint32_t raw_size, packed_size;
+	};
+	static_assert(sizeof(UiImageHeader) == 24);
+
 	// The layout tools/trailer reads.
 	static_assert(offsetof(FrameHeader, time_ns) == 16);
 	static_assert(offsetof(FrameHeader, width) == 32);
@@ -83,5 +100,5 @@ namespace CaptureFormat
 	static_assert(offsetof(FrameHeader, eye) == 96);
 	static_assert(offsetof(FrameHeader, plane_count) == 136);
 	static_assert(offsetof(FrameHeader, planes) == 144);
-	static_assert(sizeof(FrameHeader) == 208);
+	static_assert(sizeof(FrameHeader) == 224);
 } // namespace CaptureFormat

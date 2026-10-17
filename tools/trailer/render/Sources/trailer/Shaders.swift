@@ -27,7 +27,7 @@ struct Params {
     float4 flags;     // flatten, clip to the window, fill layer, fill radius (px)
     float4 depthInfo; // depth width, height, has depth, has the other eye's picture
     float4 stereo;    // mode, convergence, screen distance, farthest depth (m)
-    float4 tuning;    // pinned tolerance, alpha, fill margin (cells), 0
+    float4 tuning;    // pinned tolerance, alpha, fill margin (cells), has a HUD mask
 };
 
 float depthBehind(float z, constant Params& p) {
@@ -92,12 +92,15 @@ kernel void reconstruct(texture2d<float, access::read> picture [[texture(0)]],
                         texture2d<float, access::read> depth [[texture(2)]],
                         texture2d<float, access::write> out [[texture(3)]],
                         texture2d<float, access::read> otherDepth [[texture(4)]],
+                        texture2d<float, access::read> hud [[texture(5)]],
                         constant Params& p [[buffer(0)]],
                         uint2 gid [[thread_position_in_grid]]) {
     uint W = uint(p.sizes.x), H = uint(p.sizes.y);
     if (gid.x >= W || gid.y >= H) return;
     float d = 0.0;
-    if (p.depthInfo.z > 0.5) {
+    // The HUD mask (captured with it): drawn on the glass.
+    bool onHud = p.tuning.w > 0.5 && hud.read(gid).r > 0.5;
+    if (p.depthInfo.z > 0.5 && !onHud) {
         float2 dsizeF = p.depthInfo.xy;
         int2 dsize = int2(dsizeF);
         float2 scale = float2(W, H) / dsizeF; // picture pixels per depth texel
@@ -330,6 +333,12 @@ fragment float4 dotFS(FxOut in [[stage_in]]) {
     float r = length(in.uv * 2.0 - 1.0);
     float glow = pow(saturate(1.0 - r), 2.0) + pow(saturate(1.0 - r), 12.0) * 2.0;
     return float4(in.color.rgb * glow * in.color.a, 1.0);
+}
+
+// A menu image (premultiplied alpha, sRGB-encoded like the output), faded by color.a.
+fragment float4 uiFS(FxOut in [[stage_in]], texture2d<float> image [[texture(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    return image.sample(s, in.uv) * in.color.a;
 }
 
 fragment float4 solidFS(FxOut in [[stage_in]]) {

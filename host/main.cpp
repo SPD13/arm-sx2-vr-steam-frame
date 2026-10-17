@@ -134,7 +134,9 @@ static void PrintUsage(const char* argv0)
 		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
 		"                         with the pedal held for shots from a second before the first (testing)\n"
 		"  --capture DIR          Record what the headset shows for a trailer (tools/trailer): both eyes'\n"
-		"                         pictures and depth, the head, the screen and the guns, into a new folder\n"
+		"                         pictures and depth, the head, the screen and the guns, into a new folder,\n"
+		"                         between clicks of the record button beside the screen\n"
+		"  --capture-now          Record from the start, without the button (scripted takes)\n"
 		"  --capture-width N      Scale the captured pictures down to N pixels wide (default: as shown)\n"
 		"  --capture-max-gb G     Stop capturing at G GB on disk (default 40)\n"
 		"The screen and 3D options are saved settings too (VR.ini in the settings folder,\n"
@@ -193,6 +195,8 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 		}
 		else if (!std::strcmp(arg, "--capture") && has_value)
 			debug->capture.dir = argv[++i];
+		else if (!std::strcmp(arg, "--capture-now"))
+			debug->capture.record_now = true;
 		else if (!std::strcmp(arg, "--capture-width") && has_value)
 			debug->capture.max_width = static_cast<uint32_t>(std::max(0, std::atoi(argv[++i])));
 		else if (!std::strcmp(arg, "--capture-max-gb") && has_value)
@@ -404,6 +408,8 @@ int main(int argc, char* argv[])
 		Emu::Join();
 		return EXIT_FAILURE;
 	}
+	if (!debug_options.capture.dir.empty())
+		menu.EnableRecordButton();
 	if (!menu.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("The settings menu is unavailable.");
 	menu.SetPausesGame(!debug_options.no_menu_pause);
@@ -419,6 +425,7 @@ int main(int argc, char* argv[])
 	if (!debug_options.capture.dir.empty() &&
 		!capture.Create(device, gs->GetPhysicalDevice(), queue, queue_family, debug_options.capture))
 		Console.Error("Capture: off.");
+	menu.SetRecording(capture.Recording());
 	TrailerCapture::View capture_view; // what the GS draws the next frames with, for the capture
 	// An invisible quad for the layer slots that are empty this frame, so that every layer keeps its
 	// place in the layer list. SteamVR shows quad layers as overlays matched by their place in the
@@ -497,7 +504,11 @@ int main(int argc, char* argv[])
 	float frame_draw_rect[4] = {0.0f, 0.0f, 1280.0f, 960.0f};
 	// Depth for the guns, in volumetric mode: only while light gun mode is on (it costs copies on the GS),
 	// or while the trailer capture records it.
-	const auto apply_gun_depth = [&] { GSVolumetric::SetEnabled((gun_mode || capture.Active()) && vr.stereo); };
+	const auto apply_gun_depth = [&] {
+		GSVolumetric::SetEnabled((gun_mode || capture.Active()) && vr.stereo);
+		// The capture's HUD mask reads the depth at vsync (the depth itself is from before the HUD).
+		GSVolumetric::SetDepthExtras(capture.Active() && vr.stereo);
+	};
 	const auto set_gun_mode = [&](bool on) {
 		if (on == gun_mode)
 			return;
@@ -722,6 +733,13 @@ int main(int argc, char* argv[])
 				VrSettings changed = vr;
 				changed.gun_players = vr.gun_players > 1.5f ? 1.0f : 2.0f;
 				settings.Set(changed);
+			}
+			if (ui.toggle_record && capture.Active())
+			{
+				const bool start = !capture.Recording();
+				const double seconds = capture.SetRecording(start);
+				menu.SetRecording(start);
+				menu.ShowNotice(start ? std::string("Recording") : fmt::format("Recorded {:.0f} s", seconds), 2.5f);
 			}
 			if (ui.gun_action)
 			{
@@ -1149,8 +1167,9 @@ int main(int argc, char* argv[])
 		if (frame.should_render)
 			gun_renderer.Render(frame.display_time, guns_drawn, hands_drawn, input.controller, &slots[SLOT_GUNS]);
 		if (capture.Active())
-		{
 			capture.Poll();
+		if (capture.Recording())
+		{
 			TrailerCapture::State state;
 			state.head_valid = xr.LocateHead(frame.display_time, &state.head);
 			state.eyes_valid = xr.LocateEyes(frame.display_time, state.eyes);
@@ -1165,10 +1184,13 @@ int main(int argc, char* argv[])
 			state.guns = guns_drawn;
 			state.fired = gun_fired;
 			state.hands = hands_drawn;
-			capture.RecordState(state);
+			VrMenu::CaptureView ui_view;
+			menu.DescribeForCapture(&ui_view);
+			capture.RecordState(state, &ui_view);
 		}
 		if (capture.TakeStopped())
 		{
+			menu.SetRecording(false);
 			menu.ShowNotice("Capture stopped: size limit reached", 5.0f);
 			apply_gun_depth();
 		}

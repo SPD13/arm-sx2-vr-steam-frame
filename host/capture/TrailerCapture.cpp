@@ -6,6 +6,8 @@
 #include "capture_color.comp.h"
 #include "capture_depth.comp.h"
 #include "capture_depth_layered.comp.h"
+#include "capture_hud.comp.h"
+#include "capture_hud_layered.comp.h"
 
 #include "common/Console.h"
 
@@ -36,8 +38,20 @@ namespace
 		uint32_t offset;
 		float layer;
 	};
+	struct HudParams
+	{
+		float src_uv[4];
+		float draw_rect[4];
+		float frame_size[2];
+		uint32_t size[2];
+		float depth_scale;
+		uint32_t offset;
+	};
 	constexpr uint32_t PUSH_SIZE = 64;
-	static_assert(sizeof(ColorParams) <= PUSH_SIZE && sizeof(DepthParams) <= PUSH_SIZE);
+	// The depth planes at about the PS2's resolution: with the depth extras on (the HUD mask needs
+	// them) the GS hands over depth at the upscaled size.
+	constexpr uint32_t MAX_DEPTH_WIDTH = 960;
+	static_assert(sizeof(ColorParams) <= PUSH_SIZE && sizeof(DepthParams) <= PUSH_SIZE && sizeof(HudParams) <= PUSH_SIZE);
 
 	void AppendPose(std::string& out, const XrPosef& p)
 	{
@@ -126,7 +140,9 @@ bool TrailerCapture::Create(VkDevice device, VkPhysicalDevice gpu, VkQueue queue
 	m_color = CreatePipeline(capture_color_comp, sizeof(capture_color_comp), m_layout);
 	m_depth = CreatePipeline(capture_depth_comp, sizeof(capture_depth_comp), m_layout);
 	m_depth_layered = CreatePipeline(capture_depth_layered_comp, sizeof(capture_depth_layered_comp), m_layout);
-	if (!m_color || !m_depth || !m_depth_layered)
+	m_hud = CreatePipeline(capture_hud_comp, sizeof(capture_hud_comp), m_layout);
+	m_hud_layered = CreatePipeline(capture_hud_layered_comp, sizeof(capture_hud_layered_comp), m_layout);
+	if (!m_color || !m_depth || !m_depth_layered || !m_hud || !m_hud_layered)
 	{
 		Console.Error("Capture: could not create the pipelines.");
 		return false;
@@ -195,7 +211,9 @@ bool TrailerCapture::Create(VkDevice device, VkPhysicalDevice gpu, VkQueue queue
 		std::chrono::system_clock::now().time_since_epoch()).count();
 	m_next_log = m_start + std::chrono::seconds(10);
 	WriteSummary(false);
-	Console.WriteLnFmt("Capture: recording to {} (memory {}cached, {}coherent; up to {:.0f} GB)", options.dir,
+	if (options.record_now)
+		SetRecording(true);
+	Console.WriteLnFmt("Capture: armed, into {} (memory {}cached, {}coherent; up to {:.0f} GB); the record button starts it", options.dir,
 		FindMemoryType(1u << m_memory_type, cached) == m_memory_type ? "" : "not ", m_coherent ? "" : "not ", options.max_gb);
 	return true;
 }
@@ -268,7 +286,7 @@ void TrailerCapture::Destroy()
 	}
 	if (m_pool)
 		vkDestroyCommandPool(m_device, m_pool, nullptr);
-	for (VkPipeline pipeline : {m_color, m_depth, m_depth_layered})
+	for (VkPipeline pipeline : {m_color, m_depth, m_depth_layered, m_hud, m_hud_layered})
 	{
 		if (pipeline)
 			vkDestroyPipeline(m_device, pipeline, nullptr);
@@ -283,7 +301,7 @@ void TrailerCapture::Destroy()
 			vkDestroySampler(m_device, sampler, nullptr);
 	}
 	m_pool = VK_NULL_HANDLE;
-	m_color = m_depth = m_depth_layered = VK_NULL_HANDLE;
+	m_color = m_depth = m_depth_layered = m_hud = m_hud_layered = VK_NULL_HANDLE;
 	m_layout = VK_NULL_HANDLE;
 	m_set_layout = VK_NULL_HANDLE;
 	m_linear = m_nearest = VK_NULL_HANDLE;
@@ -306,9 +324,29 @@ int64_t TrailerCapture::Now() const
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - m_start).count();
 }
 
+double TrailerCapture::SetRecording(bool recording)
+{
+	if (!Active() || recording == m_recording)
+		return 0.0;
+	m_recording = recording;
+	const int64_t now = Now();
+	RecordEvent("record", recording ? "start" : "stop");
+	if (recording)
+	{
+		m_recording_since = now;
+		m_ui_panel = m_ui_atlas = {}; // the images on show are written again with this part
+		Console.WriteLnFmt("Capture: recording ({} frames so far)", m_writer.FramesWritten());
+		return 0.0;
+	}
+	const double seconds = (now - m_recording_since) / 1e9;
+	Console.WriteLnFmt("Capture: stopped after {:.1f} s ({} frames written, {} dropped)", seconds, m_writer.FramesWritten(),
+		m_dropped_total);
+	return seconds;
+}
+
 void TrailerCapture::Process(const VKLibretro::Frame& frame, VkImageView left, VkImageView right, const View& view)
 {
-	if (!Active() || !left || !frame.width || !frame.height)
+	if (!Recording() || !left || !frame.width || !frame.height)
 		return;
 	const uint32_t index = m_index++;
 
@@ -329,7 +367,8 @@ void TrailerCapture::Process(const VKLibretro::Frame& frame, VkImageView left, V
 	if (has_depth)
 	{
 		const double texels_per_pixel = (uv[2] - uv[0]) * frame.depth_width / (dr[2] - dr[0]);
-		depth_width = std::clamp(static_cast<uint32_t>(std::lround(frame.width * texels_per_pixel)), 1u, width);
+		depth_width = std::clamp(static_cast<uint32_t>(std::lround(frame.width * texels_per_pixel)), 1u,
+			std::min(width, MAX_DEPTH_WIDTH));
 		depth_height = std::max(1u, static_cast<uint32_t>(std::lround(double(depth_width) * height / width)));
 	}
 
@@ -368,6 +407,10 @@ void TrailerCapture::Process(const VKLibretro::Frame& frame, VkImageView left, V
 	const uint32_t right_plane = right ? add_plane(CaptureFormat::PLANE_COLOR_RIGHT, color_bytes) : 0;
 	const uint32_t left_depth = has_depth ? add_plane(CaptureFormat::PLANE_DEPTH_LEFT, depth_bytes) : 0;
 	const uint32_t right_depth = has_depth && layered && right ? add_plane(CaptureFormat::PLANE_DEPTH_RIGHT, depth_bytes) : 0;
+	// The HUD mask, when the GS kept the depth at vsync apart from the snapshot (its depth extras).
+	const bool has_hud = has_depth && frame.live_depth_view;
+	const uint32_t hud_words = (width + 3) / 4;
+	const uint32_t hud_plane = has_hud ? add_plane(CaptureFormat::PLANE_HUD_MASK, VkDeviceSize(hud_words) * 4 * height) : 0;
 	if (!EnsureCapacity(*slot, total))
 	{
 		Console.ErrorFmt("Capture: no memory for a {} MB frame", total >> 20);
@@ -450,6 +493,22 @@ void TrailerCapture::Process(const VKLibretro::Frame& frame, VkImageView left, V
 			vkCmdDispatch(cmd, (depth_width + 7) / 8, (depth_height + 7) / 8, 1);
 		}
 	}
+	if (has_hud)
+	{
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layered ? m_hud_layered : m_hud);
+		bind(frame.live_depth_view, m_nearest);
+		HudParams params{};
+		std::memcpy(params.src_uv, frame.depth_src_uv, sizeof(params.src_uv));
+		std::memcpy(params.draw_rect, frame.depth_draw_rect, sizeof(params.draw_rect));
+		params.frame_size[0] = float(frame.width);
+		params.frame_size[1] = float(frame.height);
+		params.size[0] = width;
+		params.size[1] = height;
+		params.depth_scale = frame.depth_scale;
+		params.offset = static_cast<uint32_t>(slot->offsets[hud_plane] / 4);
+		vkCmdPushConstants(cmd, m_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
+		vkCmdDispatch(cmd, (hud_words + 7) / 8, (height + 7) / 8, 1);
+	}
 	VkMemoryBarrier to_host{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
 	to_host.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 	to_host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
@@ -495,14 +554,31 @@ void TrailerCapture::Poll()
 	if (const auto now = std::chrono::steady_clock::now(); now >= m_next_log)
 	{
 		m_next_log = now + std::chrono::seconds(10);
-		Console.WriteLnFmt("Capture: {} frames written ({:.2f} GB), {} dropped, {} waiting to be written",
-			m_writer.FramesWritten(), m_writer.BytesWritten() / 1e9, m_dropped_total, m_writer.Backlog());
+		if (m_recording)
+			Console.WriteLnFmt("Capture: {} frames written ({:.2f} GB), {} dropped, {} waiting to be written",
+				m_writer.FramesWritten(), m_writer.BytesWritten() / 1e9, m_dropped_total, m_writer.Backlog());
 	}
 }
 
-void TrailerCapture::RecordState(const State& state)
+uint32_t TrailerCapture::UiImageId(UiImage& written, const Canvas* canvas, uint64_t version)
 {
-	if (!Active())
+	if (written.id && written.canvas == canvas && written.version == version)
+		return written.id;
+	written = {canvas, version, m_next_ui_id++};
+	CaptureWriter::Job job;
+	char name[32];
+	std::snprintf(name, sizeof(name), "ui/%06u.bin", written.id);
+	job.image_path = name;
+	job.image_width = static_cast<uint32_t>(canvas->Width());
+	job.image_height = static_cast<uint32_t>(canvas->Height());
+	job.image.assign(canvas->Pixels(), canvas->Pixels() + size_t(canvas->Width()) * size_t(canvas->Height()));
+	m_writer.Submit(std::move(job));
+	return written.id;
+}
+
+void TrailerCapture::RecordState(const State& state, const VrMenu::CaptureView* ui)
+{
+	if (!Recording())
 		return;
 	std::string line;
 	line.reserve(1024);
@@ -565,7 +641,29 @@ void TrailerCapture::RecordState(const State& state)
 		}
 		line += "}";
 	}
-	line += "]}";
+	line += "]";
+	if (ui && ui->atlas && (ui->panel || !ui->pieces.empty()))
+	{
+		line += ",\"ui\":{";
+		if (ui->panel)
+		{
+			fmt::format_to(std::back_inserter(line), "\"panel\":{{\"img\":{},\"p\":", UiImageId(m_ui_panel, ui->panel, ui->panel_version));
+			AppendPose(line, ui->panel_pose);
+			fmt::format_to(std::back_inserter(line), ",\"w\":{:.4f},\"h\":{:.4f}}},", ui->panel_size.width, ui->panel_size.height);
+		}
+		fmt::format_to(std::back_inserter(line), "\"atlas\":{},\"pieces\":[", UiImageId(m_ui_atlas, ui->atlas, ui->atlas_version));
+		for (size_t i = 0; i < ui->pieces.size(); i++)
+		{
+			const VrMenu::CaptureView::Piece& piece = ui->pieces[i];
+			fmt::format_to(std::back_inserter(line), "{}{{\"r\":[{},{},{},{}],\"p\":", i ? "," : "", piece.rect.offset.x,
+				piece.rect.offset.y, piece.rect.extent.width, piece.rect.extent.height);
+			AppendPose(line, piece.pose);
+			fmt::format_to(std::back_inserter(line), ",\"w\":{:.4f},\"h\":{:.4f},\"s\":{}}}", piece.size.width, piece.size.height,
+				int(piece.on_screen));
+		}
+		line += "]}";
+	}
+	line += "}";
 	m_writer.WriteLine(std::move(line));
 }
 

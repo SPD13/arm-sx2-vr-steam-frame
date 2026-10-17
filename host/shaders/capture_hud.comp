@@ -1,0 +1,9 @@
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// The trailer capture's HUD mask from a live depth image with one layer (see capture_hud.glsl).
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "capture_hud.glsl"

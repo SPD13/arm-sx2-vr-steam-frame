@@ -392,6 +392,35 @@ int main(int argc, char* argv[])
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
 
+	// A menu from 1.5 s to 3 s: a panel (image 1) in front of the screen, and a button beside it from
+	// the atlas (image 2), as VrMenu::DescribeForCapture describes them.
+	{
+		const auto image = [&](const char* path, uint32_t w, uint32_t h, auto shade) {
+			CaptureWriter::Job job;
+			job.image_path = path;
+			job.image_width = w;
+			job.image_height = h;
+			job.image.resize(size_t(w) * h);
+			for (uint32_t y = 0; y < h; y++)
+				for (uint32_t x = 0; x < w; x++)
+					job.image[size_t(y) * w + x] = shade(x, y);
+			writer.Submit(std::move(job));
+		};
+		image("ui/000001.bin", 800, 600, [](uint32_t x, uint32_t y) {
+			const bool border = x < 6 || y < 6 || x >= 794 || y >= 594;
+			const bool row = y > 80 && (y / 60) % 2 == 0 && x > 40 && x < 760;
+			const uint32_t a = 235, v = border ? 200 : row ? 70 : 38;
+			return v * a / 255 | (v * a / 255) << 8 | ((v + 20) * a / 255) << 16 | a << 24; // premultiplied
+		});
+		image("ui/000002.bin", 128, 64, [](uint32_t x, uint32_t y) {
+			const float d = std::hypot(float(x % 64) - 31.5f, float(y) - 31.5f);
+			if (d > 30.0f)
+				return 0u;
+			const bool red = x >= 64;
+			return (red ? 220u : 60u) | (red ? 40u : 120u) << 8 | (red ? 40u : 220u) << 16 | 255u << 24;
+		});
+	}
+
 	// Poses at 90 Hz.
 	writer.WriteLine("{\"t\":0,\"event\":\"game\",\"value\":\"SYNTH-00001 Synthetic Gallery\"}");
 	const float half_h = s.ScreenHeight() * 0.5f;
@@ -427,7 +456,18 @@ int main(int argc, char* argv[])
 			"\"end\":[%.4f,%.4f,%.4f],\"bc\":\"FF3A30\",\"fire\":%d},{\"v\":0}]",
 			Pose(gx, gy, gz, q[0], q[1], q[2], q[3]).c_str(), firing ? 1.0f : 0.0f, tx, ty, tz, firing ? 1 : 0);
 		line += buf;
-		line += ",\"hands\":[{\"v\":0},{\"v\":0}]}";
+		line += ",\"hands\":[{\"v\":0},{\"v\":0}]";
+		if (t >= 1.5f && t < 3.0f)
+		{
+			std::snprintf(buf, sizeof(buf),
+				",\"ui\":{\"panel\":{\"img\":1,\"p\":%s,\"w\":1.9000,\"h\":1.4250},\"atlas\":2,\"pieces\":["
+				"{\"r\":[0,0,64,64],\"p\":%s,\"w\":0.1600,\"h\":0.1600,\"s\":1},"
+				"{\"r\":[64,0,64,64],\"p\":%s,\"w\":0.1600,\"h\":0.1600,\"s\":1}]}",
+				Pose(sx, sy, sz + 0.15f).c_str(), Pose(s.screen_width * 0.5f + 0.12f, 0.2f, 0.0f).c_str(),
+				Pose(s.screen_width * 0.5f + 0.12f, -0.0f, 0.0f).c_str());
+			line += buf;
+		}
+		line += "}";
 		writer.WriteLine(line);
 	}
 	writer.Finish();

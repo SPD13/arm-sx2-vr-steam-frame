@@ -12,5 +12,5 @@ fi
 name=$1
 dest=${2:-$HOME/ps2v-captures}
 mkdir -p "$dest"
-rsync -a --info=progress2 "$host:ps2-volumetric/captures/$name" "$dest/"
+rsync -a "$host:ps2-volumetric/captures/$name" "$dest/"   # macOS openrsync: no --info=progress2
 echo "Fetched to $dest/$name"

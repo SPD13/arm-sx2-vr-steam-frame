@@ -72,6 +72,8 @@ namespace
 	constexpr uint32_t PAUSE_ICON = 0xf04c;
 	constexpr uint32_t PLAY_ICON = 0xf04b;
 	constexpr uint32_t POWER_ICON = 0xf011; // power-off
+	constexpr uint32_t RECORD_ICON = 0xf111; // circle
+	constexpr uint32_t STOP_ICON = 0xf04d; // stop
 	constexpr float SCROLL_SPEED = 22.0f; // pixels per frame with a thumbstick pushed all the way
 
 	// text's lines (at its line breaks) wrapped at spaces to fit width.
@@ -162,10 +164,12 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	// The groups' layouts: each button's place below its group's first. At the top, the light gun's
 	// two come after a gap below the game list.
 	const float spacing = BUTTON_SIZE + BUTTON_GAP;
-	static constexpr int group_of[NUM_BUTTONS] = {0, 0, 1, 1, 0, 0, 2, 2}; // GEAR ... POWER
-	static constexpr float slot_of[NUM_BUTTONS] = {0, 1, 0, 1, 2, 3, 0, 1}; // in spacings
+	static constexpr int group_of[NUM_BUTTONS] = {0, 0, 1, 1, 0, 0, 2, 2, 1}; // GEAR ... RECORD
+	static constexpr float slot_of[NUM_BUTTONS] = {0, 1, 0, 1, 2, 3, 0, 1, 2}; // in spacings
 	for (int b = 0; b < NUM_BUTTONS; b++)
 	{
+		if (b == RECORD && !m_record_available)
+			continue; // the layout as without it
 		Button& button = m_buttons[b];
 		button.group = group_of[b];
 		button.offset = slot_of[b] * spacing + (b == GUN_MODE || b == GUNS ? BUTTON_GROUP_GAP : 0.0f);
@@ -248,6 +252,9 @@ bool VrMenu::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue qu
 	m_buttons[PAUSE].lit = m_user_paused;
 	m_buttons[PAUSE].disabled = !m_has_game;
 	m_buttons[POWER].icon = POWER_ICON;
+	m_buttons[RECORD].icon = m_recording ? STOP_ICON : RECORD_ICON;
+	m_buttons[RECORD].danger = m_recording;
+	m_buttons[RECORD].shown = m_record_available;
 	m_buttons[POWER].danger = true;
 	m_created = true;
 	for (int g = 0; g < NUM_GROUPS; g++)
@@ -263,6 +270,61 @@ void VrMenu::Put(const OverlayLayer::Part& part, const Canvas& canvas)
 {
 	m_atlas_canvas.Copy(canvas, part.rect.offset.x, part.rect.offset.y);
 	m_atlas_dirty = true;
+	m_atlas_version++;
+}
+
+void VrMenu::DescribeForCapture(CaptureView* view) const
+{
+	*view = {};
+	if (!m_created)
+		return;
+	if (m_open != Panel::None && m_panel.HasImage())
+	{
+		view->panel = m_open == Panel::Settings ? &m_settings_menu->GetCanvas() : &m_game_list->GetCanvas();
+		view->panel_version = m_panel_version;
+		view->panel_pose = m_panel.Pose();
+		view->panel_size = m_panel.Size();
+	}
+	view->atlas = &m_atlas_canvas;
+	view->atlas_version = m_atlas_version;
+	// As ComposeSheet puts them on the sheet.
+	const auto add = [view](const OverlayLayer::Part& part, bool on_screen) {
+		view->pieces.push_back({part.rect, part.pose, part.size, on_screen});
+	};
+	// Not the record button: it is the capture's own. It is the last of its group, so the group's
+	// piece is cut above it (and left out when it is all that shows, beside an open panel).
+	for (int g = 0; g < NUM_GROUPS; g++)
+	{
+		const auto shown = [g](const Button& b) { return b.group == g && b.shown; };
+		const bool others = std::any_of(m_buttons.begin(), m_buttons.end(), [&](const Button& b) {
+			return shown(b) && &b != &m_buttons[RECORD];
+		});
+		if (!others)
+			continue;
+		OverlayLayer::Part part = m_groups[g].part;
+		if (m_record_available && m_buttons[RECORD].group == g)
+		{
+			const float cut = m_groups[g].height - m_buttons[RECORD].offset + BUTTON_GAP; // meters, from the bottom
+			const int cut_px = static_cast<int>(std::lround(cut / METERS_PER_PX));
+			part.rect.extent.height = std::max(part.rect.extent.height - cut_px, 1);
+			part.size.height = std::max(part.size.height - cut, 0.001f);
+			part.pose.position.y += 0.5f * cut;
+		}
+		add(part, true);
+	}
+	if (m_show_tooltip && m_on_button[m_hand] != RECORD)
+		add(m_tooltip, true);
+	if (!m_web_line_text.empty())
+		add(m_web_line, true);
+	// Not the capture's own notices either.
+	if (std::chrono::steady_clock::now() < m_notice_until && !m_notice_from_capture)
+		add(m_notice, true);
+	if (!m_messages_text.empty())
+		add(m_messages, true);
+	if (m_show_pointer)
+		add(m_beam, false);
+	if (m_show_cursor)
+		add(m_cursor, false);
 }
 
 void VrMenu::Destroy()
@@ -358,6 +420,8 @@ std::string VrMenu::TooltipText(int button) const
 			return m_user_paused ? "Paused: click to resume" : "Pause the game";
 		case POWER:
 			return m_has_game ? "Quit ARMSX2 VR, or reset the game" : "Quit ARMSX2 VR";
+		case RECORD:
+			return m_recording ? "Recording: click to stop" : "Record a trailer take";
 		default:
 			return {};
 	}
@@ -397,6 +461,17 @@ void VrMenu::UpdateModeButton()
 		return;
 	button.lit = mode > 0;
 	button.icon = ModeIcon(mode);
+	DrawButton(button);
+}
+
+void VrMenu::SetRecording(bool recording)
+{
+	if (!m_record_available)
+		return;
+	m_recording = recording;
+	Button& button = m_buttons[RECORD];
+	button.icon = recording ? STOP_ICON : RECORD_ICON;
+	button.danger = recording;
 	DrawButton(button);
 }
 
@@ -516,6 +591,7 @@ void VrMenu::UpdateMessages()
 
 void VrMenu::ShowNotice(std::string text, float seconds)
 {
+	m_notice_from_capture = text.rfind("Record", 0) == 0 || text.rfind("Capture", 0) == 0;
 	if (!m_created)
 		return;
 	// A pill as wide as the text, centred in the layer.
@@ -627,7 +703,9 @@ void VrMenu::UpdateShownButtons()
 	// Beside an open panel, the buttons that go to the panels (and quit), the open one's lit.
 	for (int b = 0; b < NUM_BUTTONS; b++)
 	{
-		m_buttons[b].shown = m_open == Panel::None || b == GEAR || b == GAMES || b == POWER;
+		// The record button too: a take can start on the game list (the trailer's standalone shot).
+		m_buttons[b].shown = (m_open == Panel::None || b == GEAR || b == GAMES || b == POWER || b == RECORD) &&
+		                     (b != RECORD || m_record_available);
 		m_buttons[b].hovered = false;
 	}
 	m_buttons[GEAR].lit = m_open == Panel::Settings;
@@ -865,6 +943,11 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 				UpdatePassthroughButton();
 				m_swallow[hand] = true;
 			}
+			else if (hovered == RECORD)
+			{
+				result.toggle_record = true;
+				m_swallow[hand] = true;
+			}
 			else if (hovered == PAUSE)
 			{
 				m_user_paused = !m_user_paused;
@@ -941,7 +1024,10 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			if (scroll != 0.0f)
 				m_settings_menu->Scroll(scroll);
 			if (m_settings_menu->Update(gui) || just_opened)
+			{
 				m_panel.Upload(m_settings_menu->GetCanvas());
+				m_panel_version++;
+			}
 			result.recenter = m_settings_menu->TakeRecenterRequest(); // the panel follows (Reanchor)
 			result.gun_mode = m_settings_menu->TakeGunModeRequest();
 			result.gun_action = m_settings_menu->TakeGunAction();
@@ -958,7 +1044,10 @@ VrMenu::Result VrMenu::Update(XrTime time, const XrApp::Input& input, const std:
 			if (scroll != 0.0f)
 				m_game_list->Scroll(scroll);
 			if (m_game_list->Update(gui) || just_opened)
+			{
 				m_panel.Upload(m_game_list->GetCanvas());
+				m_panel_version++;
+			}
 			close = m_game_list->TakeCloseRequest();
 			// Nothing to play yet: on to the Wi-Fi transfer settings, which come back here. The panel
 			// shows the list until they have drawn, next frame.

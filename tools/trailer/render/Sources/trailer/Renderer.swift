@@ -67,6 +67,7 @@ struct SceneOptions {
     var floorHeight: Float = -1.35 // below the screen's centre
     var beamWidth: Float = 0.006
     var pinTolerance: Float = 0.015 // the other eye's mismatch below which a pixel may be on the glass
+    var ui = true // the menus, as they showed
 }
 
 final class Renderer {
@@ -81,6 +82,8 @@ final class Renderer {
     private let dotPipeline: MTLRenderPipelineState
     private let solidPipeline: MTLRenderPipelineState
     private let floorPipeline: MTLRenderPipelineState
+    private let uiPipeline: MTLRenderPipelineState
+    private var uiTextures: [Int: MTLTexture] = [:]
     private let depthWrite: MTLDepthStencilState
     private let depthRead: MTLDepthStencilState
     private let msaaColor: MTLTexture
@@ -157,6 +160,7 @@ final class Renderer {
         dotPipeline = try pipeline("fxVS", "dotFS", vertex: fxVertex, blend: (.one, .one))
         solidPipeline = try pipeline("fxVS", "solidFS", vertex: fxVertex, blend: (.sourceAlpha, .oneMinusSourceAlpha))
         floorPipeline = try pipeline("fxVS", "floorFS", vertex: fxVertex, blend: (.one, .oneMinusSourceAlpha))
+        uiPipeline = try pipeline("fxVS", "uiFS", vertex: fxVertex, blend: (.one, .oneMinusSourceAlpha))
 
         let ds = MTLDepthStencilDescriptor()
         ds.depthCompareFunction = .less
@@ -229,6 +233,23 @@ final class Renderer {
             plane.withUnsafeBytes { texture(.r32Float, h.depthWidth, h.depthHeight, $0.baseAddress, 4) }
         } ?? depth
         let dmap = texture(.r32Float, w, ht, nil, 4, usage: [.shaderRead, .shaderWrite], shared: true)
+        // The HUD mask, rows padded to four bytes.
+        let hudStride = (w + 3) & ~3
+        let hud: MTLTexture
+        if let mask = frame.hudMask, mask.count >= hudStride * ht {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: w, height: ht, mipmapped: false)
+            d.usage = .shaderRead
+            d.storageMode = .shared
+            hud = device.makeTexture(descriptor: d)!
+            mask.withUnsafeBytes { raw in
+                // 0/1 bytes: scaled so the shader reads 1.0 on the HUD.
+                var scaled = [UInt8](repeating: 0, count: hudStride * ht)
+                for i in 0..<scaled.count where raw[i] != 0 { scaled[i] = 255 }
+                hud.replace(region: MTLRegionMake2D(0, 0, w, ht), mipmapLevel: 0, withBytes: scaled, bytesPerRow: hudStride)
+            }
+        } else {
+            hud = texture(.r8Unorm, 1, 1, [UInt8(0)], 1)
+        }
 
         var p = Params()
         p.sizes = SIMD4(Float(w), Float(ht), h.screenWidth, h.screenHeight)
@@ -243,7 +264,7 @@ final class Renderer {
                             depthPlane != nil && h.depthWidth > 0 ? 1 : 0,
                             frame.right != nil && h.mode != .flat ? 1 : 0)
         p.stereo = SIMD4(Float(h.mode.rawValue), h.convergence, h.screenDistance, options.farthest)
-        p.tuning = SIMD4(options.pinTolerance, 1, 0, 0)
+        p.tuning = SIMD4(options.pinTolerance, 1, 0, frame.hudMask != nil ? 1 : 0)
 
         let count = (gw - 1) * (gh - 1) * 6
         guard let indices = device.makeBuffer(length: count * 4, options: .storageModePrivate) else {
@@ -269,6 +290,7 @@ final class Renderer {
         enc.setTexture(depth, index: 2)
         enc.setTexture(dmap, index: 3)
         enc.setTexture(otherDepth, index: 4)
+        enc.setTexture(hud, index: 5)
         enc.setBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
         enc.dispatchThreads(MTLSize(width: w, height: ht, depth: 1), threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.setComputePipelineState(indicesPipeline)
@@ -313,6 +335,24 @@ final class Renderer {
         var pose: PoseSample? // the headset's state at that moment
         var toScreen: Pose // LOCAL space into the screen's frame
         var flash: [Bool] = [false, false] // a shot just fired, per gun
+        var showPicture = true // false before the game's first frame (the game list, no game yet)
+        var capture: Capture? // for the menus' images
+    }
+
+    private func uiTexture(_ id: Int, _ capture: Capture) -> MTLTexture? {
+        if let t = uiTextures[id] { return t }
+        guard let image = capture.uiImage(id) else { return nil }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: image.width, height: image.height, mipmapped: false)
+        d.usage = .shaderRead
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d) else { return nil }
+        image.pixels.withUnsafeBytes {
+            t.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0, withBytes: $0.baseAddress!,
+                      bytesPerRow: image.width * 4)
+        }
+        if uiTextures.count > 16 { uiTextures.removeAll() }
+        uiTextures[id] = t
+        return t
     }
 
     // Renders into `output` and returns its pixels (BGRA, top row first).
@@ -365,7 +405,10 @@ final class Renderer {
         enc.setDepthStencilState(depthWrite)
         enc.setVertexTexture(r.dmap, index: 0)
         enc.setFragmentTexture(r.picture, index: 0)
-        if options.fill && !options.flatten {
+        if !scene.showPicture {
+            p.tuning.y = 0 // nothing on the screen yet
+        }
+        if options.fill && !options.flatten && scene.showPicture {
             var fill = p
             fill.flags.z = 1
             fill.flags.w = max(48, 8 * options.step) // pixels: about the largest parallax of a camera move
@@ -376,9 +419,11 @@ final class Renderer {
             enc.setFragmentBytes(&fill, length: MemoryLayout<Params>.stride, index: 0)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: r.fillIndexCount, indexType: .uint32, indexBuffer: r.fillIndices, indexBufferOffset: 0)
         }
-        enc.setVertexBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
-        enc.setFragmentBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
-        enc.drawIndexedPrimitives(type: .triangle, indexCount: r.indexCount, indexType: .uint32, indexBuffer: r.indices, indexBufferOffset: 0)
+        if scene.showPicture {
+            enc.setVertexBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
+            enc.setFragmentBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: r.indexCount, indexType: .uint32, indexBuffer: r.indices, indexBufferOffset: 0)
+        }
 
         // The window's edge.
         if options.outline {
@@ -427,6 +472,28 @@ final class Renderer {
                 if g < scene.flash.count && scene.flash[g] {
                     dots += billboard(at: muzzle, radius: 0.07, camera: camera.position, color: SIMD4(1, 0.75, 0.35, 1))
                 }
+            }
+        }
+        // The menus: the panel and the pieces around the screen, as the headset layered them (over
+        // the screen, under nearer guns).
+        if options.ui, let pose = scene.pose, let capture = scene.capture {
+            for quad in pose.ui {
+                guard let texture = uiTexture(quad.image, capture) else { continue }
+                let placed = quad.onScreen ? quad.pose : scene.toScreen * quad.pose
+                let lift = SIMD3<Float>(0, 0, quad.onScreen ? 0.003 : 0)
+                let c = placed.position + lift
+                let right = placed.rotation.act(SIMD3(quad.size.x * 0.5, 0, 0))
+                let up = placed.rotation.act(SIMD3(0, quad.size.y * 0.5, 0))
+                let tw = Float(texture.width), th = Float(texture.height)
+                let rect = quad.rect.z < 0 ? SIMD4(0, 0, tw, th) : quad.rect
+                let u0 = rect.x / tw, v0 = rect.y / th, u1 = (rect.x + rect.z) / tw, v1 = (rect.y + rect.w) / th
+                let white = SIMD4<Float>(1, 1, 1, 1)
+                let tl = c - right + up, tr = c + right + up, bl = c - right - up, br = c + right - up
+                enc.setFragmentTexture(texture, index: 0)
+                drawFx(enc, uiPipeline, &fx, [
+                    FxVertex(tl, SIMD2(u0, v0), white), FxVertex(tr, SIMD2(u1, v0), white), FxVertex(bl, SIMD2(u0, v1), white),
+                    FxVertex(tr, SIMD2(u1, v0), white), FxVertex(br, SIMD2(u1, v1), white), FxVertex(bl, SIMD2(u0, v1), white),
+                ], depth: depthRead)
             }
         }
         if !beams.isEmpty { drawFx(enc, beamPipeline, &fx, beams, depth: depthRead) }

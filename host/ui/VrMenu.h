@@ -71,6 +71,7 @@ public:
 		std::optional<SettingsMenu::GunModeRequest> gun_mode;
 		bool toggle_guns = false;
 		std::optional<SettingsMenu::GunAction> gun_action;
+		bool toggle_record = false; // the record button (trailer capture)
 	};
 	// screen: the game screen's centre pose and size in meters.
 	Result Update(XrTime time, const XrApp::Input& input, const std::array<Pointer, 2>& pointers, const XrPosef& screen,
@@ -104,6 +105,34 @@ public:
 
 	// Whether opening a menu pauses the game (debugging: --no-menu-pause).
 	void SetPausesGame(bool pauses) { m_pauses_game = pauses; }
+
+	// The trailer capture (--capture): a record button under passthrough, red while recording. Call
+	// EnableRecordButton before Create.
+	void EnableRecordButton() { m_record_available = true; }
+	void SetRecording(bool recording);
+
+	// What the menus show this frame, for the trailer capture: the open panel's image and placement
+	// (LOCAL space), and the pieces of the atlas that show: around the screen (pose relative to its
+	// centre, in its plane) or, for the pointer's beam and dot, in LOCAL space. A version changes when
+	// its image is redrawn.
+	struct CaptureView
+	{
+		const Canvas* panel = nullptr; // null: no panel open
+		uint64_t panel_version = 0;
+		XrPosef panel_pose{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}};
+		XrExtent2Df panel_size{};
+		const Canvas* atlas = nullptr;
+		uint64_t atlas_version = 0;
+		struct Piece
+		{
+			XrRect2Di rect; // pixels of the atlas
+			XrPosef pose;
+			XrExtent2Df size; // meters
+			bool on_screen; // pose relative to the screen; otherwise LOCAL space
+		};
+		std::vector<Piece> pieces;
+	};
+	void DescribeForCapture(CaptureView* view) const;
 
 private:
 	enum class Panel
@@ -146,6 +175,7 @@ private:
 		GUNS,
 		PAUSE,
 		POWER,
+		RECORD, // with --capture only, under passthrough
 		NUM_BUTTONS
 	};
 	// Buttons are drawn per group, each a piece of the sheet: the top ones (the gear, the game list and
@@ -260,4 +290,9 @@ private:
 	bool m_gun_on = false;
 	bool m_user_paused = false; // with the pause button: stays paused when a menu closes
 	int m_guns = 1;
+	bool m_record_available = false;
+	bool m_recording = false;
+	uint64_t m_panel_version = 0; // counts the panel's uploads
+	uint64_t m_atlas_version = 0; // counts the atlas's changes
+	bool m_notice_from_capture = false; // the notice is the capture's ("Recording"): not captured
 };

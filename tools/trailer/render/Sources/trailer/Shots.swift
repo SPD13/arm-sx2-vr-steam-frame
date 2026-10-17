@@ -114,7 +114,6 @@ struct EditList {
             if s.type == "reveal" {
                 s.options.clip = false
                 s.options.glass = true
-                s.options.fill = false
                 if any["camera"] == nil { s.camera = "reveal" }
             }
             var o = s.options
@@ -128,6 +127,7 @@ struct EditList {
             o.step = Float(any["step"] as? Double ?? Double(o.step))
             o.edge = Float(any["edge"] as? Double ?? Double(o.edge))
             o.eye = any["eye"] as? Int ?? o.eye
+            o.ui = any["ui"] as? Bool ?? o.ui
             o.floorHeight = Float(any["floor_height"] as? Double ?? Double(o.floorHeight))
             s.options = o
             shots.append(s)
@@ -173,7 +173,10 @@ final class ShotRenderer {
         case "lean": return [k(0, SIMD3(0.3, 0.05, 0.7), SIMD3(0, 0, -0.6)), k(0.5, SIMD3(0, 0.02, 0.62), SIMD3(0, 0, -0.6)),
                              k(1, SIMD3(-0.3, -0.02, 0.7), SIMD3(0, 0, -0.6))]
         case "orbit": return orbit(-28, 28, radius: 1.05, centre: SIMD3(0, 0, -0.15), height: 0.04)
-        case "reveal": return orbit(0, 68, radius: 1.15, centre: SIMD3(0, 0, -0.45), height: 0.12)
+        case "reveal": return orbit(0, 35, radius: 1.15, centre: SIMD3(0, 0, -0.45), height: 0.1)
+        // The menus: the screen with the panel and the buttons beside it; the buttons up close.
+        case "menu": return [k(0, SIMD3(0.12, 0.04, 1.25), SIMD3(0.08, 0, 0)), k(1, SIMD3(0.04, 0.02, 1.1), SIMD3(0.06, 0, 0))]
+        case "buttons": return [k(0, SIMD3(0.36, 0.06, 0.62), SIMD3(0.5, -0.02, 0)), k(1, SIMD3(0.42, 0.03, 0.5), SIMD3(0.52, -0.03, 0))]
         default: return nil
         }
     }
@@ -315,7 +318,9 @@ final class ShotRenderer {
             let before = capture.pose(at: time - 0.06)
             for g in 0..<2 { flash[g] = pose.guns[g].fire && !(before?.guns[g].fire ?? false) }
         }
-        let scene = Renderer.Scene(frame: frame, frameIndex: index, pose: pose, toScreen: toScreen, flash: flash)
+        var scene = Renderer.Scene(frame: frame, frameIndex: index, pose: pose, toScreen: toScreen, flash: flash)
+        scene.showPicture = frame.header.time <= time + 0.25 // not a frame from later on (before the game started)
+        scene.capture = capture
 
         if shot.type == "wiggle" {
             let eye = Int(tau * shot.hz * 2) % 2

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Records a trailer take on the Steam Frame: starts the game with --capture (both eyes' pictures and
-# depth, the head, the screen and the guns) and records the headset's sound beside it. Play in the
-# headset; quit the game (the power button) to end the take. Then fetch it with fetch-capture.sh.
+# depth, the head, the screen and the guns) and records the headset's sound beside it. In the
+# headset, start the game, calibrate the light gun and play to the scene to show; then the red record
+# button under the passthrough button starts recording and stops it (as many times as you like).
+# Quit the game (the power button) to end the take. Then fetch it with fetch-capture.sh.
 #
 # Usage: tools/trailer/capture-frame.sh [--dev] [--name NAME] [--width N] [--max-gb G] [-- ps2v arguments]
 #   --dev       run the development build (~/ps2-volumetric/repo, tools/run-frame.sh) instead of the
@@ -36,7 +38,8 @@ fi
 quoted=
 [[ ${#extra[@]} -gt 0 ]] && quoted=$(printf ' %q' "${extra[@]}")
 
-echo "Take $name on $host: put the headset on and play; quit the game to end the take."
+echo "Take $name on $host: put the headset on, calibrate, play to the scene, then the record button"
+echo "(under passthrough, beside the screen) starts and stops recording. Quit the game to end the take."
 ssh -t "$host" bash -s <<REMOTE
 set -euo pipefail
 cd ~

@@ -24,6 +24,8 @@ bool CaptureWriter::Start(const std::string& dir, int threads, uint64_t max_byte
 		return false;
 	}
 	fs::create_directories(fs::path(dir) / "frames", ec);
+	if (!ec)
+		fs::create_directories(fs::path(dir) / "ui", ec);
 	if (ec)
 	{
 		std::fprintf(stderr, "Capture: cannot create %s/frames: %s\n", dir.c_str(), ec.message().c_str());
@@ -111,7 +113,12 @@ void CaptureWriter::WorkerLoop()
 			m_jobs.pop_front();
 		}
 		if (!Full())
-			WriteFrame(job, buffer);
+		{
+			if (job.image_path.empty())
+				WriteFrame(job, buffer);
+			else
+				WriteImage(job, buffer);
+		}
 		if (job.done)
 			job.done();
 	}
@@ -164,6 +171,29 @@ void CaptureWriter::WriteFrame(Job& job, std::vector<char>& buffer)
 	m_frames.fetch_add(1, std::memory_order_relaxed);
 	if (m_bytes.fetch_add(total, std::memory_order_relaxed) + total >= m_max_bytes)
 		m_full.store(true, std::memory_order_release);
+}
+
+void CaptureWriter::WriteImage(Job& job, std::vector<char>& buffer)
+{
+	CaptureFormat::UiImageHeader header{};
+	std::memcpy(header.magic, CaptureFormat::UI_MAGIC, sizeof(header.magic));
+	header.width = job.image_width;
+	header.height = job.image_height;
+	const int raw = static_cast<int>(job.image.size() * sizeof(uint32_t));
+	header.raw_size = static_cast<uint32_t>(raw);
+	if (buffer.size() < static_cast<size_t>(LZ4_compressBound(raw)))
+		buffer.resize(static_cast<size_t>(LZ4_compressBound(raw)));
+	const int packed = LZ4_compress_fast(reinterpret_cast<const char*>(job.image.data()), buffer.data(), raw,
+		LZ4_compressBound(raw), 1);
+	const bool compressed = packed > 0 && packed < raw;
+	header.packed_size = compressed ? static_cast<uint32_t>(packed) : header.raw_size;
+	std::FILE* file = std::fopen((m_dir + "/" + job.image_path).c_str(), "wb");
+	if (!file)
+		return;
+	size_t total = std::fwrite(&header, 1, sizeof(header), file);
+	total += std::fwrite(compressed ? buffer.data() : reinterpret_cast<const char*>(job.image.data()), 1, header.packed_size, file);
+	std::fclose(file);
+	m_bytes.fetch_add(total, std::memory_order_relaxed);
 }
 
 void CaptureWriter::LineLoop()

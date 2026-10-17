@@ -27,6 +27,7 @@ This project is deeply indebted to the [ARMSX2 team](https://github.com/ARMSX2/A
 - [How it works](#how-it-works)
 - [Known limitations](#known-limitations)
 - [Building from source](#building-from-source)
+- [Recording trailer footage](#recording-trailer-footage)
 - [License](#license)
 - [Credits](#credits)
 
@@ -458,6 +459,7 @@ Debugging only:
 | `--no-menu-pause` | Keep the game running while a menu is open |
 | `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot and both eyes' pictures |
 | `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws (and every draw of one frame in 300), and every 3 s what the guns' depth grid holds (normalised Z percentiles, how much is at or nearer than the glass); how often to log where the eyes are |
+| `--capture DIR`, `--capture-now`, `--capture-width N`, `--capture-max-gb G` | Trailer capture (see [Recording trailer footage](#recording-trailer-footage)): arm it into a new folder, record from the start instead of on the record button, scale the pictures down to `N` pixels wide, stop at `G` GB (default 40) |
 | `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen, `T:a`, `T:b`, `T:c`, `T:start`, `T:cal` tap that gun button (`cal`: the calibration shot, at the centre); comma separated, e.g. `20:0.5:0.5,22:off`. For aimed shots the pedal is held from a second before the first one |
 
 ## How it works
@@ -474,6 +476,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 | Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. An archive that needs an answer (files to replace, which game a pack is for) waits unpacked in `transfer/` for up to 30 minutes, at `/api/pending/<id>`. |
 | Archives and texture packs | `Unarchive.{h,cpp}`, `TexturePacks.{h,cpp}` | `Unarchive` reads zip, 7z and RAR with libarchive (built static by `tools/build-frame.sh`: the Steam Runtime has none). `TexturePacks` lists, installs and removes packs in the core's texture folder with ARMSX2's path rules, from the fork's `platforms/ios/.../IOS/TexturePackPaths.h`. `Emu::TexturePackChanged` reloads the running game's pack as the core's Reload Texture Replacements hotkey does. |
 | Light gun | `gun/` | `GunModel` loads `assets/lightgun.glb` with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunLight` is the guns' light sensor: a black picture (under 2% of it lit) is no light, so the guns report off the screen; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. The depth comes from the core (`GSRendererHW::SnapshotDepthBeforeDraw`): a frame's depth is copied before drawing moves to another colour target or wipes the depth, whether with a clear (Time Crisis II) or a full-screen draw at the far end of the depth range (Ninja Assault). |
+| Trailer capture | `capture/`, `shaders/capture_*` | Only with `--capture`; without it nothing is created and each frame costs a null check. `TrailerCapture` copies each game frame's pictures, depth and HUD mask with compute passes into host-visible slots and hands them to `CaptureWriter`, whose five threads LZ4 them into one file per frame; it adds a line per headset frame (head, eyes, screen, guns, menus) and writes the menu images (`VrMenu::DescribeForCapture`) when they change. The file format is in `capture/CaptureFormat.h`. |
 | Emulator | `Emu.{h,cpp}` | The CPU thread, PCSX2's host callbacks, and what the menus need: pause, settings, save states, the game list, switching games. The core hands its on-screen messages over (the fork's `ImGuiManager::SetOSDMessageHook`) instead of drawing them into the picture; `Emu::GetMessages` keeps them until they expire. Switching runs on the CPU thread, and resuming from a menu is skipped while a switch is under way so it cannot cancel it. |
 
 ## Known limitations
@@ -518,6 +521,40 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 ### Install your build in the Steam library
 
 The game installs in the Frame's Steam library as **ARMSX2 VR Steam Frame Edition**, with its artwork and icon from `assets/steam/`. While the project is in Alpha, that art carries an **ALPHA** badge; the same art without the badge is kept in `assets/steam-final/` for the first release after Alpha (see [`tools/steam-art/README.md`](tools/steam-art/README.md)). Players use the installer app (see [Getting started](#getting-started)). For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
+
+## Recording trailer footage
+
+A trailer is a flat video, which loses the stereo of the volumetric view. So instead of filming the headset, the app can record what it shows, and `tools/trailer` rebuilds the scene behind the window on a Mac and films it with smooth camera moves, whose parallax shows the depth on any screen. This is a developer feature: it only exists when `ps2v` is started with `--capture` (the Steam library entry and the installer never pass it), so players have no record button and nothing is recorded.
+
+**What a take holds** (a folder on the Frame, `~/ps2-volumetric/captures/<take>`):
+
+- each game frame shown, as both eyes' pictures at the internal resolution;
+- each eye's depth, and a HUD mask (where the HUD sits, so it stays on the glass);
+- every headset frame: the head and eyes, the screen's placement, the light guns (pose, trigger, beam, shots) and the 3D mode;
+- the menus as they showed: the open panel (game list, settings), the buttons beside the screen, tooltips, the Wi-Fi line, notices and the pointer;
+- the headset's sound, recorded beside it.
+
+**Recording**, from a computer with this repository (it starts the game over ssh; deploy a build first with `tools/steam-frame/deploy-to-frame.sh`):
+
+```sh
+tools/trailer/capture-frame.sh --name tc2 -- /home/steamos/.local/share/ps2v/roms/TimeCrisisII.iso   # or no disc: the game list first
+tools/trailer/fetch-capture.sh tc2                                                    # to ~/ps2v-captures/tc2
+```
+
+In the headset the capture is armed but not recording. Calibrate the light gun and play to the scene to show; the **record button** (a circle under the passthrough button, only there with `--capture`) starts recording, turns red, and stops it again with a notice of the length. Record as many parts as you like, then quit with the power button. The record button and its notices are left out of the recording.
+
+- Wear the headset (off the head SteamVR never places the screen, and both eyes come out the same), and switch to Volumetric before recording: Flat has no depth.
+- In 3D at 3x upscale a take grows by about 40 GB a minute of recording (menus barely count: the game is paused). `--max-gb` caps it, and `--width 1280` roughly halves it. Copy it to a computer with that much free disk space.
+
+**Rendering**, on a Mac (Swift and Metal, with ffmpeg):
+
+```sh
+cd tools/trailer/render && swift build -c release && cd -
+tools/trailer/render/.build/release/trailer info ~/ps2v-captures/tc2     # the parts, 3D modes, shots, menus
+tools/trailer/render/.build/release/trailer render my-trailer.json       # every shot, then a first cut
+```
+
+An edit list (start from `tools/trailer/trailer.example.json`) names the shots in order: camera moves through the window (`portal`, with presets `dolly`, `push`, `orbit`, `lean`, `gun` over the shoulder of the light gun, `menu` and `buttons` for the menus), the player's own view smoothed (`head`), Flat and Volumetric side by side (`compare`), a swing to the side that shows the scene as a diorama behind the glass (`reveal`), the two eyes' real pictures swapped (`wiggle`), title cards, captions, and outside clips such as screen recordings of the Wi-Fi transfer page or the installer app. Each shot comes out as a ProRes file with its sound for an editor, and `trailer.mp4` is a first cut with music under it. [`tools/trailer/README.md`](tools/trailer/README.md) has the details: every shot type and option, how the scene is rebuilt, and its limits.
 
 ## License
 

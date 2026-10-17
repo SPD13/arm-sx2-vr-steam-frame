@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // The trailer capture (--capture DIR): what the headset showed, kept for tools/trailer to render
-// camera moves around the screen on a computer. Each emulator frame's pictures (both eyes in 3D) and
+// camera moves around the screen on a computer. Armed from the start, it records only between the
+// record button's clicks (SetRecording), so a take starts where the player wants it: after the light
+// gun's calibration, at the scene to show. Each emulator frame's pictures (both eyes in 3D) and
 // each eye's depth are copied by compute passes on the shared queue into host-visible slots, read
 // once the GPU is done, and handed to CaptureWriter's threads; every headset frame adds a line with
 // the head, the eyes, the screen and the guns (CaptureFormat.h has the files). A frame that finds
@@ -14,6 +16,7 @@
 #include "capture/CaptureFormat.h"
 #include "capture/CaptureWriter.h"
 #include "gun/GunRenderer.h"
+#include "ui/VrMenu.h"
 
 #include "GS/Renderers/Vulkan/VKLibretro.h"
 
@@ -33,13 +36,19 @@ public:
 		std::string dir;
 		uint32_t max_width = 0; // pictures wider than this are scaled down (0: as shown)
 		double max_gb = 40.0; // the capture stops at this size on disk
+		bool record_now = false; // record from the start (scripted takes)
 	};
 	bool Create(VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uint32_t queue_family_index, const Options& options);
 	// Writes what is pending and the capture's summary.
 	void Destroy();
 
-	// Capturing: created, and not stopped by the size limit.
+	// Armed: created, and not stopped by the size limit. The screens and the GS keep what the capture
+	// reads (readable pictures, depth) while armed, so recording starts without a pause.
 	bool Active() const { return m_pool != VK_NULL_HANDLE && !m_writer.Full(); }
+	// Recording: frames and poses are written.
+	bool Recording() const { return Active() && m_recording; }
+	// Starts or stops recording; returns the seconds just recorded when it stops.
+	double SetRecording(bool recording);
 	// True once, when the size limit stopped the capture.
 	bool TakeStopped();
 
@@ -76,7 +85,8 @@ public:
 		std::array<bool, 2> fired{}; // the gun's trigger (or calibration shot) is down
 		std::array<GunRenderer::Hand, 2> hands{};
 	};
-	void RecordState(const State& state);
+	// ui: what the menus show (their images are written when they change).
+	void RecordState(const State& state, const VrMenu::CaptureView* ui = nullptr);
 	// An event line: {"t": ..., "event": name, "value": value}.
 	void RecordEvent(const char* name, const std::string& value);
 
@@ -107,8 +117,10 @@ private:
 	int64_t Now() const;
 	void WriteSummary(bool final);
 
-	static constexpr size_t NUM_SLOTS = 8;
-	static constexpr int NUM_WRITERS = 3;
+	// At 3x both eyes are ~25 MB a frame: LZ4 on one big core takes ~70 ms of it, so five writers keep
+	// up with 60 frames a second (three dropped 12% on the Frame).
+	static constexpr size_t NUM_SLOTS = 12;
+	static constexpr int NUM_WRITERS = 5;
 
 	Options m_options;
 	VkDevice m_device = VK_NULL_HANDLE;
@@ -118,6 +130,7 @@ private:
 	VkDescriptorSetLayout m_set_layout = VK_NULL_HANDLE;
 	VkPipelineLayout m_layout = VK_NULL_HANDLE; // both pipelines'
 	VkPipeline m_color = VK_NULL_HANDLE, m_depth = VK_NULL_HANDLE, m_depth_layered = VK_NULL_HANDLE;
+	VkPipeline m_hud = VK_NULL_HANDLE, m_hud_layered = VK_NULL_HANDLE;
 	VkCommandPool m_pool = VK_NULL_HANDLE;
 	uint32_t m_memory_type = UINT32_MAX;
 	bool m_coherent = true;
@@ -130,5 +143,19 @@ private:
 	uint32_t m_index = 0;
 	uint32_t m_dropped = 0, m_dropped_total = 0;
 	bool m_stopped_told = false;
+	bool m_recording = false;
+	int64_t m_recording_since = 0;
+
+	// The menu images written so far: which canvas and version each file holds.
+	struct UiImage
+	{
+		const Canvas* canvas = nullptr;
+		uint64_t version = 0;
+		uint32_t id = 0;
+	};
+	UiImage m_ui_panel, m_ui_atlas;
+	uint32_t m_next_ui_id = 1;
+	// The id of canvas's current image, written first if it changed.
+	uint32_t UiImageId(UiImage& written, const Canvas* canvas, uint64_t version);
 	std::chrono::steady_clock::time_point m_next_log{};
 };

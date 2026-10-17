@@ -8,7 +8,7 @@ import Foundation
 import simd
 
 enum PlaneKind: UInt32 {
-    case colorLeft = 1, colorRight = 2, depthLeft = 3, depthRight = 4
+    case colorLeft = 1, colorRight = 2, depthLeft = 3, depthRight = 4, hudMask = 5
 }
 
 enum Mode3D: UInt32 {
@@ -24,7 +24,8 @@ enum Mode3D: UInt32 {
 }
 
 struct FrameHeader {
-    static let size = 208
+    static let size = 208 // the smallest (version 1 had four planes, now five: 224)
+    static let maxSize = 256
 
     var index: UInt32 = 0
     var time: Double = 0 // seconds since the capture started
@@ -69,7 +70,7 @@ struct FrameHeader {
             eye[e] = SIMD4(f32(96 + e * 16), f32(100 + e * 16), f32(104 + e * 16), f32(108 + e * 16))
         }
         distanceRatio = SIMD2(f32(128), f32(132))
-        let count = min(Int(u32(136)), 4)
+        let count = min(Int(u32(136)), (min(headerSize, data.count) - 144) / 16)
         var offset = headerSize
         for p in 0..<count {
             let base = 144 + p * 16
@@ -87,6 +88,7 @@ final class DecodedFrame {
     var right: [UInt8]? // nil in flat
     var depthLeft: [Float]? // normalised Z, -1 outside the picture
     var depthRight: [Float]?
+    var hudMask: [UInt8]? // 1 on the HUD (rows of (width + 3) & ~3 bytes)
 
     init(header: FrameHeader) { self.header = header }
 }
@@ -131,6 +133,15 @@ struct GunSample {
     var fire = false
 }
 
+// What the menus showed (host/capture/CaptureFormat.h): images by id in ui/.
+struct UiQuad {
+    var image: Int
+    var rect: SIMD4<Float> // pixels of the image: x, y, width, height
+    var pose: Pose
+    var size: SIMD2<Float> // meters
+    var onScreen: Bool // pose relative to the screen's centre; otherwise LOCAL space
+}
+
 struct PoseSample {
     var time: Double = 0
     var head: Pose?
@@ -143,6 +154,7 @@ struct PoseSample {
     var menu = false
     var gunMode = false
     var guns = [GunSample(), GunSample()]
+    var ui: [UiQuad] = [] // back to front: the panel, then the pieces
 }
 
 func parseHexColor(_ any: Any?) -> SIMD3<Float>? {
@@ -180,7 +192,7 @@ final class Capture {
         for name in names {
             let url = frameDir.appendingPathComponent(name)
             guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
-            let data = handle.readData(ofLength: FrameHeader.size)
+            let data = handle.readData(ofLength: FrameHeader.maxSize)
             try? handle.close()
             if let header = FrameHeader(data: data) {
                 frames.append((url, header))
@@ -240,6 +252,21 @@ final class Capture {
                         s.guns[g] = sample
                     }
                 }
+                if let ui = json["ui"] as? [String: Any] {
+                    if let panel = ui["panel"] as? [String: Any], let img = panel["img"] as? Int, let pose = Pose(panel["p"]),
+                       let w = panel["w"] as? Double, let h = panel["h"] as? Double {
+                        s.ui.append(UiQuad(image: img, rect: SIMD4(0, 0, -1, -1), pose: pose,
+                                           size: SIMD2(Float(w), Float(h)), onScreen: false))
+                    }
+                    if let atlas = ui["atlas"] as? Int, let pieces = ui["pieces"] as? [[String: Any]] {
+                        for piece in pieces {
+                            guard let r = piece["r"] as? [Double], r.count == 4, let pose = Pose(piece["p"]),
+                                  let w = piece["w"] as? Double, let h = piece["h"] as? Double else { continue }
+                            s.ui.append(UiQuad(image: atlas, rect: SIMD4(Float(r[0]), Float(r[1]), Float(r[2]), Float(r[3])),
+                                               pose: pose, size: SIMD2(Float(w), Float(h)), onScreen: (piece["s"] as? Int ?? 0) != 0))
+                        }
+                    }
+                }
                 poses.append(s)
             }
             poses.sort { $0.time < $1.time }
@@ -282,6 +309,7 @@ final class Capture {
             case .colorRight: frame.right = bytes
             case .depthLeft: frame.depthLeft = bytes.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
             case .depthRight: frame.depthRight = bytes.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+            case .hudMask: frame.hudMask = bytes
             case .none: break
             }
         }
@@ -289,7 +317,7 @@ final class Capture {
         return frame
     }
 
-    private static func decode(_ data: Data, _ plane: FrameHeader.Plane) throws -> [UInt8] {
+    static func decode(_ data: Data, _ plane: FrameHeader.Plane) throws -> [UInt8] {
         guard plane.offset + plane.packedSize <= data.count else { throw TrailerError("truncated frame file") }
         if plane.packedSize == plane.rawSize {
             return [UInt8](data[plane.offset..<(plane.offset + plane.rawSize)])
@@ -304,6 +332,20 @@ final class Capture {
         }
         guard written == plane.rawSize else { throw TrailerError("bad LZ4 plane (\(written) of \(plane.rawSize) bytes)") }
         return out
+    }
+
+    // A menu image: width, height and RGBA8 pixels (premultiplied, sRGB-encoded).
+    private var uiCache: [Int: (Int, Int, [UInt8])] = [:]
+    func uiImage(_ id: Int) -> (width: Int, height: Int, pixels: [UInt8])? {
+        if let c = uiCache[id] { return c }
+        let url = dir.appendingPathComponent(String(format: "ui/%06d.bin", id))
+        guard let data = try? Data(contentsOf: url), data.count >= 24, data.prefix(8) == Data("PS2VUI01".utf8) else { return nil }
+        func u32(_ o: Int) -> Int { Int(data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt32.self) }) }
+        let w = u32(8), h = u32(12), raw = u32(16), packed = u32(20)
+        guard let bytes = try? Capture.decode(data, FrameHeader.Plane(kind: 0, rawSize: raw, packedSize: packed, offset: 24)) else { return nil }
+        if uiCache.count > 64 { uiCache.removeAll() }
+        uiCache[id] = (w, h, bytes)
+        return (w, h, bytes)
     }
 
     // The headset's state at `time`, between the two records around it.
