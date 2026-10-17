@@ -156,7 +156,7 @@ A navigation bar on the left lists the categories, with **Exit** last.
 |---|---|---|
 | Screen size | 1.0 – 4.0 m wide | Applies at once. Saved in `VR.ini`. |
 | Screen distance | 1.0 – 5.0 m | The screen slides along its axis. Saved in `VR.ini`. |
-| Passthrough | on · off | Shows your room, through the headset's cameras, around the screen instead of the dark void (default on). Applies at once, as the eye button beside the screen. Your last choice, here or with the button, is saved in `VR.ini` (`[Mode] passthrough`) and kept at the next start. |
+| Passthrough | on · off | Shows your room, through the headset's cameras, around the screen instead of the dark void (default off). Applies at once, as the eye button beside the screen. Your last choice, here or with the button, is saved in `VR.ini` (`[Mode] passthrough`) and kept at the next start. |
 | Recenter | button | Places the screen straight ahead of where you look. |
 
 ### 3D

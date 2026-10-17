@@ -35,8 +35,8 @@ struct VrSettings
 	// then comes from the screen distance and the screen plane, not stereo_depth.
 	bool stereo_plus = false;
 	// What surrounds the screen: the room through the headset's cameras (passthrough), or the dark void.
-	// The last choice is kept in VR.ini for the next start.
-	bool passthrough = true;
+	// Off by default (the void); the last choice is kept in VR.ini for the next start.
+	bool passthrough = false;
 	// Geometric stereo
 	float stereo_depth = 3.0f; // meters behind the screen for the farthest geometry
 	float stereo_convergence = 0.12f; // normalised Z on the screen plane
