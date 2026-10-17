@@ -41,7 +41,7 @@ WINRES="$($GO env GOPATH)/bin/go-winres"
 [[ -x $WINRES ]] || $GO install github.com/tc-hib/go-winres@v0.3.3
 # The icon and the manifest (per-monitor DPI, modern controls) as a resource the Go linker picks up: rsrc_windows_amd64.syso
 "$WINRES" simply --arch amd64 --out rsrc --icon "$ART/icon.png" --manifest gui \
-   --product-name "ARMSX2 - Steam Frame Edition Installer" --file-description "ARMSX2 - Steam Frame Edition Installer" \
+   --product-name "ARMSX2 VR Steam Frame Edition Installer" --file-description "ARMSX2 VR Steam Frame Edition Installer" \
    --product-version "0.0.0.0" --file-version "0.0.0.0" --original-filename ARMSX2-Frame-Installer-Windows.exe
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build -trimpath -ldflags "$LDFLAGS -H windowsgui" -o "$OUT/ARMSX2-Frame-Installer-Windows.exe" .
 rm -f rsrc_windows_*.syso

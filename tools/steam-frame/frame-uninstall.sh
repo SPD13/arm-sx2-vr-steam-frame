@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ARMSX2 - Steam Frame Edition: the uninstall steps that run on the Frame. The installer app embeds this script (see
+# ARMSX2 VR Steam Frame Edition: the uninstall steps that run on the Frame. The installer app embeds this script (see
 # make-installer.sh) and sends it through its ssh command.
 #
 #   frame-uninstall.sh [--gameid ID] [--settings]

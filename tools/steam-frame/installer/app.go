@@ -32,7 +32,7 @@ const (
 	projectURL   = "https://github.com/SPD13/arm-sx2-vr-steam-frame"
 	bugReportURL = projectURL + "/issues/new?template=bug_report.yml"
 	releaseAPI   = "https://api.github.com/repos/SPD13/arm-sx2-vr-steam-frame/releases/latest"
-	libraryName  = "ARMSX2 - Steam Frame Edition"
+	libraryName  = "ARMSX2 VR Steam Frame Edition"
 	defaultUser  = "steamos"
 	defaultHost  = "frame.local"
 	neededFreeKB = 800_000 // the old and the new game side by side while installing, and the unpacked download
@@ -771,7 +771,7 @@ func (a *app) saveLogs() {
 	if installed.Present {
 		game = "version " + installed.Version
 	}
-	about := fmt.Sprintf("ARMSX2 - Steam Frame Edition logs, saved %s\n\nInstaller: %s on %s/%s\nGame on the Frame: %s\nLatest release: %s\nFrom the Frame: %s\n",
+	about := fmt.Sprintf("ARMSX2 VR Steam Frame Edition logs, saved %s\n\nInstaller: %s on %s/%s\nGame on the Frame: %s\nLatest release: %s\nFrom the Frame: %s\n",
 		time.Now().Format("2006-01-02 15:04:05 -0700"), version, runtime.GOOS, runtime.GOARCH, game, latest.Version, strings.Join(found, ", "))
 	if missing != "" {
 		about += "\n" + missing + "\n"

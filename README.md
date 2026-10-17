@@ -86,7 +86,7 @@ If a check turns red, it says what is wrong and what to do. For example, wake th
 
 ### 5. Play
 
-On the Frame, open **Library > Non-Steam > ARMSX2 - Steam Frame Edition**. While the project is in Alpha, its library art carries an **ALPHA** badge. If the library still shows plain artwork, restart the headset.
+On the Frame, open **Library > Non-Steam > ARMSX2 VR Steam Frame Edition**. While the project is in Alpha, its library art carries an **ALPHA** badge. If the library still shows plain artwork, restart the headset.
 
 Put the headset on: the screen appears ahead of you, facing the room's forward direction (SteamVR's recenter sets it), and the game list opens.
 
@@ -517,7 +517,7 @@ tools/run-frame.sh path/to/game.iso   # starts a game directly
 
 ### Install your build in the Steam library
 
-The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition**, with its artwork and icon from `assets/steam/`. While the project is in Alpha, that art carries an **ALPHA** badge; the same art without the badge is kept in `assets/steam-final/` for the first release after Alpha (see [`tools/steam-art/README.md`](tools/steam-art/README.md)). Players use the installer app (see [Getting started](#getting-started)). For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
+The game installs in the Frame's Steam library as **ARMSX2 VR Steam Frame Edition**, with its artwork and icon from `assets/steam/`. While the project is in Alpha, that art carries an **ALPHA** badge; the same art without the badge is kept in `assets/steam-final/` for the first release after Alpha (see [`tools/steam-art/README.md`](tools/steam-art/README.md)). Players use the installer app (see [Getting started](#getting-started)). For development, `tools/steam-frame/deploy-to-frame.sh` builds on the Frame and updates that same library entry with the build, using the same steps. Releases, the installer app and the deploy script are covered in [`tools/steam-frame/README.md`](tools/steam-frame/README.md).
 
 ## License
 

@@ -1,6 +1,6 @@
 # Steam library artwork
 
-`make_art.py` builds the Steam library images for **ARMSX2 - Steam Frame Edition** into `assets/steam/`. The installer copies them into Steam's grid folder when it adds the non-Steam shortcut. The script also writes the installer app's page images, `tools/steam-frame/installer/ui/hero.jpg` (the hero at 1500×484) and `logo.png` (the logo at 228 px tall), from the same art.
+`make_art.py` builds the Steam library images for **ARMSX2 VR Steam Frame Edition** into `assets/steam/`. The installer copies them into Steam's grid folder when it adds the non-Steam shortcut. The script also writes the installer app's page images, `tools/steam-frame/installer/ui/hero.jpg` (the hero at 1500×484) and `logo.png` (the logo at 228 px tall), from the same art.
 
 While the project is in Alpha, every image that ships has an **ALPHA** badge: `assets/steam/` and the installer page images. The same five images without the badge are written to `assets/steam-final/` on each run, ready for when the project leaves Alpha.
 

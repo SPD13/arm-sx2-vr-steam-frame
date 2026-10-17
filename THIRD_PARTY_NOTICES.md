@@ -1,6 +1,6 @@
 # Third-party notices
 
-ARMSX2 - Steam Frame Edition is free software under the GNU General Public License version 3 or later (`LICENSE`). The game and the installer apps also contain the third-party code below, under its own licence. Each one asks for its notice to come with the programs built from it, which is what this file is for.
+ARMSX2 VR Steam Frame Edition is free software under the GNU General Public License version 3 or later (`LICENSE`). The game and the installer apps also contain the third-party code below, under its own licence. Each one asks for its notice to come with the programs built from it, which is what this file is for.
 
 ## The game (`ps2v`)
 

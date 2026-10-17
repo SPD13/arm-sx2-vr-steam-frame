@@ -1,4 +1,4 @@
-// ARMSX2 - Steam Frame Edition installer: a desktop app (Windows, macOS, Linux) that finds a Steam Frame on the network,
+// ARMSX2 VR Steam Frame Edition installer: a desktop app (Windows, macOS, Linux) that finds a Steam Frame on the network,
 // checks it can be installed to (Developer Mode, password, Steam running, free space), then downloads the latest release from
 // GitHub and installs or updates the game on the Frame, all over its own ssh connection: nothing else needs to be installed on
 // the computer, and the password is asked once. Ported from the Visual Pinball X - Steam Frame Edition installer.
@@ -34,7 +34,7 @@ import (
 	"time"
 )
 
-const appTitle = "ARMSX2 - Steam Frame Edition Installer"
+const appTitle = "ARMSX2 VR Steam Frame Edition Installer"
 
 var version = "dev" // set by make-installer.sh
 

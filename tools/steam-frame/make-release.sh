@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Packs a release of ARMSX2 - Steam Frame Edition: the game built on the Frame (tools/build-frame.sh), the steps that install
+# Packs a release of ARMSX2 VR Steam Frame Edition: the game built on the Frame (tools/build-frame.sh), the steps that install
 # it there, the library artwork and Valve's devkit scripts, in one .tar.gz for the GitHub release, which the installer app
 # (make-installer.sh) downloads and installs. Builds on the Frame first, so the game matches this checkout.
 #
@@ -33,7 +33,7 @@ mkdir -p "$out"
 cat > "$out/SOURCE.md" <<EOT
 # Source code
 
-ARMSX2 - Steam Frame Edition $version was built from:
+ARMSX2 VR Steam Frame Edition $version was built from:
 
 - https://github.com/SPD13/arm-sx2-vr-steam-frame, commit \`$commit\`: the VR app (\`host/\`), the build script
   (\`tools/build-frame.sh\`) and these install scripts (\`tools/steam-frame/\`)

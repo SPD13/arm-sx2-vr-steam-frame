@@ -1,6 +1,6 @@
 # Steam Frame install and releases
 
-ARMSX2 - Steam Frame Edition installs on the Frame as a Steam devkit title. The game sits in `~/devkit-game/<gameid>/`, and its `run.sh` starts it inside the Steam Linux Runtime 4.0 ARM64, which must be installed from the Steam library. In the library it shows as **ARMSX2 - Steam Frame Edition**, with the artwork and icon from `assets/steam/` (see `tools/steam-art/README.md`). It works the same way as the Visual Pinball X and CitraVR Steam Frame ports: Valve's devkit scripts register the title, and the Steam client names it and sets its icon.
+ARMSX2 VR Steam Frame Edition installs on the Frame as a Steam devkit title. The game sits in `~/devkit-game/<gameid>/`, and its `run.sh` starts it inside the Steam Linux Runtime 4.0 ARM64, which must be installed from the Steam library. In the library it shows as **ARMSX2 VR Steam Frame Edition**, with the artwork and icon from `assets/steam/` (see `tools/steam-art/README.md`). It works the same way as the Visual Pinball X and CitraVR Steam Frame ports: Valve's devkit scripts register the title, and the Steam client names it and sets its icon.
 
 ## For players: the installer app
 
@@ -22,7 +22,7 @@ The installer's log is in the user cache folder, under `armsx2-frame-installer/i
 
 | Script | Runs on | What it does |
 |---|---|---|
-| `deploy-to-frame.sh [gameid]` | your computer | Syncs, builds on the Frame, then updates the library's **ARMSX2 - Steam Frame Edition** (gameid `ARMSX2`) with that build, versioned `<date>-<short commit>-dev`. Another gameid installs a separate copy. The game files never leave the Frame. |
+| `deploy-to-frame.sh [gameid]` | your computer | Syncs, builds on the Frame, then updates the library's **ARMSX2 VR Steam Frame Edition** (gameid `ARMSX2`) with that build, versioned `<date>-<short commit>-dev`. Another gameid installs a separate copy. The game files never leave the Frame. |
 | `make-release.sh [version]` | your computer | Syncs, builds on the Frame, stages the release there and downloads it to `build/release/armsx2-steam-frame-<version>.tar.gz`. The version defaults to `<date>-<short commit>`. |
 | `make-installer.sh [version]` | a Mac | Builds the installer app for Windows (x64), macOS (universal) and Linux (x86_64, arm64) into `build/installer/`. Needs Go (`brew install go`) and Xcode's command line tools. |
 | `stage-release.sh` | the Frame | Assembles the release folder: the game with debug info stripped, the install tools, the artwork, Valve's devkit scripts, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `SOURCE.md`. |

@@ -1,4 +1,4 @@
-"""Build the Steam library artwork for "ARMSX2 - Steam Frame Edition" into assets/steam/, the regular set without the
+"""Build the Steam library artwork for "ARMSX2 VR Steam Frame Edition" into assets/steam/, the regular set without the
 Alpha badge into assets/steam-final/, and the installer page's hero.jpg and logo.png.
 Usage: python make_art.py <repo root>
 Sources: the ARMSX2 app icon (glowing pillar), the Bebas Neue font from the ARMSX2 Android app
@@ -22,7 +22,7 @@ UI = os.path.join(ROOT, 'tools/steam-frame/installer/ui')
 # Leaving Alpha: set this to False and rerun (or copy assets/steam-final/ over assets/steam/).
 ALPHA = True
 
-TITLE, SUBTITLE = 'ARMSX2', 'STEAM FRAME EDITION'
+TITLE, SUBTITLE = 'ARMSX2 VR', 'STEAM FRAME EDITION'
 CYAN = (90, 200, 255); VIOLET = (170, 80, 255); RED = (255, 40, 30); AMBER = (255, 170, 30)
 
 # ---------- helpers ----------
@@ -76,7 +76,7 @@ def text_layer(text, font, tracking=0, fill=(255, 255, 255, 255)):
     return im.crop(im.getbbox())
 
 def title_block(width, colour_sub=CYAN):
-    """'ARMSX2' over a tracked 'STEAM FRAME EDITION', both centred, `width` px wide (transparent)."""
+    """'ARMSX2 VR' over a tracked 'STEAM FRAME EDITION', both centred, `width` px wide (transparent)."""
     big = text_layer(TITLE, ImageFont.truetype(BEBAS, 400))
     big = big.resize((width, round(big.height * width / big.width)), Image.LANCZOS)
     sub_font = ImageFont.truetype(BEBAS, 200)

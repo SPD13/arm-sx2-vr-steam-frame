@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ARMSX2 - Steam Frame Edition: the install steps that run on the Frame. The installer app sends the release archive over ssh,
+# ARMSX2 VR Steam Frame Edition: the install steps that run on the Frame. The installer app sends the release archive over ssh,
 # unpacked into a folder next to this script, then runs it; deploy-to-frame.sh runs it on a folder staged from the Frame's own
 # build, so every developer deploy also tests the user's install. It installs Valve's devkit scripts and the game folder, registers the game in the Steam library (a devkit title that
 # run.sh starts inside the Steam Linux Runtime 4.0 ARM64), then names it and installs its artwork and icon.
@@ -15,7 +15,7 @@ set -euo pipefail
 
 BUNDLE=
 GAMEID=ARMSX2
-NAME='ARMSX2 - Steam Frame Edition'
+NAME='ARMSX2 VR Steam Frame Edition'
 ART=1
 # "Steam Linux Runtime 4.0 ARM64", which the game is built for (tools/build-frame.sh). Steam does not apply a devkit title's
 # compatibility tool, so the game's run.sh enters this runtime itself; the setting is kept for a Steam that does.
