@@ -25,7 +25,7 @@ The installer's log is in the user cache folder, under `armsx2-frame-installer/i
 | `deploy-to-frame.sh [gameid]` | your computer | Syncs, builds on the Frame, then updates the library's **ARMSX2 - Steam Frame Edition** (gameid `ARMSX2`) with that build, versioned `<date>-<short commit>-dev`. Another gameid installs a separate copy. The game files never leave the Frame. |
 | `make-release.sh [version]` | your computer | Syncs, builds on the Frame, stages the release there and downloads it to `build/release/armsx2-steam-frame-<version>.tar.gz`. The version defaults to `<date>-<short commit>`. |
 | `make-installer.sh [version]` | a Mac | Builds the installer app for Windows (x64), macOS (universal) and Linux (x86_64, arm64) into `build/installer/`. Needs Go (`brew install go`) and Xcode's command line tools. |
-| `stage-release.sh` | the Frame | Assembles the release folder: the game with debug info stripped, the install tools, the artwork, Valve's devkit scripts, `LICENSE` and `SOURCE.md`. |
+| `stage-release.sh` | the Frame | Assembles the release folder: the game with debug info stripped, the install tools, the artwork, Valve's devkit scripts, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `SOURCE.md`. |
 | `frame-install.sh` | the Frame | The install steps, run from the release folder by the installer and by `deploy-to-frame.sh`. |
 | `frame-uninstall.sh` | the Frame | The uninstall steps, embedded in the installer app at build time. |
 | `run.sh` | the Frame | What Steam starts. It runs `ps2v` inside the Steam Linux Runtime 4.0 ARM64 (Steam does not apply a devkit title's compatibility tool) and writes its output to `~/.local/share/ps2v/logs/ps2v.log`. |
@@ -38,6 +38,6 @@ The installer's log is in the user cache folder, under `armsx2-frame-installer/i
 1. Commit, push `main` and the ARMSX2 submodule's `ps2v` branch: `SOURCE.md` names both commits, as the GPL requires.
 2. Run `tools/steam-frame/make-release.sh` and `tools/steam-frame/make-installer.sh`.
 3. Test before publishing: run the installer with `--archive build/release/armsx2-steam-frame-<version>.tar.gz`, which installs that file instead of the latest release. `--gameid` installs under another id; `--browser` opens the page in the browser.
-4. Create a GitHub release on `SPD13/arm-sx2-vr-steam-frame`. Attach the `.tar.gz` and the four installer files. The installer always takes the latest release's `armsx2-steam-frame-*.tar.gz` and checks it against GitHub's SHA-256 digest.
+4. Create a GitHub release on `SPD13/arm-sx2-vr-steam-frame`. Attach the `.tar.gz`, the four installer files and `THIRD_PARTY_NOTICES.md` (all in `build/installer/` and `build/release/`). The installer always takes the latest release's `armsx2-steam-frame-*.tar.gz` and checks it against GitHub's SHA-256 digest.
 
 The installer downloads without signing in to GitHub, so `SPD13/arm-sx2-vr-steam-frame` must be public before players can use it. Until then, only `--archive` installs work.

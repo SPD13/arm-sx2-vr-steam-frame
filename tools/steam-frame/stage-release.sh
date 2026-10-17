@@ -2,11 +2,12 @@
 # Runs on the Frame, in the repo mirror that tools/sync-frame.sh makes (make-release.sh and deploy-to-frame.sh start it over
 # ssh). Puts the build of tools/build-frame.sh and everything the install needs in a release folder:
 #
-#   game/          ps2v (debug info stripped, symbols kept for crash backtraces), resources/, assets/, profiles/, run.sh, VERSION
+#   game/          ps2v (debug info stripped, symbols kept for crash backtraces), resources/, assets/, profiles/, run.sh, VERSION,
+#                  LICENSE and THIRD_PARTY_NOTICES.md (so they stay beside the installed game)
 #   tools/         frame-install.sh, install-library-art.py, set-library-name.py
 #   library-art/   assets/steam/ (capsule, wide, hero, logo, icon)
 #   devkit-utils/  Valve's devkit scripts (MIT), sent by make-release.sh to DEVKIT
-#   LICENSE  SOURCE.md  VERSION
+#   LICENSE  THIRD_PARTY_NOTICES.md  SOURCE.md  VERSION
 #
 #   stage-release.sh OUT VERSION DEVKIT SOURCE_MD
 set -euo pipefail
@@ -34,6 +35,8 @@ cp -R "$root/assets/steam" "$out/library-art"
 cp -R "$devkit" "$out/devkit-utils"
 find "$out/devkit-utils" -name __pycache__ -prune -exec rm -rf {} +
 cp "$root/external/armsx2/COPYING.GPLv3" "$out/LICENSE"
+cp "$root/THIRD_PARTY_NOTICES.md" "$out/THIRD_PARTY_NOTICES.md"
+cp "$out/LICENSE" "$out/THIRD_PARTY_NOTICES.md" "$out/game/"
 cp "$source_md" "$out/SOURCE.md"
 echo "$version" > "$out/VERSION"
 echo "$version" > "$out/game/VERSION"   # the installed version, which the installer app compares with the latest release

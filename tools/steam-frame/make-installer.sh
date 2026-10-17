@@ -63,6 +63,7 @@ for size in 16 32 128 256 512; do
    sips -z $((size * 2)) $((size * 2)) "$ART/icon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" > /dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/icon.icns"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -93,7 +94,11 @@ for arch in amd64 arm64; do
    name=x86_64; [[ $arch == arm64 ]] && name=arm64
    mkdir -p "$WORK/linux-$arch"
    GOOS=linux GOARCH=$arch CGO_ENABLED=0 $GO build -trimpath -ldflags "$LDFLAGS" -o "$WORK/linux-$arch/ARMSX2-Frame-Installer" .
-   tar -C "$WORK/linux-$arch" -czf "$OUT/ARMSX2-Frame-Installer-Linux-$name.tar.gz" ARMSX2-Frame-Installer
+   cp "$ROOT/THIRD_PARTY_NOTICES.md" "$WORK/linux-$arch/"
+   tar -C "$WORK/linux-$arch" -czf "$OUT/ARMSX2-Frame-Installer-Linux-$name.tar.gz" ARMSX2-Frame-Installer THIRD_PARTY_NOTICES.md
 done
+
+# The Windows installer is a single .exe: the notices go on the release beside it
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$OUT/"
 
 ls -lh "$OUT"

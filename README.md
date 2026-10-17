@@ -2,6 +2,10 @@
 
 A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with GunCon 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping, HD texture packs and Wi-Fi transfer of games, BIOS files and texture packs (zip, 7z and RAR archives are unpacked on the headset).
 
+## Thank You
+
+This project is deeply indebted to the [ARMSX2 team](https://github.com/ARMSX2/ARMSX2), whose native ARM64 recompilers make full-speed PS2 emulation possible on the Steam Frame, and to the [PCSX2 project](https://pcsx2.net) that ARMSX2 is built on, with its more than 20 years of hardcore development. Everything here builds on their work; none of it would exist without them.
+
 > [!WARNING]
 > **Alpha.** This project is in its Alpha stage and is currently being tested. Expect bugs, crashes and settings that change between releases. The Steam library art carries an **ALPHA** badge until testing is done. If you try it, please report what went wrong, with the logs from `~/.local/share/ps2v/logs/`. Known gaps are in [Known limitations](#known-limitations).
 
@@ -24,6 +28,7 @@ A standalone PlayStation 2 emulator for the Steam Frame. It runs [ARMSX2](https:
 - [Known limitations](#known-limitations)
 - [Building from source](#building-from-source)
 - [License](#license)
+- [Credits](#credits)
 
 ## Getting started
 
@@ -510,4 +515,18 @@ The game installs in the Frame's Steam library as **ARMSX2 - Steam Frame Edition
 
 ## License
 
-GPL-3.0-or-later, as ARMSX2 and PCSX2 are. Fonts and icons come from PCSX2's resources (Roboto, Font Awesome). The glTF loader is [cgltf](https://github.com/jkuhlmann/cgltf) 1.15 (MIT, `host/third_party/cgltf.h`). The light gun model is built by `tools/lightgun` from scans of the real shells, with the logos and markings removed.
+GPL-3.0-or-later, as ARMSX2 and PCSX2 are. Fonts and icons come from PCSX2's resources (Roboto, Font Awesome). The glTF loader is [cgltf](https://github.com/jkuhlmann/cgltf) 1.15 (MIT, `host/third_party/cgltf.h`). [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) holds the licences of the third-party code built into the game and the installer apps; it ships with every release.
+
+## Credits
+
+- Built with [Claude Code](https://claude.com/claude-code) by [SPD13](https://github.com/SPD13).
+- The [ARMSX2 team](https://github.com/ARMSX2/ARMSX2), for ARMSX2, the ARM64 PS2 emulator this app runs.
+- The [PCSX2 team](https://pcsx2.net), for PCSX2, the emulator ARMSX2 is built on.
+- Johannes Kuhlmann, for [cgltf](https://github.com/jkuhlmann/cgltf), the glTF loader that reads the light gun model.
+- [Khronos](https://www.khronos.org/openxr/), for OpenXR, the standard the whole VR side is built on.
+- Sean Barrett, for [stb_truetype](https://github.com/nothings/stb), which draws the text in every menu.
+- Tim Kientzle and the [libarchive](https://www.libarchive.org) contributors, for libarchive, which unpacks the zip, 7z and RAR files sent over Wi-Fi.
+- [Font Awesome](https://fontawesome.com) and [Roboto](https://fonts.google.com/specimen/Roboto), the menu icons and text, from PCSX2's resources.
+- Dharma Type, for [Bebas Neue](https://github.com/dharmatype/Bebas-Neue), the title lettering in the Steam library art.
+- [Valve](https://www.valvesoftware.com), for the SteamOS devkit scripts that add the game to the Steam library, the Steam Linux Runtime it is built in and runs in, and SteamVR.
+- The [webview](https://github.com/webview/webview) and [go-webview2](https://github.com/jchv/go-webview2) projects, for the installer app's window, and the [Go](https://go.dev) authors, for the language and the ssh and network libraries it uses.
