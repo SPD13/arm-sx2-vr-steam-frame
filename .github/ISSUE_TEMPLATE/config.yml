@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Install guide and troubleshooting
+    url: https://github.com/SPD13/arm-sx2-vr-steam-frame#getting-started
+    about: How to install, update and uninstall, and what to do when the installer reports a problem.
+  - name: Known limitations
+    url: https://github.com/SPD13/arm-sx2-vr-steam-frame#known-limitations
+    about: What is not done yet or not tested in the headset.

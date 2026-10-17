@@ -1,0 +1,80 @@
+name: Bug report
+description: Something went wrong while installing or playing on the Steam Frame
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! This project is in Alpha, so every report helps.
+        Please check [Known limitations](https://github.com/SPD13/arm-sx2-vr-steam-frame#known-limitations) and [Troubleshooting](https://github.com/SPD13/arm-sx2-vr-steam-frame#troubleshooting) first. One problem per report, please.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Installing or updating (the installer app)
+        - Starting the game
+        - Playing a game
+        - Light gun
+        - Menus, settings or game list
+        - Wi-Fi transfer or texture packs
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the installer app (step 2, "On the Frame"), or in `~/devkit-game/ARMSX2/VERSION` on the Frame.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: The game's name, region and serial if you know it (the game list shows it). Leave empty if no game was running.
+      placeholder: "Time Crisis II (USA), SLUS-20219"
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 3D mode
+      description: The mode the game was in (the cube button beside the screen).
+      options:
+        - Flat
+        - Volumetric
+        - Volumetric+
+        - Not sure / no game running
+
+  - type: dropdown
+    id: lightgun
+    attributes:
+      label: Light gun mode
+      options:
+        - "Off"
+        - On, one gun
+        - On, two guns
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Can it be reproduced? Screenshots or a video help a lot.
+      placeholder: |
+        1. Started Time Crisis II in Volumetric mode
+        2. Turned on light gun mode at the title screen
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Drag the files here. On the Frame, they are in `~/.local/share/ps2v/logs/`: `ps2v.log` and `emulog.txt`. For example, from a computer: `scp steamos@frame.local:.local/share/ps2v/logs/*.* .`
+        For an install problem, attach the installer app's `installer.log` instead: in `%LOCALAPPDATA%\armsx2-frame-installer` (Windows), `~/Library/Caches/armsx2-frame-installer` (macOS) or `~/.cache/armsx2-frame-installer` (Linux). The installer shows its path when something fails.
