@@ -32,7 +32,7 @@ This project is deeply indebted to the [ARMSX2 team](https://github.com/ARMSX2/A
 
 ## Getting started
 
-The game is not on the Steam store. You install it on the Frame from a computer on the same network, with the **installer app**. The app finds the Frame and checks that it is ready. It then downloads the latest version of the game and installs it in the Steam library, with its name and artwork. The same app updates the game later. Nothing is installed on the computer itself.
+The game is not on the Steam store. You install it on the Frame from a computer on the same network, with the **[installer app](https://github.com/SPD13/arm-sx2-vr-steam-frame/releases/latest)**. The app finds the Frame and checks that it is ready. It then downloads the latest version of the game and installs it in the Steam library, with its name and artwork. The same app updates the game later. Nothing is installed on the computer itself.
 
 ### What you need
 
