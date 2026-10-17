@@ -1,5 +1,5 @@
 """Build the Steam library artwork for "ARMSX2 VR Steam Frame Edition" into assets/steam/, the regular set without the
-Alpha badge into assets/steam-final/, and the installer page's hero.jpg and logo.png.
+Alpha badge into assets/steam-final/, and the installer page's hero.jpg, logo.png and favicon.png.
 Usage: python make_art.py <repo root>
 Sources: the ARMSX2 app icon (glowing pillar), the Bebas Neue font from the ARMSX2 Android app
 and assets/lightgun.glb. Needs Python 3 with numpy and pillow."""
@@ -268,4 +268,7 @@ if __name__ == '__main__':
     lg = shipped['logo.png']
     lg = lg.resize((round(lg.width * 228 / lg.height), 228), Image.LANCZOS)
     lg.save(os.path.join(UI, 'logo.png'), optimize=True)
-    print('installer ui: hero.jpg', h.size, 'logo.png', lg.size)
+    # The page's favicon: the icon without the badge, which would be unreadable at this size
+    fav = icon().resize((64, 64), Image.LANCZOS)
+    fav.save(os.path.join(UI, 'favicon.png'), optimize=True)
+    print('installer ui: hero.jpg', h.size, 'logo.png', lg.size, 'favicon.png', fav.size)
