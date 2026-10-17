@@ -115,6 +115,11 @@ ol.job .icon { width: 20px; height: 20px; font-size: 12px; }
 .uninstall { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--card-edge); font-size: 13.5px; }
 .uninstall .confirm { margin-top: 10px; background: var(--help-bg); border-radius: 8px; padding: 12px 14px; }
 .uninstall label { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; color: var(--muted); }
+#report h2 { font-size: 16px; }
+#report .row { align-items: center; gap: 14px; }
+#logs-result { margin-top: 12px; font-size: 13.5px; color: var(--muted); word-break: break-word; }
+#logs-result .saved { color: var(--text); }
+#logs-result .error { color: var(--fail); }
 footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 0 20px 20px; }
 footer a { color: var(--muted); }
 footer .credit { margin-top: 4px; }
@@ -165,6 +170,18 @@ footer .credit { margin-top: 4px; }
             </div>
          </div>
       </div>
+   </section>
+
+   <section class="card" id="report">
+      <h2>Report a problem</h2>
+      <p class="intro">Something went wrong in the game or while installing? Save the logs, then attach the file to a bug
+         report on GitHub: they show what happened. The game keeps the logs of its last run only, so save them right after the
+         problem, before starting it again.</p>
+      <div class="row">
+         <button class="secondary" id="logs">Save the logs</button>
+         <a class="link" id="bug-report" href="https://github.com/SPD13/arm-sx2-vr-steam-frame/issues/new?template=bug_report.yml" target="_blank" rel="noopener">Open a bug report on GitHub</a>
+      </div>
+      <div id="logs-result"></div>
    </section>
 </main>
 <footer>
@@ -290,7 +307,8 @@ function renderJob(s) {
 
    if (!job.running && job.failed) {
       html += `<div class="banner fail"><h3>It did not work</h3>${rich(job.message)}
-         <ul><li>To ask for help, send the installer's log: ${esc(s.logPath)}</li></ul></div>`;
+         <ul><li>To ask for help, choose <b>Save the logs</b> under <b>Report a problem</b> below and attach the file to a
+            bug report.</li></ul></div>`;
    } else if (!job.running && job.kind === "install") {
       html += `<div class="banner ok"><h3>Installed! Put the headset on and play.</h3>
          On the Frame: <b>Library &gt; Non-Steam &gt; ${esc(s.libraryName)}</b>.
@@ -298,11 +316,27 @@ function renderJob(s) {
             <li>You need a PS2 BIOS dump of your own; none is included. Add it and your games from a phone or computer: in
                the headset, open <b>Settings &gt; Wi-Fi Transfer</b>, switch it on and open the address it shows.</li>
             <li>If the library still shows plain artwork, restart the headset.</li>
+            <li>This version is in Alpha. If something goes wrong, come back here, connect, and use <b>Report a problem</b>
+               below: it saves the game's logs for a bug report.</li>
          </ul></div>`;
    } else if (!job.running && job.kind === "uninstall") {
       html += `<div class="banner ok"><h3>The game was removed from the Frame.</h3>Your games, BIOS files, memory cards, save states and texture packs are still there.</div>`;
    }
    $("job").innerHTML = html;
+}
+
+function renderLogs(s) {
+   const logs = s.logs;
+   $("logs").textContent = logs.running ? "Saving..." : "Save the logs";
+   $("logs").disabled = logs.running;
+   let html = "";
+   if (logs.error) html = `<span class="error">${esc(logs.error)}</span>`;
+   else if (logs.path) {
+      html = `<span class="saved">Saved: <b>${esc(logs.path)}</b></span>. Attach this file to your bug report.
+         <button class="link" data-action="logs-show">Show in folder</button>`;
+      if (logs.missing) html += `<div>${esc(logs.missing)}</div>`;
+   }
+   $("logs-result").innerHTML = html;
 }
 
 function render(s) {
@@ -312,6 +346,7 @@ function render(s) {
    renderFrames(s);
    renderChecks(s);
    renderStep2(s);
+   renderLogs(s);
    $("quit-box").classList.toggle("hidden", !s.browser);
    $("version").textContent = "- installer " + s.version;
 }
@@ -329,6 +364,7 @@ function connect() {
 $("connect-form").addEventListener("submit", (e) => { e.preventDefault(); connect(); });
 $("address").addEventListener("input", () => { addressEdited = true; });
 $("install").addEventListener("click", () => api("install", {}));
+$("logs").addEventListener("click", () => api("logs", {}));
 $("uninstall-open").addEventListener("click", () => $("uninstall-confirm").classList.remove("hidden"));
 $("uninstall-cancel").addEventListener("click", () => $("uninstall-confirm").classList.add("hidden"));
 $("uninstall-go").addEventListener("click", () => {
@@ -356,6 +392,7 @@ document.addEventListener("click", (e) => {
       connect();
    } else if (target.dataset.action === "discover") api("discover", {});
    else if (target.dataset.action === "latest") api("latest", {});
+   else if (target.dataset.action === "logs-show") api("logs-show", {});
    else if (target.dataset.action === "trust-key") api("trust-key", { password: $("password").value });
 });
 poll();

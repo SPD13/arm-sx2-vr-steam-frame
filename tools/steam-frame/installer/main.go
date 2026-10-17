@@ -105,6 +105,22 @@ func openBrowser(url string) {
 	}
 }
 
+// revealFile shows a file in the computer's file manager, selected where the file manager allows it
+func revealFile(path string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", "/select,"+path)
+	case "darwin":
+		cmd = exec.Command("open", "-R", path)
+	default:
+		cmd = exec.Command("xdg-open", filepath.Dir(path))
+	}
+	if err := cmd.Start(); err == nil {
+		go cmd.Wait()
+	}
+}
+
 // installer.log, in the user's cache folder (shown on the page): what the checks found and what the install printed, for help
 // when something goes wrong
 var logFile *os.File

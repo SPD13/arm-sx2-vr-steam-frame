@@ -5,6 +5,7 @@ package main
 // carries the random token of the page's address, so other web pages cannot drive the installer.
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -29,6 +30,7 @@ import (
 const (
 	// The releases of the main project, which must be public for anonymous downloads (--archive works without)
 	projectURL   = "https://github.com/SPD13/arm-sx2-vr-steam-frame"
+	bugReportURL = projectURL + "/issues/new?template=bug_report.yml"
 	releaseAPI   = "https://api.github.com/repos/SPD13/arm-sx2-vr-steam-frame/releases/latest"
 	libraryName  = "ARMSX2 - Steam Frame Edition"
 	defaultUser  = "steamos"
@@ -81,6 +83,14 @@ type jobState struct {
 	Lines        []jobLine `json:"lines"`
 }
 
+// logsState: the logs saved for a bug report (saveLogs)
+type logsState struct {
+	Running bool   `json:"running"`
+	Error   string `json:"error,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Missing string `json:"missing,omitempty"` // why the Frame's files are not in it, when they are not
+}
+
 type appState struct {
 	Title       string        `json:"title"`
 	Address     string        `json:"address"`
@@ -92,6 +102,8 @@ type appState struct {
 	Installed   installedInfo `json:"installed"`
 	Latest      releaseInfo   `json:"latest"`
 	Job         *jobState     `json:"job"`
+	Logs        logsState     `json:"logs"`
+	BugReport   string        `json:"bugReport"`
 	LibraryName string        `json:"libraryName"`
 	Version     string        `json:"version"`
 	LogPath     string        `json:"logPath"`
@@ -118,7 +130,8 @@ type app struct {
 
 func newApp(token, gameID, archive string) *app {
 	a := &app{token: token, gameID: gameID, quit: make(chan struct{})}
-	a.state = appState{Title: appTitle, LibraryName: libraryName, Version: version, LogPath: logPath, Checks: freshChecks(), Latest: releaseInfo{Loading: true}}
+	a.state = appState{Title: appTitle, LibraryName: libraryName, Version: version, LogPath: logPath, BugReport: bugReportURL,
+		Checks: freshChecks(), Latest: releaseInfo{Loading: true}}
 	if archive != "" {
 		a.state.Latest = localRelease(archive)
 	}
@@ -704,6 +717,109 @@ func (a *app) trustNewKey(password string) {
 	a.runChecks(address, password)
 }
 
+// The game's files a bug report needs, in its data folder on the Frame: the logs of its last run (it starts them over each
+// time) and its settings
+var frameReportFiles = []string{"logs/ps2v.log", "logs/emulog.txt", "inis/VR.ini", "inis/PCSX2.ini", "inis/Controls.ini", "inis/lightgun.ini"}
+
+const maxReportFile = 20 << 20 // the end of a file larger than this
+
+// saveLogs puts the game's logs and settings from the Frame, with the installer's own log, in a .zip in the Downloads folder
+// for a bug report, then shows it. Without a connection to the Frame it still saves the installer's log.
+func (a *app) saveLogs() {
+	a.mu.Lock()
+	if a.state.Logs.Running {
+		a.mu.Unlock()
+		return
+	}
+	a.state.Logs = logsState{Running: true}
+	installed, latest := a.state.Installed, a.state.Latest
+	a.mu.Unlock()
+
+	type entry struct {
+		name string
+		data []byte
+	}
+	var entries []entry
+	missing := ""
+	var found []string
+	conn, err := a.connection()
+	if err != nil {
+		missing = "The Frame is not connected, so only the installer's log was saved: connect in step 1, then save the logs again."
+	} else {
+		for _, name := range frameReportFiles {
+			// Settings lose any line that could hold a password or a token, should one ever be stored there
+			filter := ""
+			if strings.HasPrefix(name, "inis/") {
+				filter = ` | sed -E '/^[^=]*(token|password|secret)[^=]*=/Id'`
+			}
+			command := fmt.Sprintf(`f="${XDG_DATA_HOME:-$HOME/.local/share}/ps2v/%s"; [ -f "$f" ] || exit 3; tail -c %d "$f"%s`, name, maxReportFile, filter)
+			data, err := conn.output(command, nil)
+			if err != nil {
+				continue
+			}
+			entries = append(entries, entry{"frame/" + name, []byte(data)})
+			found = append(found, name)
+		}
+		if len(found) == 0 {
+			missing = "The game has no logs on the Frame yet: start it once from the Steam library, then save the logs again."
+		}
+	}
+	if data, err := os.ReadFile(logPath); err == nil {
+		entries = append(entries, entry{"installer.log", data})
+	}
+	game := "not installed, or not checked"
+	if installed.Present {
+		game = "version " + installed.Version
+	}
+	about := fmt.Sprintf("ARMSX2 - Steam Frame Edition logs, saved %s\n\nInstaller: %s on %s/%s\nGame on the Frame: %s\nLatest release: %s\nFrom the Frame: %s\n",
+		time.Now().Format("2006-01-02 15:04:05 -0700"), version, runtime.GOOS, runtime.GOARCH, game, latest.Version, strings.Join(found, ", "))
+	if missing != "" {
+		about += "\n" + missing + "\n"
+	}
+	entries = append([]entry{{"about.txt", []byte(about)}}, entries...)
+
+	stamp := time.Now().Format("20060102-150405")
+	path := filepath.Join(downloadsFolder(), "ARMSX2-logs-"+stamp+".zip")
+	err = func() error {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		archive := zip.NewWriter(file)
+		for _, e := range entries {
+			w, err := archive.CreateHeader(&zip.FileHeader{Name: "ARMSX2-logs-" + stamp + "/" + e.name, Method: zip.Deflate, Modified: time.Now()})
+			if err != nil {
+				return err
+			}
+			if _, err := w.Write(e.data); err != nil {
+				return err
+			}
+		}
+		return archive.Close()
+	}()
+	logf("logs saved to %s (%s): %v", path, strings.Join(found, ", "), err)
+	if err != nil {
+		os.Remove(path)
+		a.update(func(s *appState) { s.Logs = logsState{Error: "The logs could not be saved in " + filepath.Dir(path) + ": " + err.Error()} })
+		return
+	}
+	a.update(func(s *appState) { s.Logs = logsState{Path: path, Missing: missing} })
+	revealFile(path)
+}
+
+// downloadsFolder: the user's Downloads folder, or the home folder when there is none
+func downloadsFolder() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return os.TempDir()
+	}
+	if info, err := os.Stat(filepath.Join(home, "Downloads")); err == nil && info.IsDir() {
+		return filepath.Join(home, "Downloads")
+	}
+	return home
+}
+
 type progressReader struct {
 	source   io.Reader
 	count    atomic.Int64
@@ -791,8 +907,21 @@ func (a *app) routes(mux *http.ServeMux) {
 		go a.uninstall(b.Settings)
 		w.WriteHeader(http.StatusNoContent)
 	})
+	handle("/api/logs", "POST", func(w http.ResponseWriter, r *http.Request) {
+		go a.saveLogs()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handle("/api/logs-show", "POST", func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		path := a.state.Logs.Path
+		a.mu.Unlock()
+		if path != "" {
+			revealFile(path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	// Only the page's own links: a page must not be able to open anything else
-	links := map[string]bool{projectURL: true, "http://spd13.us/": true, "http://spd13.us": true}
+	links := map[string]bool{projectURL: true, bugReportURL: true, "http://spd13.us/": true, "http://spd13.us": true}
 	handle("/api/open", "POST", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			URL string `json:"url"`

@@ -118,7 +118,13 @@ In the installer app, after step 1, choose **Uninstall the game from the Frame..
 | macOS: the app "cannot be opened" or is "Not Opened" | **System Settings > Privacy & Security > Open Anyway** (see step 4). If it cannot find the Frame, allow it in **System Settings > Privacy & Security > Local Network**. |
 | The game is missing from the library | Look under **Library > Non-Steam**. Restart the headset if it is still missing. |
 | The game closes at once | Check that the Steam Linux Runtime 4.0 ARM64 is installed (step 2). Otherwise, read the game's log on the Frame: `ssh steamos@frame.local cat .local/share/ps2v/logs/ps2v.log` (the emulator's own log is `emulog.txt` beside it). |
-| Something else | The installer app keeps a log of what it did: `installer.log` in `%LOCALAPPDATA%\armsx2-frame-installer` (Windows), `~/Library/Caches/armsx2-frame-installer` (macOS) or `~/.cache/armsx2-frame-installer` (Linux). Attach it, with the game's logs, when you [report the problem](https://github.com/SPD13/arm-sx2-vr-steam-frame/issues). |
+| Something else | [Report the problem](https://github.com/SPD13/arm-sx2-vr-steam-frame/issues/new?template=bug_report.yml) with the logs: see [Reporting a problem](#reporting-a-problem). |
+
+### Reporting a problem
+
+The project is in Alpha, so reports help a lot. Right after the problem, before starting the game again (it keeps the logs of its last run only), open the installer app, connect (step 1), and choose **Save the logs** under **Report a problem**. It saves a `.zip` in your Downloads folder and shows it. The zip holds the game's logs and settings from the Frame and the installer's own log; lines holding a password or a token are left out of the settings. Then choose **Open a bug report on GitHub**, fill in the form and attach the zip.
+
+Without the installer, copy the logs from `~/.local/share/ps2v/logs/` on the Frame: `scp steamos@frame.local:.local/share/ps2v/logs/*.* .`
 
 Developer Mode stays on after the install: the installer needs it to install and update the game. Nobody has checked yet whether the game keeps working with Developer Mode turned off again.
 

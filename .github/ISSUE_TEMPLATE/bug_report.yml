@@ -76,5 +76,5 @@ body:
     attributes:
       label: Logs
       description: |
-        Drag the files here. On the Frame, they are in `~/.local/share/ps2v/logs/`: `ps2v.log` and `emulog.txt`. For example, from a computer: `scp steamos@frame.local:.local/share/ps2v/logs/*.* .`
-        For an install problem, attach the installer app's `installer.log` instead: in `%LOCALAPPDATA%\armsx2-frame-installer` (Windows), `~/Library/Caches/armsx2-frame-installer` (macOS) or `~/.cache/armsx2-frame-installer` (Linux). The installer shows its path when something fails.
+        Easiest: in the installer app, connect, then choose **Save the logs** under **Report a problem**, and drag the `.zip` it saves (in your Downloads folder) here. Do it right after the problem: the game keeps the logs of its last run only.
+        Without the installer: the game's logs are in `~/.local/share/ps2v/logs/` on the Frame (`ps2v.log` and `emulog.txt`), for example `scp steamos@frame.local:.local/share/ps2v/logs/*.* .`; the installer's own log is `installer.log` in `%LOCALAPPDATA%\armsx2-frame-installer` (Windows), `~/Library/Caches/armsx2-frame-installer` (macOS) or `~/.cache/armsx2-frame-installer` (Linux).

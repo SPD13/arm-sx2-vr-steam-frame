@@ -14,7 +14,7 @@ ARMSX2 - Steam Frame Edition installs on the Frame as a Steam devkit title. The 
 
 The installers are not signed. On Windows, SmartScreen warns on first launch: choose **More info > Run anyway**. On macOS, Gatekeeper refuses the app on first launch: right-click it and choose **Open**, or allow it in **System Settings > Privacy & Security**. macOS also asks to let the app reach the local network; it needs that to find the Frame.
 
-The installer's log is in the user cache folder, under `armsx2-frame-installer/installer.log`. The page shows its full path when something fails.
+The installer's log is in the user cache folder, under `armsx2-frame-installer/installer.log`. **Report a problem > Save the logs** puts it in a `.zip` in the Downloads folder, with the game's logs (`logs/ps2v.log`, `logs/emulog.txt`) and settings (`inis/`, without any line holding a password or a token) read from the Frame over the same connection, and an `about.txt` with the versions. Without a connection to the Frame, the zip has the installer's log only. **Open a bug report on GitHub** opens the repository's bug report form.
 
 **Uninstall** removes the game, its library entry, its artwork and its icon. It always keeps the games, BIOS files, memory cards, save states and texture packs in `~/.local/share/ps2v`. The option to delete settings also removes `inis/`, `gamesettings/`, `inputprofiles/`, `cache/`, `logs/`, `debug/` and `transfer/`.
 
