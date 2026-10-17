@@ -17,6 +17,7 @@
 #include "Settings.h"
 #include "XrApp.h"
 #include "XrMath.h"
+#include "capture/TrailerCapture.h"
 #include "gun/GunAim.h"
 #include "gun/GunDepth.h"
 #include "gun/GunGames.h"
@@ -71,6 +72,7 @@ struct DebugOptions
 		uint32_t button = 0; // a tap of these Emu::GunButton bits instead of a shot
 	};
 	std::vector<GunShot> gun_script;
+	TrailerCapture::Options capture; // --capture: dir empty when off
 };
 
 // "T:U:V" (a shot at U, V of the picture T seconds in), "T:off" (a reload) or "T:a", "T:b", "T:c",
@@ -131,6 +133,10 @@ static void PrintUsage(const char* argv0)
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
 		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
 		"                         with the pedal held for shots from a second before the first (testing)\n"
+		"  --capture DIR          Record what the headset shows for a trailer (tools/trailer): both eyes'\n"
+		"                         pictures and depth, the head, the screen and the guns, into a new folder\n"
+		"  --capture-width N      Scale the captured pictures down to N pixels wide (default: as shown)\n"
+		"  --capture-max-gb G     Stop capturing at G GB on disk (default 40)\n"
 		"The screen and 3D options are saved settings too (VR.ini in the settings folder,\n"
 		"read again when edited); on the command line they apply to this run only.\n"
 		"In the headset: both sticks clicked recenters the screen.\n",
@@ -185,6 +191,12 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 				return false;
 			}
 		}
+		else if (!std::strcmp(arg, "--capture") && has_value)
+			debug->capture.dir = argv[++i];
+		else if (!std::strcmp(arg, "--capture-width") && has_value)
+			debug->capture.max_width = static_cast<uint32_t>(std::max(0, std::atoi(argv[++i])));
+		else if (!std::strcmp(arg, "--capture-max-gb") && has_value)
+			debug->capture.max_gb = std::max(0.1, std::atof(argv[++i]));
 		else if (arg[0] == '-')
 		{
 			std::fprintf(stderr, "Unknown argument: %s\n", arg);
@@ -373,6 +385,7 @@ int main(int argc, char* argv[])
 	GunRenderer gun_renderer;
 	GunDepth gun_depth;
 	GunLight gun_light;
+	TrailerCapture capture;
 	ScreenLayer screen;
 	ScreenLayer screen_right; // volumetric: the right eye's picture; screen then shows the left eye's
 	VrMenu menu(settings, web, controls);
@@ -403,6 +416,10 @@ int main(int argc, char* argv[])
 		Console.Error("Light gun: no light sensor; calibration needs the calibration shot.");
 	if (!gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no depth; shots land on the screen glass.");
+	if (!debug_options.capture.dir.empty() &&
+		!capture.Create(device, gs->GetPhysicalDevice(), queue, queue_family, debug_options.capture))
+		Console.Error("Capture: off.");
+	TrailerCapture::View capture_view; // what the GS draws the next frames with, for the capture
 	// An invisible quad for the layer slots that are empty this frame, so that every layer keeps its
 	// place in the layer list. SteamVR shows quad layers as overlays matched by their place in the
 	// list: when a menu opened or closed and layers moved in the list, the menu and the guns were
@@ -478,8 +495,9 @@ int main(int argc, char* argv[])
 	// The presented frame, as the light guns aim at it.
 	float frame_size[2] = {1280.0f, 960.0f};
 	float frame_draw_rect[4] = {0.0f, 0.0f, 1280.0f, 960.0f};
-	// Depth for the guns, in volumetric mode: only while light gun mode is on (it costs copies on the GS).
-	const auto apply_gun_depth = [&] { GSVolumetric::SetEnabled(gun_mode && vr.stereo); };
+	// Depth for the guns, in volumetric mode: only while light gun mode is on (it costs copies on the GS),
+	// or while the trailer capture records it.
+	const auto apply_gun_depth = [&] { GSVolumetric::SetEnabled((gun_mode || capture.Active()) && vr.stereo); };
 	const auto set_gun_mode = [&](bool on) {
 		if (on == gun_mode)
 			return;
@@ -542,6 +560,7 @@ int main(int argc, char* argv[])
 			gun_script_start = serial.empty() ? Clock::time_point{} : Clock::now();
 			gun_script_next = 0;
 			gun_script_logged = -1;
+			capture.RecordEvent("game", serial.empty() ? std::string() : serial + " " + Emu::GetGameTitle(serial));
 			if (!serial.empty())
 				Console.WriteLnFmt("Light gun: mode {} for {}{}", gun_mode ? "on" : "off", serial, gun_chosen ? " (chosen)" : "");
 		}
@@ -909,10 +928,20 @@ int main(int argc, char* argv[])
 		}
 
 		// Where each eye is in front of the screen, for the GS's window parallax; none in flat mode.
+		capture_view.mode = static_cast<CaptureFormat::Mode>(vr.Mode3D());
+		capture_view.convergence = vr.stereo_convergence;
+		capture_view.stereo_depth = vr.stereo_depth;
+		capture_view.screen_width = vr.screen_width;
+		capture_view.screen_height = vr.screen_width / screen_aspect;
+		capture_view.screen_distance = vr.screen_distance;
 		if (!vr.stereo)
 		{
 			for (int i = 0; i < 2; i++)
+			{
 				GSVolumetric::SetEyeView(i, 0.0f, 0.0f, 0.0f);
+				capture_view.eye[i][3] = 0.0f;
+				capture_view.distance_ratio[i] = 1.0f;
+			}
 		}
 		else if (screen_placed)
 		{
@@ -942,6 +971,11 @@ int main(int argc, char* argv[])
 					const float depth_factor = vr.stereo_plus ? 1.0f : vr.stereo_depth / (distance + vr.stereo_depth);
 					const float distance_ratio = vr.stereo_plus ? distance / std::max(vr.screen_distance, 0.1f) : 1.0f;
 					GSVolumetric::SetEyeView(i, lx / half_w, -dy / half_h, depth_factor, distance_ratio);
+					capture_view.eye[i][0] = lx;
+					capture_view.eye[i][1] = dy;
+					capture_view.eye[i][2] = distance;
+					capture_view.eye[i][3] = depth_factor;
+					capture_view.distance_ratio[i] = distance_ratio;
 					if (log_eyes)
 						Console.WriteLnFmt("Stereo: eye {} at ({:.3f}, {:.3f}) m, {:.2f} m from the screen -> offset ({:.3f}, {:.3f}) NDC, depth factor {:.3f}, distance ratio {:.3f}",
 							i, lx, dy, distance, lx / half_w, -dy / half_h, depth_factor, distance_ratio);
@@ -1003,6 +1037,22 @@ int main(int argc, char* argv[])
 					light_frame.view = screen.ArmedView();
 				gun_light.Process(light_frame);
 			}
+			// The trailer capture reads both eyes' pictures as the screens got them, before they are released.
+			if (capture.Active())
+			{
+				VkImageView left = emu_frame.view;
+				if (!left && emu_frame.copied_left && emu_frame.copied_left == screen.ArmedId() && screen.ArmedReadable())
+					left = screen.ArmedView();
+				VkImageView right = VK_NULL_HANDLE;
+				if (vr.stereo && emu_frame.right_image)
+				{
+					right = emu_frame.right_view;
+					if (!right && emu_frame.copied_right && emu_frame.copied_right == screen_right.ArmedId() &&
+						screen_right.ArmedReadable())
+						right = screen_right.ArmedView();
+				}
+				capture.Process(emu_frame, left, right, capture_view);
+			}
 			if (emu_frame.right_image)
 			{
 				// Multiview: both eyes in one frame, drawn or copied by the GS into the images armed
@@ -1035,9 +1085,9 @@ int main(int argc, char* argv[])
 		static const bool present_copy = !std::getenv("PS2V_NO_PRESENT_COPY");
 		if (present_copy)
 		{
-			screen.Arm(0, gun_mode); // readable for the light gun's sensor
+			screen.Arm(0, gun_mode || capture.Active()); // readable for the light gun's sensor and the capture
 			if (vr.stereo)
-				screen_right.Arm(1);
+				screen_right.Arm(1, capture.Active());
 		}
 
 		const Clock::time_point t_emu_done = Clock::now();
@@ -1098,6 +1148,30 @@ int main(int argc, char* argv[])
 		}
 		if (frame.should_render)
 			gun_renderer.Render(frame.display_time, guns_drawn, hands_drawn, input.controller, &slots[SLOT_GUNS]);
+		if (capture.Active())
+		{
+			capture.Poll();
+			TrailerCapture::State state;
+			state.head_valid = xr.LocateHead(frame.display_time, &state.head);
+			state.eyes_valid = xr.LocateEyes(frame.display_time, state.eyes);
+			state.screen_placed = screen_placed;
+			state.screen = screen_pose_now;
+			state.screen_width = vr.screen_width;
+			state.screen_height = vr.screen_width / screen_aspect;
+			state.mode = vr.Mode3D();
+			state.passthrough = vr.passthrough;
+			state.menu_open = ui_open_last;
+			state.gun_mode = gun_mode;
+			state.guns = guns_drawn;
+			state.fired = gun_fired;
+			state.hands = hands_drawn;
+			capture.RecordState(state);
+		}
+		if (capture.TakeStopped())
+		{
+			menu.ShowNotice("Capture stopped: size limit reached", 5.0f);
+			apply_gun_depth();
+		}
 		// The list: every slot up to the last one in use, the empty ones filled by invisible quads.
 		const XrCompositionLayerBaseHeader* layers[NUM_SLOTS];
 		uint32_t layer_count = 0;
@@ -1188,6 +1262,7 @@ int main(int argc, char* argv[])
 	Emu::RequestShutdown();
 	gun_depth.Destroy();
 	gun_light.Destroy();
+	capture.Destroy();
 	gun_renderer.Destroy();
 	menu.Destroy();
 	screen_right.Destroy();

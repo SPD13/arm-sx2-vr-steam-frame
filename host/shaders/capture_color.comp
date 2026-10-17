@@ -1,0 +1,30 @@
+// SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
+// SPDX-License-Identifier: GPL-3.0+
+
+// The trailer capture (TrailerCapture): one eye's picture, as shown, into host-visible memory at the
+// capture's size (RGBA8, the sRGB-encoded values as they are; alpha set to opaque).
+
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D picture;
+layout(std430, binding = 1) writeonly buffer Texels
+{
+	uint texels[];
+};
+
+layout(push_constant) uniform Params
+{
+	uvec2 size; // the capture's picture
+	uint offset; // where it starts in the buffer, in texels
+};
+
+void main()
+{
+	const uvec2 p = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(p, size)))
+		return;
+	const vec2 uv = (vec2(p) + 0.5) / vec2(size);
+	texels[offset + p.y * size.x + p.x] = packUnorm4x8(vec4(textureLod(picture, uv, 0.0).rgb, 1.0));
+}

@@ -1,0 +1,46 @@
+{
+  "note": "Copy this next to your takes and set each shot's start from `trailer info` (seconds into the take). Paths are relative to this file.",
+  "capture": "~/ps2v-captures/take-tc2",
+  "output": "~/ps2v-trailer",
+  "size": [1920, 1080],
+  "fps": 60,
+  "codec": "prores",
+  "audio": { "offset": 0.0 },
+  "music": { "file": "music.m4a", "volume": 0.5 },
+  "shots": [
+    { "type": "head", "name": "cold-open", "start": 30.0, "duration": 4, "fov": 55, "fade_in": 0.6,
+      "note": "The player's own view, smoothed: the first thing people see is the game in the headset." },
+
+    { "type": "title", "name": "title", "kicker": "PlayStation 2 in VR", "title": "ARMSX2 VR",
+      "subtitle": "Steam Frame Edition", "duration": 3 },
+
+    { "type": "portal", "name": "volumetric-dolly", "start": 42.0, "duration": 5, "camera": "dolly",
+      "caption": "Volumetric 3D", "detail": "Every game becomes a window into its world" },
+    { "type": "compare", "name": "flat-vs-volumetric", "start": 42.0, "duration": 5, "camera": "dolly",
+      "labels": ["Flat", "Volumetric"] },
+    { "type": "reveal", "name": "reveal", "start": 55.0, "duration": 5,
+      "caption": "Real depth, from the game itself", "detail": "Rebuilt frame by frame from the PS2's own depth" },
+    { "type": "wiggle", "name": "wiggle", "start": 60.0, "duration": 2, "hz": 4,
+      "note": "The two eyes' real pictures, swapped: depth without a headset." },
+
+    { "type": "portal", "name": "light-gun", "start": 75.0, "duration": 5, "camera": "gun",
+      "caption": "Light gun support", "detail": "Aim with the controller like a GunCon 2" },
+    { "type": "portal", "name": "light-gun-orbit", "start": 81.0, "duration": 4, "camera": "orbit" },
+
+    { "type": "clip", "name": "wifi-uploader", "file": "uploader.mov", "start": 0, "duration": 7,
+      "caption": "Wi-Fi uploads", "detail": "Send games, BIOS and texture packs from any browser",
+      "note": "A screen recording of the Wi-Fi transfer page on a phone or a computer." },
+
+    { "type": "clip", "name": "standalone", "file": "headset-library.mov", "start": 0, "duration": 7,
+      "caption": "Standalone", "detail": "Runs on the Steam Frame alone: no PC to play",
+      "note": "Headset footage: the game started from the Steam library, the game list, a game starting." },
+
+    { "type": "clip", "name": "installer", "file": "installer.mov", "start": 0, "duration": 6,
+      "caption": "One-click install", "detail": "The installer app sets up the headset for you",
+      "note": "A screen recording of the installer app (Cmd+Shift+5 on a Mac)." },
+
+    { "type": "portal", "name": "push-in", "start": 95.0, "duration": 4, "camera": "push" },
+    { "type": "title", "name": "end-card", "kicker": "Alpha out now", "title": "ARMSX2 VR",
+      "subtitle": "Free and open source · github.com/SPD13/arm-sx2-vr-steam-frame", "duration": 4, "fade_out": 0.8 }
+  ]
+}
