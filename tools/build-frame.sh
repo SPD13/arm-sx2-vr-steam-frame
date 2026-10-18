@@ -67,9 +67,9 @@ if [[ ! -f $deps/.libarchive-$libarchive ]]; then
   touch "$deps/.libarchive-$libarchive"
 fi
 
-# ARMSX2 has to be the top-level CMake project; it pulls the host in through PS2V_HOST_DIR.
+# ARMSX2 has to be the top-level CMake project; it pulls the host in through EXTERNAL_FRONTEND_DIR.
 cmake -S "$root/external/armsx2" -B "$root/build/frame" -G Ninja \
-  -DPS2V_HOST_DIR="$root/host" \
+  -DEXTERNAL_FRONTEND_DIR="$root/host" \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_PREFIX_PATH="$deps" \
   -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \

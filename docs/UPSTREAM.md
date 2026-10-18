@@ -23,7 +23,7 @@ Three rules make that work:
 | | `sync/YYYY-MM-DD` | Temporary branch for each upstream merge (see below). |
 | | tags `armsx2-vr-vX.Y` | One per release, matching the tag in this repo. |
 
-Remotes in `external/armsx2`: `origin` = the fork, `upstream` = ARMSX2/ARMSX2. The host builds outside the core's tree through `PS2V_HOST_DIR` (top-level `CMakeLists.txt`), so `host/` never touches upstream files.
+Remotes in `external/armsx2`: `origin` = the fork, `upstream` = ARMSX2/ARMSX2. The host builds outside the core's tree through `EXTERNAL_FRONTEND_DIR` (top-level `CMakeLists.txt`), so `host/` never touches upstream files.
 
 One-time setup in `external/armsx2`:
 
@@ -119,7 +119,7 @@ Every patch upstream accepts is one we stop carrying. The current candidates are
 - the multiview constant-buffer fix on Turnip, once multiview itself is upstream
 - GunCon 2: log the game's Set Param, and per-port host light guns
 - ImGui: let the frontend show OSD messages itself
-- `PS2V_HOST_DIR`, as a generic "out-of-tree frontend" CMake option
+- `EXTERNAL_FRONTEND_DIR`, the generic "out-of-tree frontend" CMake option (was `PS2V_HOST_DIR`): in PR 1, `pr/frontend-hooks`
 
 Procedure: branch from `upstream/master` (not from `ps2v`) and cherry-pick the commit, fixing it until it stands alone. Open the PR from the fork. Once it's merged upstream, the next sync makes the two copies identical, and the conflict marks, if any, are trivial.
 

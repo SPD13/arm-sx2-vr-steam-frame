@@ -1,4 +1,4 @@
-# ARMSX2 VR VR host. Added by ARMSX2's top-level CMakeLists through PS2V_HOST_DIR, so
+# ARMSX2 VR VR host. Added by ARMSX2's top-level CMakeLists through EXTERNAL_FRONTEND_DIR, so
 # CMAKE_SOURCE_DIR is the ARMSX2 tree and the core targets (PCSX2, PCSX2_FLAGS) are in scope.
 
 find_package(OpenXR CONFIG REQUIRED)
