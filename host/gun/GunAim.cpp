@@ -60,7 +60,7 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 		struct Probe
 		{
 			bool inside = false;
-			float ix = 0.0f, iy = 0.0f, g = 0.0f, scale = 1.0f, surface = 0.0f;
+			float ix = 0.0f, iy = 0.0f, g = 0.0f, scale = 1.0f, surface = 0.0f, z = -1.0f;
 		};
 		const auto probe = [&](const XrVector3f& p) {
 			Probe r;
@@ -72,6 +72,7 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 				return r;
 			r.inside = true;
 			const float z = depth->Sample(u, v);
+			r.z = z;
 			// Outside the picture (no depth): as far as it goes.
 			const float f = z < 0.0f ? 1.0f : std::clamp(1.0f - z / stereo->convergence, 0.0f, 1.0f);
 			if (stereo->portal)
@@ -124,6 +125,7 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 					sx = (m.ix - eye.x * m.g) / m.scale;
 					sy = (m.iy - eye.y * m.g) / m.scale;
 					aim.through_depth = true;
+					aim.znorm = m.z;
 				}
 				hit = true;
 			}

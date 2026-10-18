@@ -12,7 +12,8 @@
 #include <fstream>
 #include <sstream>
 
-static bool ParseProfile(const std::string& path, GameProfile* profile)
+// same_as: the serial whose profile this one is (the same game's other regions), read in its place.
+static bool ParseProfile(const std::string& path, GameProfile* profile, std::string* same_as)
 {
 	std::ifstream file(path);
 	if (!file)
@@ -31,6 +32,12 @@ static bool ParseProfile(const std::string& path, GameProfile* profile)
 		std::istringstream value(line.substr(eq + 1));
 		if (key == "lightgun")
 			value >> profile->lightgun;
+		else if (key == "shot_overlays")
+			value >> profile->shot_overlays;
+		else if (key == "fx_overlays")
+			value >> profile->fx_overlays;
+		else if (key == "same_as")
+			value >> *same_as;
 		else
 			Console.WarningFmt("Profile {}:{}: unknown key '{}'", path, number, key);
 	}
@@ -39,17 +46,29 @@ static bool ParseProfile(const std::string& path, GameProfile* profile)
 
 GameProfile LoadGameProfile(const std::string& serial)
 {
-	GameProfile profile;
 	if (serial.empty())
-		return profile;
-	for (const std::string& dir : {Path::Combine(EmuFolders::DataRoot, "profiles"), Path::Combine(EmuFolders::AppRoot, "profiles")})
+		return {};
+	std::string name = serial;
+	for (int link = 0; link < 2; link++) // one same_as, no chains
 	{
-		if (ParseProfile(Path::Combine(dir, serial + ".ini"), &profile))
+		for (const std::string& dir : {Path::Combine(EmuFolders::DataRoot, "profiles"), Path::Combine(EmuFolders::AppRoot, "profiles")})
 		{
+			GameProfile profile;
+			std::string same_as;
+			if (!ParseProfile(Path::Combine(dir, name + ".ini"), &profile, &same_as))
+				continue;
+			if (!same_as.empty() && link == 0)
+			{
+				Console.WriteLnFmt("Profile for {}: {}, same as {}", serial, profile.path, same_as);
+				name = same_as;
+				break;
+			}
 			Console.WriteLnFmt("Profile for {}: {}", serial, profile.path);
 			return profile;
 		}
+		if (name == serial)
+			break;
 	}
 	Console.WriteLnFmt("No profile for {}", serial);
-	return profile;
+	return {};
 }

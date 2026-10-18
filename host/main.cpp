@@ -13,6 +13,7 @@
 
 #include "Controls.h"
 #include "Emu.h"
+#include "Profile.h"
 #include "ScreenLayer.h"
 #include "Settings.h"
 #include "XrApp.h"
@@ -63,6 +64,7 @@ struct DebugOptions
 {
 	int depth_log_ms = 5000; // interval of the "Stereo: eye" log lines
 	bool no_menu_pause = false; // --no-menu-pause: the game keeps running while a menu is open
+	bool test_eyes = false; // --test-eyes: eyes in front of an unplaced screen (off-head stereo tests)
 	// --gun-script: shots gun 1 fires by itself, for testing without the headset.
 	struct GunShot
 	{
@@ -130,6 +132,7 @@ static void PrintUsage(const char* argv0)
 		"  --depth-trace          Log which colour/depth targets the 3D draws use\n"
 		"  --depth-log-ms N       Log where the eyes are every N ms (default 5000)\n"
 		"  --no-menu-pause        Keep the game running while a menu is open\n"
+		"  --test-eyes            Off the head, eyes 64 mm apart at the screen distance (stereo dumps)\n"
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
 		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
 		"                         with the pedal held for shots from a second before the first (testing)\n"
@@ -185,6 +188,8 @@ static bool ParseArgs(int argc, char* argv[], Emu::Options* emu, DebugOptions* d
 			set("stereo_convergence", argv[++i]);
 		else if (!std::strcmp(arg, "--no-menu-pause"))
 			debug->no_menu_pause = true;
+		else if (!std::strcmp(arg, "--test-eyes"))
+			debug->test_eyes = true;
 		else if (!std::strcmp(arg, "--gun-script") && has_value)
 		{
 			if (!ParseGunScript(argv[++i], &debug->gun_script))
@@ -276,7 +281,8 @@ static XrPosef PushScreen(const XrPosef& screen, float delta)
 // Volumetric: the GS draws both eyes (multiview), with the parallax driven by Z; Volumetric+ is the
 // GS's portal. Flat: the GS draws one picture, as stock ARMSX2 does (none of the per-eye rendering),
 // and switches between the two at the next vsync, rebuilding its targets (a short pause).
-static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr)
+// The game's profile adds its own overlay rules.
+static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr, const GameProfile& profile = {})
 {
 	GSVolumetric::StereoSettings stereo;
 	stereo.enabled = vr.stereo;
@@ -284,6 +290,7 @@ static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr)
 	stereo.z_mode = true;
 	stereo.convergence = vr.stereo_convergence;
 	stereo.portal = vr.stereo && vr.stereo_plus;
+	stereo.fx_overlays = profile.fx_overlays;
 	return stereo;
 }
 
@@ -440,12 +447,13 @@ int main(int argc, char* argv[])
 	Clock::time_point next_eye_log = Clock::now() + std::chrono::seconds(5);
 	Clock::time_point next_grid_log{}; // --depth-trace: the guns' depth grid
 
+	GameProfile game_profile; // the running game's (profiles/<serial>.ini)
 	// Hands the settings to what keeps a copy of them.
 	const auto apply_settings = [&] {
 		screen.SetWidth(vr.screen_width);
 		screen_right.SetWidth(vr.screen_width);
 		// The GS thread reads these per draw: a change can land in the middle of a frame.
-		GSVolumetric::SetStereo(GSStereo(vr));
+		GSVolumetric::SetStereo(GSStereo(vr, game_profile));
 	};
 	apply_settings();
 	VrSettings applied = vr;
@@ -481,6 +489,18 @@ int main(int argc, char* argv[])
 	bool gun_chosen = false;
 	std::array<float, 2> gun_press_left{}, gun_press_right{}; // eased button presses, per gun
 	std::array<bool, 2> gun_fired{}; // the trigger was down last frame, per gun (recoil on a new pull)
+	// Where the guns' shots landed lately, with the scene's depth there, for the effects games draw
+	// over them (GSVolumetric::SetShotAnchors).
+	struct ShotMark
+	{
+		GSVolumetric::ShotAnchor anchor;
+		Clock::time_point time;
+	};
+	std::vector<ShotMark> shot_marks;
+	// The emulator's frames so far, and how many there were when the depth grid last changed: the
+	// scene's depth for fx_overlays has to be from the last few frames.
+	u64 emu_frames = 0, scene_grid_frame = 0;
+	Clock::time_point scene_grid_time{};
 	bool gun_saw_dark = false; // the light sensor's last reading, to log changes
 	// Per gun: when it last shot (trigger or calibration shot), and how often the game set its
 	// calibration, to tell the player when a shot calibrated it.
@@ -504,9 +524,9 @@ int main(int argc, char* argv[])
 	float frame_size[2] = {1280.0f, 960.0f};
 	float frame_draw_rect[4] = {0.0f, 0.0f, 1280.0f, 960.0f};
 	// Depth for the guns, in volumetric mode: only while light gun mode is on (it costs copies on the GS),
-	// or while the trailer capture records it.
+	// while the trailer capture records it, or for a game whose effects are placed by it (fx_overlays).
 	const auto apply_gun_depth = [&] {
-		GSVolumetric::SetEnabled((gun_mode || capture.Active()) && vr.stereo);
+		GSVolumetric::SetEnabled((gun_mode || capture.Active() || game_profile.fx_overlays) && vr.stereo);
 		// The capture's HUD mask reads the depth at vsync (the depth itself is from before the HUD).
 		GSVolumetric::SetDepthExtras(capture.Active() && vr.stereo);
 	};
@@ -559,6 +579,8 @@ int main(int argc, char* argv[])
 		if (const std::string serial = Emu::GetSerial(); serial != profile_serial)
 		{
 			profile_serial = serial;
+			game_profile = LoadGameProfile(serial);
+			GSVolumetric::SetStereo(GSStereo(vr, game_profile));
 			menu.OnGameChanged();
 			web.SetProtectedFile(Emu::GetRunningGamePath());
 			// The CPU thread plugged the guns in as the game started (Emu::SetGunsPolicy).
@@ -927,6 +949,40 @@ int main(int argc, char* argv[])
 				gun_fired[g] = fired;
 				Emu::SetGun(g, state);
 
+				// While the trigger is down (a machine gun keeps firing), where the shots land and the
+				// scene's depth there: the surface the beam reached, or the depth grid at that point.
+				const float* pr = frame_draw_rect;
+				if (vr.stereo && game_profile.shot_overlays && (state.buttons & Emu::GUN_TRIGGER) && state.aim_valid &&
+					pr[2] > pr[0] && pr[3] > pr[1])
+				{
+					GSVolumetric::ShotAnchor anchor;
+					anchor.u = (state.x - pr[0]) / (pr[2] - pr[0]);
+					anchor.v = (state.y - pr[1]) / (pr[3] - pr[1]);
+					anchor.znorm = aim.through_depth ? aim.znorm : -1.0f;
+					if (anchor.znorm < 0.0f)
+					{
+						const GunDepthGrid* grid = gun_depth.Latest();
+						if (grid && now - grid->time < std::chrono::milliseconds(300))
+							anchor.znorm = grid->Sample(state.x / frame_size[0], state.y / frame_size[1]);
+					}
+					if (anchor.znorm >= 0.0f)
+					{
+						auto same = std::find_if(shot_marks.begin(), shot_marks.end(), [&](const ShotMark& m) {
+							return std::abs(m.anchor.u - anchor.u) < 0.02f && std::abs(m.anchor.v - anchor.v) < 0.02f;
+						});
+						if (same == shot_marks.end())
+						{
+							if (shot_marks.size() >= GSVolumetric::MAX_SHOT_ANCHORS)
+								shot_marks.erase(shot_marks.begin());
+							shot_marks.push_back({anchor, now});
+						}
+						else
+						{
+							*same = {anchor, now};
+						}
+					}
+				}
+
 				// The game sets the gun's calibration (its offset) right after a calibration shot; it
 				// also does at start, without one.
 				const bool shooting = (state.buttons & (Emu::GUN_TRIGGER | Emu::GUN_RECALIBRATE)) != 0;
@@ -944,6 +1000,46 @@ int main(int argc, char* argv[])
 						menu.ShowNotice(num_guns > 1 ? fmt::format("Gun {} calibrated", g + 1) : std::string("Gun calibrated"), 3.0f);
 					}
 				}
+			}
+		}
+
+		// A shot's effects last a moment after the trigger is let go (Crisis Zone's bursts ~0.5 s).
+		{
+			const Clock::time_point now = Clock::now();
+			std::erase_if(shot_marks, [&](const ShotMark& m) {
+				return !gun_mode || !vr.stereo || now - m.time > std::chrono::milliseconds(1000);
+			});
+			std::array<GSVolumetric::ShotAnchor, GSVolumetric::MAX_SHOT_ANCHORS> anchors;
+			for (size_t i = 0; i < shot_marks.size(); i++)
+				anchors[i] = shot_marks[i].anchor;
+			GSVolumetric::SetShotAnchors(anchors.data(), shot_marks.size());
+		}
+		// The game's effects drawn as 2D overlays anywhere (fx_overlays): the scene's depth over the
+		// picture, from the depth grid, as long as it is from the last few frames (counted in frames: a
+		// slow frame leaves it as right as it was).
+		{
+			const GunDepthGrid* grid = vr.stereo && game_profile.fx_overlays ? gun_depth.Latest() : nullptr;
+			if (grid && grid->time != scene_grid_time)
+			{
+				scene_grid_time = grid->time;
+				scene_grid_frame = emu_frames;
+			}
+			const float* pr = frame_draw_rect;
+			if (grid && emu_frames - scene_grid_frame <= 4 && pr[2] > pr[0] && pr[3] > pr[1])
+			{
+				constexpr u32 W = GSVolumetric::SCENE_DEPTH_WIDTH, H = GSVolumetric::SCENE_DEPTH_HEIGHT;
+				std::array<float, W * H> scene;
+				for (u32 y = 0; y < H; y++)
+				{
+					const float v = (pr[1] + (y + 0.5f) / H * (pr[3] - pr[1])) / frame_size[1];
+					for (u32 x = 0; x < W; x++)
+						scene[y * W + x] = grid->Sample((pr[0] + (x + 0.5f) / W * (pr[2] - pr[0])) / frame_size[0], v);
+				}
+				GSVolumetric::SetSceneDepth(scene.data());
+			}
+			else
+			{
+				GSVolumetric::SetSceneDepth(nullptr);
 			}
 		}
 
@@ -1002,11 +1098,23 @@ int main(int argc, char* argv[])
 				}
 			}
 		}
+		else if (debug_options.test_eyes)
+		{
+			// The screen is never placed off the head: eyes 64 mm apart, centred, at the screen distance.
+			const float distance = std::max(vr.screen_distance, 0.1f);
+			for (int i = 0; i < 2; i++)
+			{
+				const float lx = i == 0 ? -0.032f : 0.032f;
+				const float depth_factor = vr.stereo_plus ? 1.0f : vr.stereo_depth / (distance + vr.stereo_depth);
+				GSVolumetric::SetEyeView(i, lx / (0.5f * vr.screen_width), 0.0f, depth_factor, 1.0f);
+			}
+		}
 
 		const Clock::time_point t_input_done = Clock::now();
 		VKLibretro::Frame emu_frame;
 		if (VKLibretro::ConsumeFrame(&emu_frame))
 		{
+			emu_frames++;
 			if (emu_frame.width && emu_frame.height)
 			{
 				const float aspect = static_cast<float>(emu_frame.width) / static_cast<float>(emu_frame.height);
@@ -1027,7 +1135,7 @@ int main(int argc, char* argv[])
 				frame_draw_rect[3] = has_rect ? r[3] : frame_size[1];
 			}
 			// The guns' depth, in volumetric mode (with multiview, a layer per eye).
-			if (vr.stereo && gun_mode && emu_frame.depth_image)
+			if (vr.stereo && (gun_mode || game_profile.fx_overlays) && emu_frame.depth_image)
 			{
 				gun_depth.Process(emu_frame, emu_frame.right_image != VK_NULL_HANDLE);
 				// --depth-trace: what the guns' depth grid holds, every few seconds.

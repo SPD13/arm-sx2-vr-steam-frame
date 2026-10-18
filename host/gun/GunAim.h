@@ -64,6 +64,7 @@ struct GunAim
 	float window_x = 0.0f, window_y = 0.0f; // where, in pixels of the presented frame (for Emu::GunState)
 	XrVector3f end{}; // where the beam ends: the surface it reaches, or the glass
 	bool through_depth = false; // the beam went into the portal
+	float znorm = -1.0f; // ... and the depth (Znorm) of the surface it reached there
 };
 
 // muzzle: the gun's ray (along its -Z). stereo and depth may be null: the beam then ends on the glass.

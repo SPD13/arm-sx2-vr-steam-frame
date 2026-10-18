@@ -13,6 +13,12 @@ struct GameProfile
 	std::string path; // where it was read from; empty when the game has none
 	// A light gun game the core does not know as one: light gun mode starts on.
 	bool lightgun = false;
+	// Volumetric: 2D overlays centred on a recent shot go to the scene's depth there (on unless a game
+	// shows it misplaces some).
+	bool shot_overlays = true;
+	// Volumetric: additive 2D overlays that come and go go to the scene's depth under them, wherever
+	// they are (GSVolumetric::SetSceneDepth). For the games known to draw their effects that way.
+	bool fx_overlays = false;
 };
 
 GameProfile LoadGameProfile(const std::string& serial);
