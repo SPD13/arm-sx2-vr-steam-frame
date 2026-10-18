@@ -6,6 +6,8 @@ A standalone PlayStation 2 emulator for the Steam Frame. It runs entirely on the
 
 **▶ [Watch the trailer](https://youtu.be/cGu4wy_Wa-Q)** (1:01): volumetric 3D and the live switch from flat, the light gun from calibration to two guns, the menus in the headset, Wi-Fi transfer and the installer app.
 
+The visual glitches in the trailer come from where the camera was placed for its shots; they do not show in the game.
+
 ## Thank You
 
 This project is a fork of [ARMSX2](https://github.com/ARMSX2/ARMSX2), and we thank the ARMSX2 team for making it possible. ARMSX2 is itself built on the shoulders of the [PCSX2](https://pcsx2.net) project.
