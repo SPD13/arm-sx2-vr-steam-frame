@@ -1079,12 +1079,6 @@ unsigned Emu::GetGunCalibration(int port, int* x, int* y)
 	return count;
 }
 
-void Emu::ReleaseGuns()
-{
-	for (u32 port = 0; port < USB::NUM_PORTS; port++)
-		usb_lightgun::SetHostState(port, false, false, 0.0f, 0.0f, 0);
-}
-
 // The policy for each new game, and the serial it was last asked about (CPU thread only).
 static std::function<int(const std::string&)> s_guns_policy;
 static std::string s_guns_policy_serial;

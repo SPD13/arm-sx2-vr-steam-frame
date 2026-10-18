@@ -13,8 +13,6 @@ This project is a fork of [ARMSX2](https://github.com/ARMSX2/ARMSX2), and we tha
 > [!WARNING]
 > **Alpha.** This project is in its Alpha stage and is currently being tested. Expect bugs, crashes and settings that change between releases. The Steam library art carries an **ALPHA** badge until testing is done. If you try it, please report what went wrong, with the logs from `~/.local/share/ps2v/logs/`. Known gaps are in [Known limitations](#known-limitations).
 
-> **Status: Alpha.** What has been tried on the Steam Frame (headset tests on 2026-10-12 and 13): the menu, its buttons and tooltips, the game list and the pointer; volumetric and flat modes and switching between them; pause and quit; the light gun in Time Crisis II, with one gun (steady in the hand, the beam landing on what is behind the glass, calibration with the trigger, gun colours), and in Ninja Assault (the beam into the window); and HD texture packs sent over Wi-Fi. The rest of Wi-Fi transfer, every settings page, controller mapping and two-gun play still need a full pass in the headset. See [Known limitations](#known-limitations). The project plan and milestone notes are in [`PLAN.md`](PLAN.md) and [`docs/`](docs).
-
 ## Contents
 
 - [Getting started](#getting-started)
@@ -141,7 +139,7 @@ Round buttons sit just outside the screen, on its right side, so they never cove
 |---|---|
 | ⚙ Gear | Opens the [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
-| 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game; lit while on |
+| 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game: the controllers are the GunCons or the DualShock 2; lit while on. The guns stay plugged in either way |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
 | ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once, in turn: **Flat** (square), **Volumetric** (cube, lit) and **Volumetric+** (cubes, lit) |
 | 👁 Eye (below the cube) | Switches [passthrough](#display) at once: your room around the screen (eye, lit) or the dark void (crossed-out eye). Greyed when SteamVR offers no passthrough |
@@ -235,6 +233,8 @@ Two tabs: **DualShock 2**, its 18 controls with the controller input each one ha
 Under the GunCon controls, the gun's colour, from gray, black, white, red, blue, green, orange and purple; it applies at once. Gun 1 has one colour for playing alone (gray by default) and one for two players (red); gun 2 has one (blue). The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. See [Controller mapping](#controller-mapping).
 
 **Gun Beam** (on by default), in the GunCon tab below the controls, shows the laser beam from the gun's muzzle; off, only the dot where it lands shows. It applies to both guns, and is the same setting as **Beam** on the Light Gun page.
+
+**GunCons Plugged** (on by default) plugs the GunCon 2 guns into the console's USB ports, one or two as the Light Gun page's **Guns** says, in every game; off, the game sees no gun. It applies at once, in the running game too. Light gun mode does not plug or unplug them: it only decides whether the controllers are the guns or the DualShock 2.
 
 **Show VR Controllers** (on by default) shows your controllers in the headset, as SteamVR's own Steam Frame controller models, with their buttons, triggers, grips and sticks moving as you press them. In light gun mode a hand holding a gun shows the gun instead; with one gun, the other hand still shows its controller. The models are read from the SteamVR install (`/opt/steamvr` on the Steam Frame); without them, no controllers are shown.
 
@@ -370,7 +370,7 @@ In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugg
 - **Recoil.** Each shot gives a short pulse in the controller.
 - **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2), with a blue beam (gun 1's is red), for two-player games. With one gun, the other hand's grip is the pedal.
 - **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and pull the trigger, then press A to confirm. "Gun calibrated" shows below the screen when the game takes it. As on a real gun, the guns see no light while the picture is black, which is what the game checks after the shot; the emulator's messages are drawn above the screen, not in the picture, so they never light it. The **calibration shot** (Y by default, and **Calibrate** on the Light Gun page) does the same without that check. The emulator also knows the screen size of about 30 GunCon 2 games.
-- **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again. Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
+- **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again and the guns are put down: still plugged in, so the game never sees them go, but off the screen with nothing pressed. Switch back and forth as often as you like, for a game's menus say. Whether the guns are plugged in at all is **GunCons Plugged** under Settings › Controls (on by default); with it off, light gun mode shows "No GunCon plugged in". Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
 
 ### GunCon controls
 
@@ -428,6 +428,7 @@ Values are read in this order, each overriding the one before: built-in defaults
 | | `web_require_code` | true | | | live |
 | `[Controllers]` | `show_controllers` | true | | | live |
 | `[LightGun]` | `gun_players` | 1 | 1 – 2 | | live |
+| | `guns_plugged` | true | | | live (plugs the guns in or out of the running game) |
 | | `gun_left_hand` | false | | | live |
 | | `gun_beam` | 0 | 0 beam and dot, 1 dot, 2 off | | live |
 | | `gun_pedal` | 0 | 0 A, 1 B, 2 C | | live |
@@ -485,7 +486,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 
 ## Known limitations
 
-- **Alpha: only partly tested in the headset.** See the Alpha and status notes at the top; the rest was tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
+- **Alpha: only partly tested in the headset.** See the Alpha warning at the top; the rest was tested on a desktop, and the headset may still show things the desktop could not, such as runtime binding quirks or performance.
 - If the runtime rejects the controllers' aim pose, the gamepad still works but menus cannot be pointed at. The log says "no aim pose …; the menu pointer is unavailable."
 - In volumetric mode, both eyes may show the same picture while a menu has the game paused.
 - Flat mode still has the emulator draw both eyes, so it costs as much GPU time as volumetric.
@@ -493,7 +494,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 - The controller actions were renamed for mapping, so any SteamVR-side rebinding made for this app starts over.
 - Wi-Fi transfer is plain HTTP, and whether SteamOS lets port 8080 through has not been checked.
 - The game list cannot rescan while a game runs (see [Game list](#game-list)).
-- **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the GunCon 2 being plugged in or out mid-game (switch light gun mode before the title screen if not), the cost of the depth copies it turns on in volumetric mode, and GunCon 2 games other than Time Crisis II and Ninja Assault. A game's depth is found with rules that fit those two (see [How it works](#how-it-works)); in a game that draws its depth another way the beam may stop on the glass, and `--depth-trace` shows why. Ninja Assault uses little of its depth range, so its scenery sits near the back of the window.
+- **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the GunCon 2 being plugged in or out mid-game (set GunCons Plugged before the game starts if not), the cost of the depth copies it turns on in volumetric mode, and GunCon 2 games other than Time Crisis II and Ninja Assault. A game's depth is found with rules that fit those two (see [How it works](#how-it-works)); in a game that draws its depth another way the beam may stop on the glass, and `--depth-trace` shows why. Ninja Assault uses little of its depth range, so its scenery sits near the back of the window.
 - The guns see no light while the picture is black, as a real gun does: a shot fired during a fade to black counts as a shot off the screen (a reload in Time Crisis). Calibration with the trigger was only tried in Time Crisis II; the calibration shot (Y) works without the light check.
 - In flat mode the beam stops on the glass.
 

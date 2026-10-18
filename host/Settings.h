@@ -47,8 +47,9 @@ struct VrSettings
 	bool show_controllers = true; // the hands without a light gun show SteamVR's controller models
 	// Graphics
 	bool show_perf = false; // the performance window left of the screen (PerfWindow)
-	// Light gun (whether it is on is per game, in lightgun.ini: see GunGames)
+	// Light gun (whether the controllers are the guns is per game, in lightgun.ini: see GunGames)
 	float gun_players = 1.0f; // 1 or 2 guns, one per hand
+	bool guns_plugged = true; // the GunCons are in the USB ports (light gun mode only switches the controls)
 	bool gun_left_hand = false; // the first gun is in the left hand
 	float gun_beam = 0.0f; // 0 beam and dot, 1 dot only, 2 neither
 	float gun_pedal = 0.0f; // the GunCon button the pedal input presses: 0 A, 1 B, 2 C

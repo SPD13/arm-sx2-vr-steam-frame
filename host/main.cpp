@@ -347,14 +347,15 @@ int main(int argc, char* argv[])
 	ControlMap controls;
 	controls.Load(Path::Combine(EmuFolders::Settings, "Controls.ini"));
 
-	// Light gun mode per game: the guns are plugged in as a game starts, before it looks for them.
+	// Light gun mode per game: whether the controllers are the guns or the DualShock 2.
 	GunGames gun_games;
 	gun_games.Load(Path::Combine(EmuFolders::Settings, "lightgun.ini"));
-	// How many guns: VR.ini's, read on the CPU thread as a game starts.
-	std::atomic<int> gun_count{settings.Get().gun_players > 1.5f ? 2 : 1};
-	Emu::SetGunsPolicy([&gun_games, &gun_count](const std::string& serial) {
-		return gun_games.IsOn(serial) ? gun_count.load() : 0;
-	});
+	// The guns plugged into the USB ports (Settings › Controls › GunCons Plugged, and one gun or
+	// two), whatever light gun mode is: the game never sees them go when the controllers switch.
+	// Read on the CPU thread as a game starts, so they are in before it looks for them.
+	const auto guns_to_plug = [](const VrSettings& s) { return s.guns_plugged ? (s.gun_players > 1.5f ? 2 : 1) : 0; };
+	std::atomic<int> guns_plugged{guns_to_plug(settings.Get())};
+	Emu::SetGunsPolicy([&guns_plugged](const std::string&) { return guns_plugged.load(); });
 
 	const VrSettings& vr = settings.Get(); // the current settings, as changed while running
 
@@ -509,15 +510,14 @@ int main(int argc, char* argv[])
 		// The capture's HUD mask reads the depth at vsync (the depth itself is from before the HUD).
 		GSVolumetric::SetDepthExtras(capture.Active() && vr.stereo);
 	};
+	// Only the controls switch: the guns stay plugged in (idle while the controllers are the pad).
 	const auto set_gun_mode = [&](bool on) {
 		if (on == gun_mode)
 			return;
 		gun_mode = on;
-		Emu::SetGunsPlugged(on ? gun_count.load() : 0);
-		if (!on)
-			Emu::ReleaseGuns();
 		apply_gun_depth();
-		Console.WriteLnFmt("Light gun: mode {} for {}", on ? "on" : "off", profile_serial);
+		Console.WriteLnFmt("Light gun: mode {} for {}{}", on ? "on" : "off", profile_serial,
+			on && guns_plugged.load() == 0 ? " (no GunCon plugged in)" : "");
 	};
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
 	{
@@ -546,12 +546,11 @@ int main(int argc, char* argv[])
 			// A new distance moves the screen along its axis; a new width moves the panels beside it.
 			if (screen_placed && (vr.screen_distance != applied.screen_distance || vr.screen_width != applied.screen_width))
 				place_screen(PushScreen(screen_pose_now, vr.screen_distance - applied.screen_distance));
-			// One gun or two: plug the second in or out.
-			if (const int guns = vr.gun_players > 1.5f ? 2 : 1; guns != gun_count.load())
+			// GunCons Plugged, one gun or two: plug them in or out, in the running game too.
+			if (const int guns = guns_to_plug(vr); guns != guns_plugged.load())
 			{
-				gun_count.store(guns);
-				if (gun_mode)
-					Emu::SetGunsPlugged(guns);
+				guns_plugged.store(guns);
+				Emu::SetGunsPlugged(guns);
 			}
 			applied = vr;
 		}
@@ -562,11 +561,9 @@ int main(int argc, char* argv[])
 			profile_serial = serial;
 			menu.OnGameChanged();
 			web.SetProtectedFile(Emu::GetRunningGamePath());
-			// The CPU thread plugged the guns in or out as the game started (Emu::SetGunsPolicy).
+			// The CPU thread plugged the guns in as the game started (Emu::SetGunsPolicy).
 			gun_mode = !serial.empty() && gun_games.IsOn(serial);
 			gun_chosen = gun_games.IsChosen(serial);
-			if (!gun_mode)
-				Emu::ReleaseGuns();
 			apply_gun_depth();
 			gun_script_start = serial.empty() ? Clock::time_point{} : Clock::now();
 			gun_script_next = 0;
@@ -727,6 +724,8 @@ int main(int argc, char* argv[])
 					gun_games.Set(profile_serial, *ui.gun_mode == SettingsMenu::GunModeRequest::On);
 				gun_chosen = gun_games.IsChosen(profile_serial);
 				set_gun_mode(gun_games.IsOn(profile_serial));
+				if (gun_mode && guns_plugged.load() == 0)
+					menu.ShowNotice("No GunCon plugged in (Settings › Controls)", 3.0f);
 			}
 			if (ui.toggle_guns)
 			{
@@ -754,6 +753,9 @@ int main(int argc, char* argv[])
 			pad_recenter = game.recenter;
 			if (!emu_options.sdl_pad) // with --sdl-pad, the SDL gamepad drives pad 1 alone
 				Emu::SetPad(game.pad);
+			// The guns put down: plugged in, off the screen, nothing pressed.
+			for (int g = 0; g < Emu::NUM_GUNS; g++)
+				Emu::SetGun(g, {});
 		}
 		std::array<GunRenderer::Gun, 2> guns_drawn;
 		if (gun_mode)

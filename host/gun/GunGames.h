@@ -3,8 +3,8 @@
 
 // Whether light gun mode is on, per game: what the user chose with the button beside the screen
 // (kept in lightgun.ini in the settings folder, by disc serial), else on for the games the core
-// knows as GunCon 2 games and those whose profile says lightgun = 1. Any thread: the CPU thread asks
-// as a game starts, to plug the guns in before it looks for them.
+// knows as GunCon 2 games and those whose profile says lightgun = 1. Light gun mode makes the
+// controllers the guns; whether the guns are plugged in is VrSettings::guns_plugged. Any thread.
 
 #pragma once
 

@@ -172,8 +172,6 @@ namespace Emu
 	void SetGun(int port, const GunState& state);
 	// How many times the game has set the gun's calibration offset (GunCon 2 Set Param), and the last one.
 	unsigned GetGunCalibration(int port, int* x, int* y);
-	// Hands the USB ports back to their own bindings (light gun mode off).
-	void ReleaseGuns();
 	// Plugs a GunCon 2 into the first `guns` USB ports (0 to 2) and unplugs the rest, in the running
 	// game and for the next ones (PCSX2.ini). Runs on the CPU thread. A port without a gun matters:
 	// Time Crisis asks to calibrate every gun plugged in when it starts.
