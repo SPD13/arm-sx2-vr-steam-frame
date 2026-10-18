@@ -1,6 +1,10 @@
 # ARMSX2 VR VR host. Added by ARMSX2's top-level CMakeLists through EXTERNAL_FRONTEND_DIR, so
 # CMAKE_SOURCE_DIR is the ARMSX2 tree and the core targets (PCSX2, PCSX2_FLAGS) are in scope.
 
+if(NOT ENABLE_VOLUMETRIC)
+	message(FATAL_ERROR "The VR host needs the core's Volumetric stereo renderer: configure with -DENABLE_VOLUMETRIC=ON.")
+endif()
+
 find_package(OpenXR CONFIG REQUIRED)
 find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 # Zip, 7z and RAR archives sent over Wi-Fi: libarchive, static (tools/build-frame.sh builds it into
