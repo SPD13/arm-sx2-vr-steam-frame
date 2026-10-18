@@ -304,6 +304,11 @@ bool Emu::InitializeConfig(const Options& options)
 		auto lock = Host::GetSettingsLock();
 		// Vulkan is the only renderer that can hand frames to the XR compositor.
 		s_base_settings->SetIntValue("EmuCore/GS", "Renderer", static_cast<int>(GSRendererType::VK));
+		// Movies in frame mode (Time Crisis II's intro) comb, and the screen's scaling blurs the comb:
+		// Automatic deinterlacing takes them apart with the comb pass. Off in ARMSX2 by default, on
+		// here unless the ini says otherwise.
+		if (!s_base_settings->ContainsValue("EmuCore/GS", "movie_comb_deinterlace"))
+			s_base_settings->SetBoolValue("EmuCore/GS", "movie_comb_deinterlace", true);
 		// The Frame controllers also show up as an SDL gamepad (28de:11e0); OpenXR owns them.
 		s_base_settings->SetBoolValue("InputSources", "SDL", options.sdl_pad);
 		if (options.sdl_pad)

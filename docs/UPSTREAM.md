@@ -115,7 +115,7 @@ If a sync goes badly, delete the sync branch. `ps2v` and the pin haven't moved.
 
 Every patch upstream accepts is one we stop carrying. The current candidates are general-purpose:
 
-- comb-adaptive deinterlace for frame-mode movies (`GSInterlaceModePolicy`, the interlace shaders, the IPU decode count)
+- comb-adaptive deinterlace for frame-mode movies (`GSInterlaceModePolicy`, the interlace shaders, the IPU decode count): PR 2, `pr/movie-deinterlace`, opt-in through the GS setting `movie_comb_deinterlace`, which the host turns on (`host/Emu.cpp`)
 - the multiview constant-buffer fix on Turnip, once multiview itself is upstream
 - GunCon 2: log the game's Set Param, and per-port host light guns
 - ImGui: let the frontend show OSD messages itself
