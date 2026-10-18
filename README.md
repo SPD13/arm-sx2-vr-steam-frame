@@ -8,7 +8,7 @@ A standalone PlayStation 2 emulator for the Steam Frame. It runs entirely on the
 
 ## Thank You
 
-This project is deeply indebted to the [ARMSX2 team](https://github.com/ARMSX2/ARMSX2), whose native ARM64 recompilers make full-speed PS2 emulation possible on the Steam Frame, and to the [PCSX2 project](https://pcsx2.net) that ARMSX2 is built on, with its more than 20 years of hardcore development. Everything here builds on their work; none of it would exist without them.
+This project is a fork of [ARMSX2](https://github.com/ARMSX2/ARMSX2), and we thank the ARMSX2 team for making it possible. ARMSX2 is itself built on the shoulders of the [PCSX2](https://pcsx2.net) project.
 
 > [!WARNING]
 > **Alpha.** This project is in its Alpha stage and is currently being tested. Expect bugs, crashes and settings that change between releases. The Steam library art carries an **ALPHA** badge until testing is done. If you try it, please report what went wrong, with the logs from `~/.local/share/ps2v/logs/`. Known gaps are in [Known limitations](#known-limitations).
