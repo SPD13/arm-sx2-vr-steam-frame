@@ -91,7 +91,8 @@ static bool ParseGunScript(const char* text, std::vector<DebugOptions::GunShot>*
 		char rest[16] = {};
 		static constexpr std::pair<const char*, uint32_t> buttons[] = {
 			{"a", Emu::GUN_A}, {"b", Emu::GUN_B}, {"c", Emu::GUN_C}, {"start", Emu::GUN_START},
-			{"cal", Emu::GUN_RECALIBRATE}};
+			{"cal", Emu::GUN_RECALIBRATE}, {"up", Emu::GUN_UP}, {"down", Emu::GUN_DOWN}, {"left", Emu::GUN_LEFT},
+			{"right", Emu::GUN_RIGHT}};
 		if (std::sscanf(item.c_str(), "%f:%f:%f", &shot.time, &shot.u, &shot.v) == 3)
 			shots->push_back(shot);
 		else if (std::sscanf(item.c_str(), "%f:%15s", &shot.time, rest) == 2)
@@ -134,8 +135,9 @@ static void PrintUsage(const char* argv0)
 		"  --no-menu-pause        Keep the game running while a menu is open\n"
 		"  --test-eyes            Off the head, eyes 64 mm apart at the screen distance (stereo dumps)\n"
 		"  --gun-script SHOTS     Light gun 1 fires by itself: T:U:V shoots at U,V of the picture T s into\n"
-		"                         the game, T:off reloads, T:a/b/c/start taps that button; comma separated,\n"
-		"                         with the pedal held for shots from a second before the first (testing)\n"
+		"                         the game, T:off reloads, T:a/b/c/start/up/down/left/right taps that button;\n"
+		"                         comma separated, with the pedal held for shots from a second before the\n"
+		"                         first (testing)\n"
 		"  --capture DIR          Record what the headset shows for a trailer (tools/trailer): both eyes'\n"
 		"                         pictures and depth, the head, the screen and the guns, into a new folder,\n"
 		"                         between clicks of the record button beside the screen\n"
@@ -288,7 +290,7 @@ static GSVolumetric::StereoSettings GSStereo(const VrSettings& vr, const GamePro
 	stereo.enabled = vr.stereo;
 	stereo.multiview = true; // the GS device can draw both eyes, whichever mode it starts in
 	stereo.z_mode = true;
-	stereo.convergence = vr.stereo_convergence;
+	stereo.convergence = vr.stereo_convergence / profile.z_scale;
 	stereo.portal = vr.stereo && vr.stereo_plus;
 	stereo.fx_overlays = profile.fx_overlays;
 	return stereo;
@@ -817,7 +819,7 @@ int main(int argc, char* argv[])
 			if (vr.stereo && xr.LocateEyes(frame.display_time, eye_views))
 			{
 				gun_stereo.z_mode = true;
-				gun_stereo.convergence = vr.stereo_convergence;
+				gun_stereo.convergence = vr.stereo_convergence / game_profile.z_scale;
 				gun_stereo.depth = vr.stereo_depth;
 				gun_stereo.portal = vr.stereo_plus;
 				gun_stereo.portal_distance = vr.screen_distance;
@@ -1074,7 +1076,7 @@ int main(int argc, char* argv[])
 
 		// Where each eye is in front of the screen, for the GS's window parallax; none in flat mode.
 		capture_view.mode = static_cast<CaptureFormat::Mode>(vr.Mode3D());
-		capture_view.convergence = vr.stereo_convergence;
+		capture_view.convergence = vr.stereo_convergence / game_profile.z_scale;
 		capture_view.stereo_depth = vr.stereo_depth;
 		capture_view.screen_width = vr.screen_width;
 		capture_view.screen_height = vr.screen_width / screen_aspect;
@@ -1178,10 +1180,11 @@ int main(int argc, char* argv[])
 							z.push_back(v);
 					std::sort(z.begin(), z.end());
 					const auto at = [&z](float q) { return z.empty() ? -1.0f : z[static_cast<size_t>(q * (z.size() - 1))]; };
-					const size_t near = static_cast<size_t>(std::count_if(z.begin(), z.end(), [&](float v) { return v >= vr.stereo_convergence; }));
+					const float convergence = vr.stereo_convergence / game_profile.z_scale;
+					const size_t near = static_cast<size_t>(std::count_if(z.begin(), z.end(), [&](float v) { return v >= convergence; }));
 					Console.WriteLnFmt("Light gun: depth grid {} cells, Znorm min {:.4f} p10 {:.4f} median {:.4f} p90 {:.4f} max {:.4f}, "
 						"{} at or nearer than the glass ({}), depth scale {:.1f}", z.size(), at(0.0f), at(0.1f), at(0.5f), at(0.9f),
-						at(1.0f), near, vr.stereo_convergence, emu_frame.depth_scale);
+						at(1.0f), near, convergence, emu_frame.depth_scale);
 				}
 			}
 			// The light gun's sensor reads the picture. Drawn straight into the screen's armed image

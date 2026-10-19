@@ -9,6 +9,10 @@ Keys:
   fx_overlays = 1     Volumetric: additive 2D overlays that come and go (effects drawn as 2D
                       sprites anywhere, not only where a shot landed) go to the scene's depth under
                       them. Off by default: a game's HUD could be drawn the same way.
+                      Also flat quads given a fake depth far nearer than the scene under them.
+  z_scale = 100       Volumetric: the game's depth values are this many times smaller than other
+                      games', which leaves its scene flat at the back; the convergence setting is
+                      divided by it for this game.
   same_as = SERIAL    This game's profile is SERIAL's (the same game's other regions); the rest of
                       the file is ignored.
 

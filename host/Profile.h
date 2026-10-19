@@ -19,6 +19,9 @@ struct GameProfile
 	// Volumetric: additive 2D overlays that come and go go to the scene's depth under them, wherever
 	// they are (GSVolumetric::SetSceneDepth). For the games known to draw their effects that way.
 	bool fx_overlays = false;
+	// Volumetric: how many times the game's depth values must be scaled up to spread its scene like the
+	// other games' (the convergence setting is divided by it). For games with a very small Z range.
+	float z_scale = 1.0f;
 };
 
 GameProfile LoadGameProfile(const std::string& serial);

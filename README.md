@@ -410,7 +410,7 @@ Everything lives in the data folder, `$XDG_DATA_HOME/ps2v` (by default `~/.local
 | `textures/<serial>/replacements/` | Texture packs, one per game (Wi-Fi transfer's Texture Packs tab) |
 | `transfer/` | Archives being received and unpacked by the Wi-Fi transfer; emptied when it starts |
 | `sstates/` | Save states |
-| `profiles/<serial>.ini` | Your own per-game profiles; they take precedence over the ones shipped next to the binary. Keys: `lightgun`, `shot_overlays`, `fx_overlays`, `same_as` (see [`host/profiles/README.txt`](host/profiles/README.txt)) |
+| `profiles/<serial>.ini` | Your own per-game profiles; they take precedence over the ones shipped next to the binary. Keys: `lightgun`, `shot_overlays`, `fx_overlays`, `z_scale`, `same_as` (see [`host/profiles/README.txt`](host/profiles/README.txt)) |
 | `logs/emulog.txt` | Emulator log |
 
 ## VR.ini reference
@@ -469,7 +469,7 @@ Debugging only:
 | `--load-state FILE` | Start from a save state; `SIGUSR1` saves `debug/state.p2s`, `SIGUSR2` writes a frame snapshot and both eyes' pictures |
 | `--depth-trace`, `--depth-log-ms N` | Log the colour and depth targets of 3D draws (and every draw of one frame in 300), and every 3 s what the guns' depth grid holds (normalised Z percentiles, how much is at or nearer than the glass); how often to log where the eyes are |
 | `--capture DIR`, `--capture-now`, `--capture-width N`, `--capture-max-gb G` | Trailer capture (see [Recording trailer footage](#recording-trailer-footage)): arm it into a new folder, record from the start instead of on the record button, scale the pictures down to `N` pixels wide, stop at `G` GB (default 40) |
-| `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen, `T:a`, `T:b`, `T:c`, `T:start`, `T:cal` tap that gun button (`cal`: the calibration shot, at the centre); comma separated, e.g. `20:0.5:0.5,22:off`. For aimed shots the pedal is held from a second before the first one |
+| `--gun-script SHOTS` | In light gun mode, gun 1 fires by itself: `T:U:V` shoots at `U,V` of the picture (0 – 1, top left origin) `T` seconds after the game starts, `T:off` shoots off the screen, `T:a`, `T:b`, `T:c`, `T:start`, `T:up`, `T:down`, `T:left`, `T:right`, `T:cal` tap that gun button (`cal`: the calibration shot, at the centre); comma separated, e.g. `20:0.5:0.5,22:off`. For aimed shots the pedal is held from a second before the first one |
 | `--test-eyes` | Without a headset pose, eyes 64 mm apart at the screen distance, so that the left and right pictures of a `SIGUSR2` snapshot differ as they would in the headset |
 
 ## How it works

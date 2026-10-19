@@ -36,6 +36,14 @@ static bool ParseProfile(const std::string& path, GameProfile* profile, std::str
 			value >> profile->shot_overlays;
 		else if (key == "fx_overlays")
 			value >> profile->fx_overlays;
+		else if (key == "z_scale")
+		{
+			float scale = 0.0f;
+			if (value >> scale && scale > 0.0f)
+				profile->z_scale = scale;
+			else
+				Console.WarningFmt("Profile {}:{}: z_scale must be a number above 0", path, number);
+		}
 		else if (key == "same_as")
 			value >> *same_as;
 		else
