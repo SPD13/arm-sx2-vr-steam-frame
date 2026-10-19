@@ -2,7 +2,7 @@
 Alpha badge into assets/steam-final/, and the installer page's hero.jpg, logo.png and favicon.png.
 Usage: python make_art.py <repo root>
 Sources: the ARMSX2 app icon (glowing pillar), the Bebas Neue font from the ARMSX2 Android app
-and assets/lightgun.glb. Needs Python 3 with numpy and pillow."""
+and assets/lightgun2.glb (Light Gun 2). Needs Python 3 with numpy and pillow."""
 import os, sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageChops
@@ -13,7 +13,7 @@ ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.pat
 ARMSX2 = os.path.join(ROOT, 'external/armsx2')
 PILLAR = os.path.join(ARMSX2, 'platforms/ios/app/src/main/assets/app_icons/icon.png')
 BEBAS = os.path.join(ARMSX2, 'platforms/android/app/src/main/res/font/bebas_neue.ttf')
-GLB = os.path.join(ROOT, 'assets/lightgun.glb')
+GLB = os.path.join(ROOT, 'assets/lightgun2.glb')
 OUT = os.path.join(ROOT, 'assets/steam')
 FINAL = os.path.join(ROOT, 'assets/steam-final')
 UI = os.path.join(ROOT, 'tools/steam-frame/installer/ui')

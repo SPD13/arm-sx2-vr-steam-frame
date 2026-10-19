@@ -1,4 +1,4 @@
-"""Studio render of assets/lightgun.glb for the Steam artwork: numpy rasteriser with perspective,
+"""Studio render of a light gun model (assets/lightgun2.glb) for the Steam artwork: numpy rasteriser with perspective,
 per-pixel normals, cyan/violet rim lights (the ARMSX2 palette), an emissive lens and an alpha channel."""
 import json, math, struct
 import numpy as np

@@ -30,7 +30,7 @@ Steam keys a non-Steam shortcut's artwork by the shortcut's app ID (`<id>`, the 
 
 - **ARMSX2 pillar.** Cut from the ARMSX2 app icon (`external/armsx2/platforms/ios/app/src/main/assets/app_icons/icon.png`, GPLv3 with the ARMSX2 sources) and added onto the background, so its glow blends in.
 - **Title font.** Bebas Neue, shipped by the ARMSX2 Android app (`res/font/bebas_neue.ttf`, SIL Open Font License 1.1). Only rendered text is in the images; the font file is not copied.
-- **Light gun.** `assets/lightgun.glb`, rendered by `gun.py`. This is a numpy rasteriser with perspective, cyan and violet rim lights in the ARMSX2 palette, and emissive lenses with bloom. Each scene picks the camera roll so the bore points at the red aim dot in the window (`solve_shot`). The model is our own, drawn from photos (see [`tools/lightgun/README.md`](../lightgun/README.md)), and so are the renders of it here.
+- **Light gun.** `assets/lightgun2.glb` (Light Gun 2), rendered by `gun.py`. This is a numpy rasteriser with perspective, cyan and violet rim lights in the ARMSX2 palette, and emissive lenses with bloom. Each scene picks the camera roll so the bore points at the red aim dot in the window (`solve_shot`). The model is our own, drawn from photos (see [`tools/lightgun/README.md`](../lightgun/README.md)), and so are the renders of it here.
 - **The window.** The glowing frame stands for the volumetric window the game is shown in on the Frame.
 - **Alpha badge.** An amber pill reading "ALPHA" in Bebas Neue, with an amber halo (`alpha_badge`, `put_badge`). It goes in the top right corner of the capsule, the wide capsule, the hero (set in from the edges so Steam's cropping keeps it) and the icon, and under the end of "STEAM FRAME EDITION" in the logo. The `ALPHA` constant at the top of `make_art.py` turns it on.
 
@@ -40,4 +40,4 @@ Set `ALPHA = False` at the top of `make_art.py` and rerun it: `assets/steam/` an
 
 ## Changing the layout
 
-To change the layout, edit the per-image functions (`capsule`, `wide`, `hero`, `logo`, `icon`). Each one sets the window box, the aim target, and the gun's render size and position in that image's pixels.
+To change the layout, edit the per-image functions (`capsule`, `wide`, `hero`, `logo`, `icon`). Each one sets the window box, the aim target, and the gun's render size and position in that image's pixels. `GLB` at the top of `make_art.py` picks the gun model.
