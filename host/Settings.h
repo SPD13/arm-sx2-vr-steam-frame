@@ -55,6 +55,9 @@ struct VrSettings
 	float gun_pedal = 0.0f; // the GunCon button the pedal input presses: 0 A, 1 B, 2 C
 	float gun_haptics = 0.6f; // strength of the recoil pulse, 0 off
 	float gun_pitch = 0.0f; // degrees the gun is tilted up in the hand
+	// What a gun looks like in the hand: 0 the PS1 GunCon, 1 the GunCon2, 2 no gun (the VR controller,
+	// its beam from the controller's pointing ray).
+	float gun_model = 0.0f;
 	// The guns' bodies, sRGB 0xRRGGBB: gun 1 alone, gun 1 with two guns, and gun 2.
 	uint32_t gun_color = 0x8C8C91; // gray
 	uint32_t gun_color_2p = 0xC0282D; // red

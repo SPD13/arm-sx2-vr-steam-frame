@@ -1,9 +1,13 @@
 """Stage 4: clean the height fields (fill holes, clamp pits, suppress scan noise), erase the trademark areas,
-and rebuild a watertight solid as the intersection of the six bounds via marching cubes (solid.py <work> [noise_mm])."""
-import sys, numpy as np, trimesh
+and rebuild a watertight solid as the intersection of the six bounds via marching cubes (solid.py <work> [noise_mm] [config.json]).
+config.json may give "logos" ({field: [[x0,x1,z0,z1], ...]}), "spec" ({field: [maxhole, dmax, rclose]}) and "loosen"
+({field: [n, m]}: grey-dilate that bound by an n x m cell footprint so it stops cutting into walls that the side fields
+already define); the defaults are the PS1 gun's."""
+import sys, json, numpy as np, trimesh
 from scipy import ndimage
 from skimage import measure
 NOISE=float(sys.argv[2]) if len(sys.argv)>2 else 0.5  # mm of scan detail suppressed before decimation
+CFG=json.load(open(sys.argv[3])) if len(sys.argv)>3 else {}
 W=sys.argv[1]; F=np.load(f'{W}/fields.npz'); X,Y,Z=F['X'],F['Y'],F['Z']; res=0.5
 def disc(r): r=int(r/res); return np.hypot(*np.mgrid[-r:r+1,-r:r+1])<=r
 def laplace_fill(h, region, iters=600):
@@ -48,6 +52,7 @@ def clean(h, maxhole, dmax, rclose):
     out=ndimage.gaussian_filter(out,0.8)
     return out, mask
 spec={'py':(300,1.5,6),'my':(300,1.5,6),'pz':(None,3,8),'mz':(None,3,8),'px':(None,5,10),'mx':(None,3,8)}
+spec.update({k:tuple(v) for k,v in CFG.get('spec',{}).items()})
 H={}; M={}
 for k,(mh,dm,rc) in spec.items():
     HOLE_TAG=k
@@ -57,6 +62,7 @@ def box(x0,x1,z0,z1):
     xx,zz=np.meshgrid(X,Z,indexing='ij'); return (xx>=x0)&(xx<=x1)&(zz>=z0)&(zz<=z1)
 logos={'py':[box(13,77,47.5,57.5), box(-84,-56,15,36), box(35,69,-0.5,14.5)],
        'my':[box(13,77,47.5,57.5), box(-84,-56,15,36), box(35,69,-0.5,14.5)]}
+if 'logos' in CFG: logos={k:[box(*b) for b in bs] for k,bs in CFG['logos'].items()}
 for k,boxes in logos.items():
     for b in boxes:
         H[k]=laplace_fill(H[k], b&M[k])
@@ -65,7 +71,10 @@ np.savez(f'{W}/clean_fields.npz',**{k:H[k] for k in H},**{'M'+k:M[k] for k in M}
 BIG=-50.
 xx=X[:,None,None]; yy=Y[None,:,None]; zz=Z[None,None,:]
 f=np.full((len(X),len(Y),len(Z)),np.inf,np.float32)
-def side(k,a,b): return np.where(M[k],H[k],-1e3)
+def side(k,a,b):
+    s=np.where(M[k],H[k],-1e3)
+    if k in CFG.get('loosen',{}): s=ndimage.grey_dilation(s,size=tuple(CFG['loosen'][k]))
+    return s
 f=np.minimum(f,(side('py',0,2)[:,None,:]-yy).astype(np.float32))
 f=np.minimum(f,(side('my',0,2)[:,None,:]+yy).astype(np.float32))
 f=np.minimum(f,(side('pz',0,1)[:,:,None]-zz).astype(np.float32))

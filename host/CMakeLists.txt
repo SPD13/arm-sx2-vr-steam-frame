@@ -131,8 +131,10 @@ target_link_libraries(ps2v PRIVATE
 pcsx2_copy_runtime_resources(ps2v)
 add_custom_command(TARGET ps2v POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/profiles" "$<TARGET_FILE_DIR:ps2v>/profiles")
-# The light gun's model (tools/lightgun builds it).
+# The light gun models, the PS1 gun's and the GunCon2's (tools/lightgun builds them).
 add_custom_command(TARGET ps2v POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ps2v>/assets"
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/../assets/lightgun.glb"
-		"$<TARGET_FILE_DIR:ps2v>/assets/lightgun.glb")
+		"$<TARGET_FILE_DIR:ps2v>/assets/lightgun.glb"
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/../assets/guncon2.glb"
+		"$<TARGET_FILE_DIR:ps2v>/assets/guncon2.glb")

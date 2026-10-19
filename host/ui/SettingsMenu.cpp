@@ -978,6 +978,13 @@ void SettingsMenu::RunLightGun()
 		vr.gun_left_hand = hand == 1;
 		changed = true;
 	}
+	static constexpr std::array<std::string_view, 3> gun_models = {"GunCon 1", "GunCon 2", "VR Controller"};
+	int gun_model = std::clamp(static_cast<int>(vr.gun_model + 0.5f), 0, 2);
+	if (m_gui.Segmented(GuiId("gun_model"), Row("Gun model", "", h), gun_models, &gun_model))
+	{
+		vr.gun_model = static_cast<float>(gun_model);
+		changed = true;
+	}
 
 	static constexpr std::array<std::string_view, 3> beams = {"Beam and dot", "Dot", "Off"};
 	int beam = std::clamp(static_cast<int>(vr.gun_beam + 0.5f), 0, 2);

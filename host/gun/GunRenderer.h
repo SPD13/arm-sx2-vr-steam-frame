@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The light guns in the headset: the model in each gun hand, with its trigger and side buttons
-// moving as they are pressed, the beam from its muzzle and the dot where it lands. The hands without
+// The light guns in the headset: the model in each gun hand (the PS1 gun's or the GunCon2's), with its
+// trigger and buttons moving as they are pressed, the beam from its muzzle and the dot where it lands. The hands without
 // a gun can show their controllers, as SteamVR's models (ControllerModel), drawn alike. Drawn per eye,
 // from the eye through a quad that covers the guns and beams (GunView), shown as alpha-blended quad
 // layers. Quad layers, not a projection layer: SteamVR puts quad layers (the screen, the menus) over
@@ -29,27 +29,34 @@ class GunRenderer
 public:
 	~GunRenderer();
 
-	// Loads the gun model from model_path and SteamVR's controller models, and creates the layers;
+	// The gun models it can draw, each gun as one of them.
+	static constexpr int NUM_MODELS = 2;
+
+	// Loads the gun models from model_paths and SteamVR's controller models, and creates the layers;
 	// false when there is nothing to draw or the layers fail.
 	bool Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uint32_t queue_family_index,
-		const std::string& model_path);
+		const std::array<std::string, NUM_MODELS>& model_paths);
 	void Destroy();
 	bool IsCreated() const { return m_created; }
-	// Whether it draws guns, and a hand's controller (0 left, 1 right).
-	bool HasGun() const { return m_created && m_model.IsLoaded(); }
+	// Whether it can draw a gun as model (0 to NUM_MODELS - 1), and a hand's controller (0 left, 1 right).
+	bool HasGun(int model) const { return m_created && model >= 0 && model < NUM_MODELS && m_models[model].IsLoaded(); }
 	bool HasController(int hand) const { return m_created && m_controllers[hand].set != VK_NULL_HANDLE; }
 
-	const GunModel& Model() const { return m_model; }
+	const GunModel& Model(int model) const { return m_models[model]; }
 	// A hand's controller model (0 left, 1 right), for its pose.
 	const ControllerModel& Controller(int hand) const { return m_controllers[hand].model; }
 
 	struct Gun
 	{
 		bool visible = false;
+		int model = 0; // which model it is drawn as; -1 for none (its beam and dot only)
 		XrPosef pose{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}; // the model's origin (grip centre), LOCAL space
+		XrPosef muzzle{{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}; // where the beam starts, LOCAL space
 		uint32_t body_color = 0x8C8C91; // sRGB 0xRRGGBB
 		float trigger = 0.0f; // how far it is pulled, 0..1
-		float press_left = 0.0f, press_right = 0.0f; // the side buttons, 0..1
+		float press_left = 0.0f, press_right = 0.0f; // the side buttons (A and B), 0..1
+		float press_select = 0.0f, press_start = 0.0f, press_c = 0.0f; // the GunCon2's other buttons, 0..1
+		float dpad_x = 0.0f, dpad_y = 0.0f; // the GunCon2's D-pad, -1..1: +X right, +Y up
 		bool beam = false; // from the muzzle to beam_end
 		bool dot = false; // at beam_end
 		XrVector3f beam_end{};
@@ -65,9 +72,6 @@ public:
 	// hands[h] is hand h's controller (0 left, 1 right), moving as controller says.
 	void Render(XrTime display_time, const std::array<Gun, 2>& guns, const std::array<Hand, 2>& hands,
 		const ControllerState& controller, const XrCompositionLayerBaseHeader** slots);
-
-	// The muzzle's pose, LOCAL space, for a gun at `pose`.
-	XrPosef MuzzlePose(const XrPosef& pose) const;
 
 private:
 	struct Pane
@@ -101,7 +105,7 @@ private:
 	bool m_created = false;
 	static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 
-	GunModel m_model;
+	std::array<GunModel, NUM_MODELS> m_models;
 	// Pane eye + 2 * k is eye's k-th, in the layer list in this order.
 	std::array<Pane, NUM_LAYERS> m_panes;
 	std::array<int, 2> m_showing{-1, -1}; // each eye's pane with the guns
@@ -118,10 +122,14 @@ private:
 	VkPipeline m_beam_pipeline = VK_NULL_HANDLE; // depth tested against the guns
 	VkPipeline m_dot_pipeline = VK_NULL_HANDLE; // on top
 
-	// The model's vertices then its indices, in one host-visible buffer.
-	VkBuffer m_mesh = VK_NULL_HANDLE;
-	VkDeviceMemory m_mesh_memory = VK_NULL_HANDLE;
-	VkDeviceSize m_index_offset = 0;
+	// Each model's vertices then its indices, in one host-visible buffer.
+	struct GunMesh
+	{
+		VkBuffer mesh = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		VkDeviceSize index_offset = 0;
+	};
+	std::array<GunMesh, NUM_MODELS> m_gun_meshes;
 
 	// The controllers: per hand its model, mesh and texture.
 	struct ControllerMesh

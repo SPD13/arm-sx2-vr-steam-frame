@@ -421,11 +421,13 @@ int main(int argc, char* argv[])
 	if (!menu.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("The settings menu is unavailable.");
 	menu.SetPausesGame(!debug_options.no_menu_pause);
+	// The gun models by VrSettings::gun_model: the PS1 GunCon, the GunCon2.
+	const std::string assets = Path::Combine(EmuFolders::AppRoot, "assets");
 	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
-			Path::Combine(EmuFolders::AppRoot, "assets" FS_OSPATH_SEPARATOR_STR "lightgun.glb")))
+			{Path::Combine(assets, "lightgun.glb"), Path::Combine(assets, "guncon2.glb")}))
 		Console.Error("Light gun: neither guns nor controllers can be shown.");
-	else if (!gun_renderer.HasGun())
-		Console.Error("Light gun: no gun model; light gun mode shows no guns.");
+	else if (!gun_renderer.HasGun(0) && !gun_renderer.HasGun(1))
+		Console.Error("Light gun: no gun model; the guns are the VR controllers.");
 	if (!gun_light.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("Light gun: no light sensor; calibration needs the calibration shot.");
 	if (!gun_depth.Create(device, gs->GetPhysicalDevice(), queue, queue_family))
@@ -487,7 +489,12 @@ int main(int argc, char* argv[])
 	// Light gun mode for the running game (GunGames), and the guns' state between frames.
 	bool gun_mode = false;
 	bool gun_chosen = false;
-	std::array<float, 2> gun_press_left{}, gun_press_right{}; // eased button presses, per gun
+	// The guns' buttons as drawn, per gun: each eased toward pressed (1) or not (0), the D-pad toward -1..1.
+	struct GunPresses
+	{
+		float a = 0.0f, b = 0.0f, c = 0.0f, select = 0.0f, start = 0.0f, dpad_x = 0.0f, dpad_y = 0.0f;
+	};
+	std::array<GunPresses, 2> gun_presses{};
 	std::array<bool, 2> gun_fired{}; // the trigger was down last frame, per gun (recoil on a new pull)
 	// Where the guns' shots landed lately, with the scene's depth there, for the effects games draw
 	// over them (GSVolumetric::SetShotAnchors).
@@ -657,6 +664,11 @@ int main(int argc, char* argv[])
 		std::array<int, 2> gun_of_hand = {-1, -1};
 		for (int g = 0; g < num_guns; g++)
 			gun_of_hand[g == 0 ? first_hand : 1 - first_hand] = g;
+		// What the guns look like (Settings > Light Gun): one of the models, or none (-1) when the
+		// choice is the VR controller or its model is missing. Without a model, the controller is the
+		// gun: its beam starts on the controller's pointing ray.
+		const int gun_choice = std::clamp(static_cast<int>(vr.gun_model + 0.5f), 0, 2);
+		const int gun_model = gun_renderer.HasGun(gun_choice) ? gun_choice : -1;
 		std::array<bool, 2> aim_valid{};
 		std::array<XrPosef, 2> aim_pose{}, gun_pose{}, muzzle_pose{};
 		for (int h = 0; h < 2; h++)
@@ -693,7 +705,8 @@ int main(int argc, char* argv[])
 					Console.WarningFmt("Light gun: no grip pose for hand {} this frame", h);
 				}
 			}
-			muzzle_pose[h] = Compose(gun_pose[h], gun_renderer.Model().Muzzle());
+			muzzle_pose[h] = gun_model >= 0 ? Compose(gun_pose[h], gun_renderer.Model(gun_model).Muzzle()) :
+			                                  XrPosef{gun_pose[h].orientation, aim_pose[h].position};
 			// A jump from one frame to the next: log it, to tell a pose glitch from a rendering one.
 			if (last_gun_pose[h] && pose_logs < 200)
 			{
@@ -723,7 +736,7 @@ int main(int argc, char* argv[])
 			std::array<VrMenu::Pointer, 2> pointers;
 			for (int h = 0; h < 2; h++)
 			{
-				const bool gun = gun_of_hand[h] >= 0 && gun_renderer.HasGun();
+				const bool gun = gun_of_hand[h] >= 0 && gun_renderer.IsCreated();
 				pointers[h] = {aim_valid[h], gun ? muzzle_pose[h] : aim_pose[h], gun};
 			}
 			menu.SetGunState(!profile_serial.empty(), gun_mode, gun_chosen, vr.gun_players > 1.5f ? 2 : 1);
@@ -857,15 +870,31 @@ int main(int argc, char* argv[])
 					state.x = aim.window_x;
 					state.y = aim.window_y;
 
-					drawn.visible = gun_renderer.HasGun();
+					drawn.visible = gun_renderer.IsCreated();
+					drawn.model = gun_model;
 					drawn.pose = gun_pose[h];
+					drawn.muzzle = muzzle_pose[h];
 					drawn.body_color = g == 1 ? vr.gun2_color : num_guns > 1 ? vr.gun_color_2p : vr.gun_color;
 					drawn.trigger = controls.GunTrigger(input.controller, g);
-					const float ease = 0.35f; // per frame, about 40 ms to settle at 90 Hz
-					gun_press_left[g] += ((state.buttons & Emu::GUN_A) ? 1.0f - gun_press_left[g] : -gun_press_left[g]) * ease;
-					gun_press_right[g] += ((state.buttons & Emu::GUN_B) ? 1.0f - gun_press_right[g] : -gun_press_right[g]) * ease;
-					drawn.press_left = gun_press_left[g];
-					drawn.press_right = gun_press_right[g];
+					GunPresses& p = gun_presses[g];
+					const auto ease = [](float& value, float target) {
+						value += (target - value) * 0.35f; // per frame, about 40 ms to settle at 90 Hz
+					};
+					const auto held = [&state](uint32_t button) { return (state.buttons & button) ? 1.0f : 0.0f; };
+					ease(p.a, held(Emu::GUN_A));
+					ease(p.b, held(Emu::GUN_B));
+					ease(p.c, held(Emu::GUN_C));
+					ease(p.select, held(Emu::GUN_SELECT));
+					ease(p.start, held(Emu::GUN_START));
+					ease(p.dpad_x, held(Emu::GUN_RIGHT) - held(Emu::GUN_LEFT));
+					ease(p.dpad_y, held(Emu::GUN_UP) - held(Emu::GUN_DOWN));
+					drawn.press_left = p.a;
+					drawn.press_right = p.b;
+					drawn.press_c = p.c;
+					drawn.press_select = p.select;
+					drawn.press_start = p.start;
+					drawn.dpad_x = p.dpad_x;
+					drawn.dpad_y = p.dpad_y;
 					drawn.beam_color = g == 0 ? 0xFF3A30 : 0x3A8CFF;
 					const int beam_mode = std::clamp(static_cast<int>(vr.gun_beam + 0.5f), 0, 2);
 					if (ui.on_ui[h] != beam_on_ui[h] && pose_logs < 200)
@@ -1258,13 +1287,15 @@ int main(int argc, char* argv[])
 		}
 		if (screen_placed)
 			menu.GetLayers(&slots[SLOT_MENU]);
-		// The controllers, as SteamVR draws them, in the hands without a gun (Settings > Controls).
+		// The controllers, as SteamVR draws them: in the hands without a gun (Settings > Controls), and
+		// as the guns when they have no model (Settings > Light Gun).
 		std::array<GunRenderer::Hand, 2> hands_drawn;
-		if (vr.show_controllers && xr.HasFrameControllers())
+		if (xr.HasFrameControllers())
 		{
 			for (int h = 0; h < 2; h++)
 			{
-				if ((gun_of_hand[h] >= 0 && gun_renderer.HasGun()) || !gun_renderer.HasController(h))
+				const bool shown = gun_of_hand[h] >= 0 ? gun_model < 0 : vr.show_controllers;
+				if (!shown || !gun_renderer.HasController(h))
 					continue;
 				const ControllerModel& model = gun_renderer.Controller(h);
 				XrPosef grip;

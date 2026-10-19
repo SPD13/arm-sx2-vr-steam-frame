@@ -116,16 +116,18 @@ bool GunModel::Load(const std::string& path)
 			add(lens ? Part::Lens : Part::Shell, body, prim);
 		}
 	}
-	static constexpr std::pair<const char*, Part> parts[] = {
-		{"trigger", Part::Trigger}, {"button_left", Part::ButtonLeft}, {"button_right", Part::ButtonRight}};
+	static constexpr std::pair<const char*, Part> parts[] = {{"trigger", Part::Trigger}, {"button_left", Part::ButtonLeft},
+		{"button_right", Part::ButtonRight}, {"button_select", Part::ButtonSelect}, {"button_start", Part::ButtonStart},
+		{"button_c", Part::ButtonC}, {"dpad", Part::Dpad}};
 	for (const auto& [name, part] : parts)
 	{
 		if (const cgltf_node* node = FindNode(data.get(), name); node && node->mesh && node->mesh->primitives_count)
 			add(part, node, node->mesh->primitives[0]);
 	}
-	for (size_t p = 0; p < m_draws.size(); p++)
+	// Every gun has these; the GunCon2's extra controls are optional.
+	static constexpr const char* names[] = {"body (shell)", "body (lens)", "trigger", "button_left", "button_right"};
+	for (size_t p = 0; p < std::size(names); p++)
 	{
-		static constexpr const char* names[] = {"body (shell)", "body (lens)", "trigger", "button_left", "button_right"};
 		if (!m_draws[p].present)
 			Console.WarningFmt("Light gun: {} has no {}", path, names[p]);
 	}

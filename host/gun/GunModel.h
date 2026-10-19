@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The light gun's 3D model, assets/lightgun.glb (see tools/lightgun/README.md for what the host may
-// rely on): its parts as ranges of one vertex and index list, each with its node's pose in the
+// A light gun's 3D model, assets/lightgun.glb or assets/guncon2.glb (see tools/lightgun/README.md for
+// what the host may rely on): its parts as ranges of one vertex and index list, each with its node's pose in the
 // model, and the muzzle marker the beam starts from. Metres; +Y up, -Z along the bore, +X the gun's
 // right side; the model's origin is the grip centre.
 
@@ -25,6 +25,11 @@ public:
 		Trigger, // pivots at its node origin: pull = negative rotation about local +X
 		ButtonLeft, // on the -X side: press = +X
 		ButtonRight, // on the +X side: press = -X
+		// The GunCon2's extra controls, absent from the PS1 gun. Each node's local +Z points out of the gun.
+		ButtonSelect, // press = local -Z
+		ButtonStart, // press = local -Z
+		ButtonC, // press = local -Z
+		Dpad, // local +Y up, +X right: a direction tilts that edge in (about local X or Y)
 		Count
 	};
 

@@ -39,10 +39,14 @@ namespace
 	constexpr float TRIGGER_ROUGHNESS = 0.4f;
 	constexpr uint32_t BUTTON_COLOR = 0xC81E1E;
 	constexpr float BUTTON_ROUGHNESS = 0.45f;
+	// The GunCon2's other buttons and D-pad: black, as on the real gun.
+	constexpr uint32_t CONTROL_COLOR = 0x1A1A1A;
+	constexpr float CONTROL_ROUGHNESS = 0.45f;
 
 	// From the model's contract (tools/lightgun/README.md).
 	constexpr float TRIGGER_TRAVEL = -12.0f * 3.14159265f / 180.0f; // negative: back toward the grip
 	constexpr float BUTTON_TRAVEL = 0.001f; // meters into the body
+	constexpr float DPAD_TILT = 6.0f * 3.14159265f / 180.0f;
 
 	// How far from each eye its quad stands: about where the guns are, so that the compositor's
 	// reprojection of the quad (as a flat picture at this distance) moves them right.
@@ -103,13 +107,15 @@ uint32_t GunRenderer::FindMemoryType(uint32_t type_bits, VkMemoryPropertyFlags p
 }
 
 bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQueue queue, uint32_t queue_family_index,
-	const std::string& model_path)
+	const std::array<std::string, NUM_MODELS>& model_paths)
 {
 	m_xr = &xr;
 	m_device = device;
 	m_gpu = gpu;
 	m_queue = queue;
-	const bool has_gun = m_model.Load(model_path);
+	bool has_gun = false;
+	for (int m = 0; m < NUM_MODELS; m++)
+		has_gun |= m_models[m].Load(model_paths[m]);
 	bool has_controllers = false;
 	for (int h = 0; h < 2; h++)
 		has_controllers |= m_controllers[h].model.Load(CONTROLLER_MODELS[h], h);
@@ -179,10 +185,15 @@ bool GunRenderer::Create(XrApp& xr, VkDevice device, VkPhysicalDevice gpu, VkQue
 	}
 	if (!CreatePipelines())
 		return false;
-	if (has_gun &&
-		!CreateMeshBuffer(m_model.Vertices().data(), m_model.Vertices().size() * sizeof(GunModel::Vertex), m_model.Indices(),
-			&m_mesh, &m_mesh_memory, &m_index_offset))
-		return false;
+	for (int m = 0; m < NUM_MODELS; m++)
+	{
+		const GunModel& model = m_models[m];
+		GunMesh& mesh = m_gun_meshes[m];
+		if (model.IsLoaded() &&
+			!CreateMeshBuffer(model.Vertices().data(), model.Vertices().size() * sizeof(GunModel::Vertex), model.Indices(),
+				&mesh.mesh, &mesh.memory, &mesh.index_offset))
+			return false;
+	}
 
 	VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
 	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -671,10 +682,14 @@ void GunRenderer::Destroy()
 	}
 	if (m_pool)
 		vkDestroyCommandPool(m_device, m_pool, nullptr);
-	if (m_mesh)
-		vkDestroyBuffer(m_device, m_mesh, nullptr);
-	if (m_mesh_memory)
-		vkFreeMemory(m_device, m_mesh_memory, nullptr);
+	for (GunMesh& mesh : m_gun_meshes)
+	{
+		if (mesh.mesh)
+			vkDestroyBuffer(m_device, mesh.mesh, nullptr);
+		if (mesh.memory)
+			vkFreeMemory(m_device, mesh.memory, nullptr);
+		mesh = {};
+	}
 	for (ControllerMesh& c : m_controllers)
 	{
 		if (c.mesh)
@@ -715,17 +730,10 @@ void GunRenderer::Destroy()
 	if (m_render_pass)
 		vkDestroyRenderPass(m_device, m_render_pass, nullptr);
 	m_pool = VK_NULL_HANDLE;
-	m_mesh = VK_NULL_HANDLE;
-	m_mesh_memory = VK_NULL_HANDLE;
 	m_mesh_pipeline = m_beam_pipeline = m_dot_pipeline = m_controller_pipeline = VK_NULL_HANDLE;
 	m_mesh_layout = m_beam_layout = m_controller_layout = VK_NULL_HANDLE;
 	m_render_pass = VK_NULL_HANDLE;
 	m_device = VK_NULL_HANDLE;
-}
-
-XrPosef GunRenderer::MuzzlePose(const XrPosef& pose) const
-{
-	return Compose(pose, m_model.Muzzle());
 }
 
 void GunRenderer::ResetPanes()
@@ -783,11 +791,14 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 	{
 		if (!gun.visible)
 			continue;
-		for (const XrVector3f& corner : m_model.BoundsCorners())
-			shapes.push_back(Transform(gun.pose, corner));
-		shape_ends.push_back(static_cast<uint32_t>(shapes.size()));
+		if (HasGun(gun.model))
+		{
+			for (const XrVector3f& corner : m_models[gun.model].BoundsCorners())
+				shapes.push_back(Transform(gun.pose, corner));
+			shape_ends.push_back(static_cast<uint32_t>(shapes.size()));
+		}
 		if (gun.beam)
-			shapes.push_back(MuzzlePose(gun.pose).position);
+			shapes.push_back(gun.muzzle.position);
 		if (gun.beam || gun.dot)
 		{
 			shapes.push_back(gun.beam_end);
@@ -883,6 +894,7 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 	// Each part of a gun: its pose in the room (animated) and colour.
 	struct PartDraw
 	{
+		int model;
 		const GunModel::Draw* draw;
 		XrPosef pose;
 		float colour[4];
@@ -890,15 +902,15 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 	std::vector<PartDraw> parts;
 	for (const Gun& gun : guns)
 	{
-		if (!gun.visible)
+		if (!gun.visible || !HasGun(gun.model))
 			continue;
 		for (size_t p = 0; p < static_cast<size_t>(GunModel::Part::Count); p++)
 		{
 			const GunModel::Part part = static_cast<GunModel::Part>(p);
-			const GunModel::Draw& draw = m_model.Get(part);
+			const GunModel::Draw& draw = m_models[gun.model].Get(part);
 			if (!draw.present)
 				continue;
-			PartDraw d{&draw, draw.node, {}};
+			PartDraw d{gun.model, &draw, draw.node, {}};
 			float roughness = draw.roughness;
 			switch (part)
 			{
@@ -922,6 +934,31 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 					const bool left = part == GunModel::Part::ButtonLeft;
 					const float press = std::clamp(left ? gun.press_left : gun.press_right, 0.0f, 1.0f);
 					d.pose.position.x += (left ? BUTTON_TRAVEL : -BUTTON_TRAVEL) * press;
+					break;
+				}
+				case GunModel::Part::ButtonSelect:
+				case GunModel::Part::ButtonStart:
+				case GunModel::Part::ButtonC:
+				{
+					LinearColor(CONTROL_COLOR, d.colour);
+					roughness = CONTROL_ROUGHNESS;
+					const float press = std::clamp(part == GunModel::Part::ButtonSelect ? gun.press_select :
+					                               part == GunModel::Part::ButtonStart  ? gun.press_start :
+					                                                                      gun.press_c,
+						0.0f, 1.0f);
+					d.pose.position = d.pose.position + Rotate(d.pose.orientation, {0.0f, 0.0f, -BUTTON_TRAVEL * press});
+					break;
+				}
+				case GunModel::Part::Dpad:
+				{
+					LinearColor(CONTROL_COLOR, d.colour);
+					roughness = CONTROL_ROUGHNESS;
+					// The pressed edge goes in: up turns it about -X, right about +Y.
+					const float x = std::clamp(gun.dpad_x, -1.0f, 1.0f), y = std::clamp(gun.dpad_y, -1.0f, 1.0f);
+					const float amount = std::sqrt(x * x + y * y);
+					if (amount > 1e-3f)
+						d.pose.orientation = d.pose.orientation *
+						                     QuatFromAxisAngle({-y / amount, x / amount, 0.0f}, DPAD_TILT * std::min(amount, 1.0f));
 					break;
 				}
 				default:
@@ -968,16 +1005,20 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 			vkCmdSetViewport(cmd, 0, 1, &viewport);
 			vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-			// The guns.
+			// The guns, each from its model's buffer.
 			const VkDeviceSize vertex_offset = 0;
 			if (!parts.empty())
-			{
 				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipeline);
-				vkCmdBindVertexBuffers(cmd, 0, 1, &m_mesh, &vertex_offset);
-				vkCmdBindIndexBuffer(cmd, m_mesh, m_index_offset, VK_INDEX_TYPE_UINT32);
-			}
+			int bound = -1;
 			for (const PartDraw& d : parts)
 			{
+				if (d.model != bound)
+				{
+					const GunMesh& mesh = m_gun_meshes[d.model];
+					vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.mesh, &vertex_offset);
+					vkCmdBindIndexBuffer(cmd, mesh.mesh, mesh.index_offset, VK_INDEX_TYPE_UINT32);
+					bound = d.model;
+				}
 				MeshConstants c{};
 				const Mat4 mvp = Multiply(vp, MatrixFromPose(d.pose));
 				std::memcpy(c.mvp, mvp.m, sizeof(c.mvp));
@@ -1031,7 +1072,7 @@ void GunRenderer::Render(XrTime display_time, const std::array<Gun, 2>& guns, co
 					if (pass == 0)
 					{
 						// A strip from the muzzle to the end, turned about its length to face the eye.
-						const XrVector3f start = MuzzlePose(gun.pose).position;
+						const XrVector3f start = gun.muzzle.position;
 						const XrVector3f mid = (start + gun.beam_end) * 0.5f;
 						XrVector3f side = Normalize(Cross(gun.beam_end - start, eye_pos - mid));
 						side = side * (0.5f * BEAM_WIDTH);

@@ -620,10 +620,11 @@ void TrailerCapture::RecordState(const State& state, const VrMenu::CaptureView* 
 			{
 				line += ",\"p\":";
 				AppendPose(line, gun.pose);
+				// m: the model it is drawn as (GunRenderer::Gun::model), -1 for none.
 				fmt::format_to(std::back_inserter(line),
-					",\"c\":\"{:06X}\",\"tr\":{:.3f},\"bl\":{:.3f},\"br\":{:.3f},\"beam\":{},\"dot\":{},\"end\":[{:.4f},{:.4f},{:.4f}],"
+					",\"m\":{},\"c\":\"{:06X}\",\"tr\":{:.3f},\"bl\":{:.3f},\"br\":{:.3f},\"beam\":{},\"dot\":{},\"end\":[{:.4f},{:.4f},{:.4f}],"
 					"\"bc\":\"{:06X}\",\"fire\":{}",
-					gun.body_color, gun.trigger, gun.press_left, gun.press_right, int(gun.beam), int(gun.dot), gun.beam_end.x,
+					gun.model, gun.body_color, gun.trigger, gun.press_left, gun.press_right, int(gun.beam), int(gun.dot), gun.beam_end.x,
 					gun.beam_end.y, gun.beam_end.z, gun.beam_color, int(state.fired[g]));
 			}
 			line += "}";
