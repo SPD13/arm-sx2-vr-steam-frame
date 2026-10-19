@@ -31,7 +31,9 @@ namespace
 	constexpr size_t NUM_GUN_CONTROLS = static_cast<size_t>(GunControl::Count);
 	constexpr std::array<const char*, NUM_GUN_CONTROLS> gun_keys = {
 		"trigger", "a", "b", "c", "start", "select", "up", "down", "left", "right", "reload", "calibrate", "pedal"};
-	constexpr std::array<const char*, ControlMap::NUM_GUNS> gun_sections = {"GunCon1", "GunCon2"};
+	constexpr std::array<const char*, ControlMap::NUM_GUNS> gun_sections = {"LightGun1", "LightGun2"};
+	// Their names before 2026-10-18, still read when the new ones are absent.
+	constexpr std::array<const char*, ControlMap::NUM_GUNS> old_gun_sections = {"GunCon1", "GunCon2"};
 
 	// The first gun in the right hand: the other hand's grip is the pedal, Y the calibration shot.
 	// The second gun in the left hand: on the Steam Frame that controller has no face buttons, so its
@@ -137,15 +139,16 @@ void ControlMap::Load(std::string path)
 	}
 	for (int gun = 0; gun < NUM_GUNS; gun++)
 	{
+		const char* section = m_ini->ContainsValue(gun_sections[gun], gun_keys[0]) ? gun_sections[gun] : old_gun_sections[gun];
 		for (size_t c = 0; c < NUM_GUN_CONTROLS; c++)
 		{
 			std::string value;
-			if (!m_ini->GetStringValue(gun_sections[gun], gun_keys[c], &value))
+			if (!m_ini->GetStringValue(section, gun_keys[c], &value))
 				continue;
 			if (const std::optional<ControlInput> input = ParseInput(value, false))
 				m_gun[gun][c] = *input;
 			else
-				Console.WarningFmt("Controls: ignoring [{}] {} = {} in {}", gun_sections[gun], gun_keys[c], value,
+				Console.WarningFmt("Controls: ignoring [{}] {} = {} in {}", section, gun_keys[c], value,
 					m_ini->GetFileName());
 		}
 	}
@@ -161,6 +164,7 @@ void ControlMap::Save()
 	{
 		for (size_t c = 0; c < NUM_GUN_CONTROLS; c++)
 			m_ini->SetStringValue(gun_sections[gun], gun_keys[c], input_keys[static_cast<size_t>(m_gun[gun][c])]);
+		m_ini->RemoveSection(old_gun_sections[gun]);
 	}
 	Error error;
 	if (!m_ini->Save(&error))

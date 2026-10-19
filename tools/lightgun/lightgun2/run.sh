@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Rebuild the scan-based GunCon2 (assets/lightgun2-scan.glb, not shipped) from its right shell scan (mirrored for the left shell).
-# Usage: tools/lightgun/guncon2/run.sh <dir with Right.stl> <work dir> [python]
+# Rebuild the scan-based LightGun 2 (assets/lightgun2-scan.glb, not shipped) from its right shell scan (mirrored for the left shell).
+# Usage: tools/lightgun/lightgun2/run.sh <dir with Right.stl> <work dir> [python]
 # Python needs: numpy scipy trimesh pymeshlab scikit-image rtree shapely mapbox-earcut pillow
 set -euo pipefail
 SCANS=$1; WORK=$2; PY=${3:-python3}

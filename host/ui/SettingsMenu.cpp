@@ -772,14 +772,14 @@ std::string SettingsMenu::InputLabel(const MapTarget& target) const
 void SettingsMenu::RunControls()
 {
 	// Which set: the DualShock 2's, or a light gun's (and which gun).
-	static constexpr std::array<std::string_view, 2> tabs = {"DualShock 2", "GunCon"};
-	int tab = m_controls_guncon ? 1 : 0;
+	static constexpr std::array<std::string_view, 2> tabs = {"DualShock 2", "LightGun"};
+	int tab = m_controls_lightgun ? 1 : 0;
 	if (m_gui.Segmented(GuiId("controls_tab"), {CONTENT_X, m_y - 4.0f, 300.0f, 48.0f}, tabs, &tab))
 	{
-		m_controls_guncon = tab == 1;
+		m_controls_lightgun = tab == 1;
 		m_needs_draw = true;
 	}
-	if (m_controls_guncon)
+	if (m_controls_lightgun)
 	{
 		static constexpr std::array<std::string_view, 2> guns = {"Gun 1", "Gun 2"};
 		if (m_gui.Segmented(GuiId("controls_gun"), {CONTENT_X + 316.0f, m_y - 4.0f, 200.0f, 48.0f}, guns, &m_controls_gun))
@@ -788,17 +788,17 @@ void SettingsMenu::RunControls()
 	if (m_gui.Button(GuiId("controls_reset"), {CONTENT_RIGHT - 240.0f, m_y - 4.0f, 240.0f, 48.0f}, "Reset to defaults",
 			Icon::restart))
 	{
-		if (m_controls_guncon)
+		if (m_controls_lightgun)
 			m_controls.ResetGunToDefaults(m_controls_gun);
 		else
 			m_controls.ResetToDefaults();
-		m_toast = m_controls_guncon ? fmt::format("Gun {} controls reset to the defaults", m_controls_gun + 1) :
+		m_toast = m_controls_lightgun ? fmt::format("Gun {} controls reset to the defaults", m_controls_gun + 1) :
 		                              "Controls reset to the defaults";
 		m_toast_until = Clock::now() + std::chrono::seconds(3);
 		m_needs_draw = true;
 	}
 	// Two switches as cells of the grid's columns: whether the hands without a gun show their
-	// controllers, and whether the GunCons are in the console's USB ports (light gun mode only
+	// controllers, and whether the LightGuns are in the console's USB ports (light gun mode only
 	// switches the controls between the pad and the guns). The help below them, on one line.
 	constexpr float gap = 16.0f, row_h = 45.0f, row_gap = 5.0f; // ends above the toasts
 	const float col_w = 0.5f * (CONTENT_RIGHT - CONTENT_X - gap);
@@ -815,30 +815,30 @@ void SettingsMenu::RunControls()
 	const float switches_y = m_y + 56.0f;
 	if (switch_cell("show_controllers", {CONTENT_X, switches_y, col_w, row_h}, "Show VR Controllers", &vr.show_controllers))
 		SetVr(vr);
-	if (switch_cell("guns_plugged", {CONTENT_X + col_w + gap, switches_y, col_w, row_h}, "GunCons Plugged", &vr.guns_plugged))
+	if (switch_cell("guns_plugged", {CONTENT_X + col_w + gap, switches_y, col_w, row_h}, "LightGuns Plugged", &vr.guns_plugged))
 	{
 		SetVr(vr);
-		m_toast = vr.guns_plugged ? "GunCons plugged into the console" : "GunCons unplugged";
+		m_toast = vr.guns_plugged ? "LightGuns plugged into the console" : "LightGuns unplugged";
 		m_toast_until = Clock::now() + std::chrono::seconds(3);
 	}
 	const std::string_view controllers = m_frame_controllers ? "Steam Frame controllers" : "Touch layout";
 	m_gui.TextWrapped(CONTENT_X, switches_y + row_h + 10.0f, CONTENT_RIGHT - CONTENT_X,
-		m_controls_guncon ?
+		m_controls_lightgun ?
 			fmt::format("{}: gun 1 is in your gun hand, gun 2 in the other. Used while light gun mode is on.", controllers) :
 			fmt::format("{}: click a control, then press what you want for it. Triggers still click in menus.", controllers),
 		Theme::small_size, Theme::text_muted);
 
 	// Two columns: nine rows for the pad, seven for a gun.
-	const int count = m_controls_guncon ? static_cast<int>(GunControl::Count) : static_cast<int>(Ps2Control::Count);
-	const int rows = m_controls_guncon ? 7 : 9;
+	const int count = m_controls_lightgun ? static_cast<int>(GunControl::Count) : static_cast<int>(Ps2Control::Count);
+	const int rows = m_controls_lightgun ? 7 : 9;
 	const float top = switches_y + row_h + 46.0f;
 	for (int i = 0; i < count; i++)
 	{
-		const MapTarget target{m_controls_guncon ? m_controls_gun : -1, i};
+		const MapTarget target{m_controls_lightgun ? m_controls_gun : -1, i};
 		const Rect cell{CONTENT_X + static_cast<float>(i / rows) * (col_w + gap),
 			top + static_cast<float>(i % rows) * (row_h + row_gap), col_w, row_h};
 		bool hovered = false;
-		if (m_gui.Clickable(GuiId(m_controls_guncon ? "map_gun" : "map", i), cell, &hovered))
+		if (m_gui.Clickable(GuiId(m_controls_lightgun ? "map_gun" : "map", i), cell, &hovered))
 		{
 			m_mapping = target;
 			m_mapping_armed = false;
@@ -851,24 +851,24 @@ void SettingsMenu::RunControls()
 		c.FillRect(cell, hovered ? Theme::item_hover : Theme::nav, 12.0f);
 		const float text_y = std::round(cell.y + 0.5f * (cell.h - m_gui.TextFont().LineHeight(Theme::body_size)));
 		m_gui.Text(cell.x + 18.0f, text_y,
-			m_controls_guncon ? ControlMap::Name(static_cast<GunControl>(i)) : ControlMap::Name(static_cast<Ps2Control>(i)),
+			m_controls_lightgun ? ControlMap::Name(static_cast<GunControl>(i)) : ControlMap::Name(static_cast<Ps2Control>(i)),
 			Theme::body_size);
-		const ControlInput input = m_controls_guncon ? m_controls.Get(m_controls_gun, static_cast<GunControl>(i)) :
+		const ControlInput input = m_controls_lightgun ? m_controls.Get(m_controls_gun, static_cast<GunControl>(i)) :
 		                                               m_controls.Get(static_cast<Ps2Control>(i));
 		// A gun input both guns use goes to gun 2 when there are two.
-		const bool shared = m_controls_guncon && m_controls.GunsShare(input);
+		const bool shared = m_controls_lightgun && m_controls.GunsShare(input);
 		const std::string label = InputLabel(target) + (shared ? " *" : "");
 		const float label_w = m_gui.TextWidth(label, Theme::small_size) + 28.0f;
 		const Rect pill{cell.Right() - label_w - 10.0f, cell.y + 8.0f, label_w, cell.h - 16.0f};
 		c.FillRect(pill, hovered ? Theme::accent.WithAlpha(0.25f) : Theme::control, 0.5f * pill.h);
 		// An unmapped pad control is a gap; a gun has more buttons than hands, so some go without.
-		const Color ink = input == ControlInput::None ? (m_controls_guncon ? Theme::text_muted.WithAlpha(0.6f) : Theme::danger) :
+		const Color ink = input == ControlInput::None ? (m_controls_lightgun ? Theme::text_muted.WithAlpha(0.6f) : Theme::danger) :
 		                  shared                      ? Theme::accent :
 		                  hovered                     ? Theme::accent_hover :
 		                                                Theme::text_muted;
 		m_gui.TextCentered(pill, label, Theme::small_size, ink);
 	}
-	if (!m_controls_guncon)
+	if (!m_controls_lightgun)
 		return;
 	// The free cell below the second column: the beam, for both guns (the Light Gun page's Beam
 	// setting: off leaves the dot, as its Dot choice does).
@@ -978,7 +978,7 @@ void SettingsMenu::RunLightGun()
 		vr.gun_left_hand = hand == 1;
 		changed = true;
 	}
-	static constexpr std::array<std::string_view, 3> gun_models = {"GunCon 1", "GunCon 2", "VR Controller"};
+	static constexpr std::array<std::string_view, 3> gun_models = {"LightGun 1", "LightGun 2", "VR Controller"};
 	int gun_model = std::clamp(static_cast<int>(vr.gun_model + 0.5f), 0, 2);
 	if (m_gui.Segmented(GuiId("gun_model"), Row("Gun model", "", h), gun_models, &gun_model))
 	{

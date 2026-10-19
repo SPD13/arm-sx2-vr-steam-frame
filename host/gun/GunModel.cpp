@@ -124,7 +124,7 @@ bool GunModel::Load(const std::string& path)
 		if (const cgltf_node* node = FindNode(data.get(), name); node && node->mesh && node->mesh->primitives_count)
 			add(part, node, node->mesh->primitives[0]);
 	}
-	// Every gun has these; the GunCon2's extra controls are optional.
+	// Every gun has these; the LightGun 2's extra controls are optional.
 	static constexpr const char* names[] = {"body (shell)", "body (lens)", "trigger", "button_left", "button_right"};
 	for (size_t p = 0; p < std::size(names); p++)
 	{

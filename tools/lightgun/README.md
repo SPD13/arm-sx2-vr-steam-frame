@@ -2,8 +2,8 @@
 
 The two in-game light guns are our own creations:
 
-- `assets/lightgun.glb`, the PS1 light gun (GunCon): 2,836 triangles, about 100 KB.
-- `assets/lightgun2.glb`, the PS2 light gun (GunCon 2): 3,080 triangles, about 105 KB.
+- `assets/lightgun.glb`, the PS1 light gun (LightGun): 2,836 triangles, about 100 KB.
+- `assets/lightgun2.glb`, the PS2 light gun (LightGun 2): 3,080 triangles, about 105 KB.
 
 Each one was drawn from public photos. The side outline was traced by hand, and `photo/` builds the solid from that outline. They use no 3D scan data. They have no logos, wordmarks, model numbers or other markings: only outlines and the positions of the controls were taken from the photos, never their surface detail.
 
@@ -14,17 +14,17 @@ Each one was drawn from public photos. The side outline was traced by hand, and 
 ## Rebuild
 
 ```sh
-tools/lightgun/photo/run.sh guncon1 <work dir> [python]   # assets/lightgun.glb
-tools/lightgun/photo/run.sh guncon2 <work dir> [python]   # assets/lightgun2.glb
+tools/lightgun/photo/run.sh lightgun1 <work dir> [python]   # assets/lightgun.glb
+tools/lightgun/photo/run.sh lightgun2 <work dir> [python]   # assets/lightgun2.glb
 ```
 
 You need Python 3.11 with `numpy scipy trimesh pymeshlab scikit-image rtree mapbox-earcut pillow`. Nothing outside the repo is needed, and the output is deterministic: a rebuild gives a byte-identical `.glb`.
 
 | Stage | Script | What it does |
 |---|---|---|
-| 1 | `photo/build_body.py` | Reads the gun's outline (`photo/guncon1.json`, `photo/guncon2.json`). Extrudes each part's side polygon (slide, sights, frame, grip, front housing, and so on) to its width with rounded edges, as a signed distance field. A `crown_mm` rounds a part's top across its width. Joins the parts with 0.8 mm fillets, then cuts the trigger-guard opening, any sight notch, the bore tubes with their lens recesses and, on the PS1 gun, the raised button bosses with their sockets. Marching cubes at 0.5 mm. |
+| 1 | `photo/build_body.py` | Reads the gun's outline (`photo/lightgun1.json`, `photo/lightgun2.json`). Extrudes each part's side polygon (slide, sights, frame, grip, front housing, and so on) to its width with rounded edges, as a signed distance field. A `crown_mm` rounds a part's top across its width. Joins the parts with 0.8 mm fillets, then cuts the trigger-guard opening, any sight notch, the bore tubes with their lens recesses and, on the PS1 gun, the raised button bosses with their sockets. Marching cubes at 0.5 mm. |
 | 2 | `decimate.py` | Quadric decimation to 2,600 faces. Mean deviation from the dense solid is 0.01 mm (p95 0.06 mm). |
-| 3 | `photo/guncon1_glb.py`, `photo/guncon2_glb.py` | Adds the trigger (the traced blade, extruded) and the gun's controls, seated on the body by casting rays at it, marks the bore floors as `lens`, and writes the nodes of the contract below. `photo/glb.py` holds what the two share. |
+| 3 | `photo/lightgun1_glb.py`, `photo/lightgun2_glb.py` | Adds the trigger (the traced blade, extruded) and the gun's controls, seated on the body by casting rays at it, marks the bore floors as `lens`, and writes the nodes of the contract below. `photo/glb.py` holds what the two share. |
 | 4 | `view_glb.py` | Reads the `.glb` back and renders the preview. Pass `pressed` as the last argument to see the trigger pulled. |
 
 ## Where the shapes come from
@@ -73,7 +73,7 @@ The PS2 gun has extra controls. Each is a node whose rotation sets up a local fr
 
 The materials are `shell` (near-black), `trim` (trigger and the PS2 gun's controls), `button` (red, the PS1 gun's buttons) and `lens` (dark red). The host draws the buttons and controls in its own colours.
 
-The host loads both models and draws the one picked in Settings › Light Gun › Gun model (VR.ini `gun_model`: 0 PS1 gun, 1 GunCon2, 2 the VR controller with no gun).
+The host loads both models and draws the one picked in Settings › Light Gun › Gun model (VR.ini `gun_model`: 0 PS1 gun, 1 LightGun 2, 2 the VR controller with no gun).
 
 ## Known approximations
 
@@ -87,18 +87,18 @@ The first versions of both models were rebuilt from 3D scans of the guns' plasti
 
 ```sh
 tools/lightgun/run.sh "<dir with LeftScan.obj + RightScan.obj>" <work dir> [python]   # PS1 gun
-tools/lightgun/guncon2/run.sh "<dir with Right.stl>" <work dir> [python]             # PS2 gun
+tools/lightgun/lightgun2/run.sh "<dir with Right.stl>" <work dir> [python]             # PS2 gun
 ```
 
 They also need `shapely`. Both are deterministic: the same scans give a byte-identical `.glb`.
 
 | Stage | Script | What it does |
 |---|---|---|
-| 1 | `load.py` / `guncon2/load_stl.py` | Reads each OBJ (about 1.1M vertices per shell) / a binary STL (about 2.5M triangles) and welds the vertices. |
-| 2 | `align.py` / `guncon2/align.py` | PS1: flips the right shell onto the left shell's parting plane, adds 1.0 mm for the stepped lip so the muzzle bore comes out round, and registers the outlines (IoU 0.996). PS2: levels the right shell on a plane fitted to its rim and mirrors it for the left; the shells meet flush. |
+| 1 | `load.py` / `lightgun2/load_stl.py` | Reads each OBJ (about 1.1M vertices per shell) / a binary STL (about 2.5M triangles) and welds the vertices. |
+| 2 | `align.py` / `lightgun2/align.py` | PS1: flips the right shell onto the left shell's parting plane, adds 1.0 mm for the stepped lip so the muzzle bore comes out round, and registers the outlines (IoU 0.996). PS2: levels the right shell on a plane fitted to its rim and mirrors it for the left; the shells meet flush. |
 | 3 | `fields.py` | Builds outer-surface height fields from ±X, ±Y and ±Z at 0.5 mm. |
-| 4 | `solid.py` (+ `guncon2/markings.json`) | Fills the screw and button holes, clamps deep openings, suppresses scan detail under 0.5 mm, Laplace-fills the logo boxes, then builds the solid as the intersection of the six bounds (marching cubes). `loosen` widens the bounds across noisy side walls. |
+| 4 | `solid.py` (+ `lightgun2/markings.json`) | Fills the screw and button holes, clamps deep openings, suppresses scan detail under 0.5 mm, Laplace-fills the logo boxes, then builds the solid as the intersection of the six bounds (marching cubes). `loosen` widens the bounds across noisy side walls. |
 | 5 | `decimate.py` | Quadric decimation to 2,600 faces. |
-| 6 | `build_glb.py` / `guncon2/build_glb.py` | Adds the parts that are not in the scans (trigger, buttons, controls), the lens material and the marker nodes. |
+| 6 | `build_glb.py` / `lightgun2/build_glb.py` | Adds the parts that are not in the scans (trigger, buttons, controls), the lens material and the marker nodes. |
 
 Their known approximations: the trigger and buttons are hand-modelled; the PS1 gun's width depends on the inferred 1.0 mm lip offset; undercuts are approximated by the six height fields; the PS2 gun's left side is its right side mirrored.

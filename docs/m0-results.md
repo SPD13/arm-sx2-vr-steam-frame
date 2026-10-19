@@ -51,4 +51,4 @@ The supplied `TimeCrisisIIDVD.iso` (SLUS-20219, 663 MB) booted to a black screen
 - ARMSX2 crashes with "terminate called without an active exception" when killed with SIGTERM. Harmless here, but our host must shut the VM down cleanly.
 - The pipeline cache lands in `config/ARMSX2/cache/vulkan_pipelines_*.bin`. Ship or prewarm it to avoid first-run stutter.
 - The CPU boost flag is 0 by default. Clocks were not pinned for these runs, so these are default-power-mode numbers.
-- Not yet tested: other demanding games (Ratchet & Clank, Shadow of the Colossus, God of War) and GunCon 2 input. Light gun input comes in M4, but USB port 1 can be set to `guncon2` to test sooner.
+- Not yet tested: other demanding games (Ratchet & Clank, Shadow of the Colossus, God of War) and LightGun 2 input. Light gun input comes in M4, but USB port 1 can be set to `guncon2` to test sooner.

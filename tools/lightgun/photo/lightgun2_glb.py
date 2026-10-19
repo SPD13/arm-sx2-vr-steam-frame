@@ -1,12 +1,12 @@
-"""Stage 3: assemble the PS2 light gun drawn from photos and write its .glb (guncon2_glb.py <work> <out.glb>).
-Same node contract as the PS1 gun, plus the GunCon2's extra controls; see ../README.md."""
+"""Stage 3: assemble the PS2 light gun drawn from photos and write its .glb (lightgun2_glb.py <work> <out.glb>).
+Same node contract as the PS1 gun, plus the LightGun 2's extra controls; see ../README.md."""
 import sys, json, numpy as np, trimesh
 import glb
 from glb import ex, ey, ez
 W, OUT = sys.argv[1], sys.argv[2]
 body = trimesh.load(f'{W}/low_2600.ply', process=True)
 F, px = glb.frame(W)
-C = json.load(open(f'{sys.path[0]}/guncon2.json'))['controls']
+C = json.load(open(f'{sys.path[0]}/lightgun2.json'))['controls']
 sx, sz = F['px_to_mm']['sx'], F['px_to_mm']['sz']
 
 def hit(o, d):

@@ -359,7 +359,7 @@ int main(int argc, char* argv[])
 	// Light gun mode per game: whether the controllers are the guns or the DualShock 2.
 	GunGames gun_games;
 	gun_games.Load(Path::Combine(EmuFolders::Settings, "lightgun.ini"));
-	// The guns plugged into the USB ports (Settings › Controls › GunCons Plugged, and one gun or
+	// The guns plugged into the USB ports (Settings › Controls › LightGuns Plugged, and one gun or
 	// two), whatever light gun mode is: the game never sees them go when the controllers switch.
 	// Read on the CPU thread as a game starts, so they are in before it looks for them.
 	const auto guns_to_plug = [](const VrSettings& s) { return s.guns_plugged ? (s.gun_players > 1.5f ? 2 : 1) : 0; };
@@ -423,7 +423,7 @@ int main(int argc, char* argv[])
 	if (!menu.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family))
 		Console.Error("The settings menu is unavailable.");
 	menu.SetPausesGame(!debug_options.no_menu_pause);
-	// The gun models by VrSettings::gun_model: the PS1 GunCon, the GunCon2.
+	// The gun models by VrSettings::gun_model: LightGun 1 and LightGun 2.
 	const std::string assets = Path::Combine(EmuFolders::AppRoot, "assets");
 	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
 			{Path::Combine(assets, "lightgun.glb"), Path::Combine(assets, "lightgun2.glb")}))
@@ -546,7 +546,7 @@ int main(int argc, char* argv[])
 		gun_mode = on;
 		apply_gun_depth();
 		Console.WriteLnFmt("Light gun: mode {} for {}{}", on ? "on" : "off", profile_serial,
-			on && guns_plugged.load() == 0 ? " (no GunCon plugged in)" : "");
+			on && guns_plugged.load() == 0 ? " (no LightGun plugged in)" : "");
 	};
 	while (!Emu::ShutdownRequested() && xr.PollEvents())
 	{
@@ -575,7 +575,7 @@ int main(int argc, char* argv[])
 			// A new distance moves the screen along its axis; a new width moves the panels beside it.
 			if (screen_placed && (vr.screen_distance != applied.screen_distance || vr.screen_width != applied.screen_width))
 				place_screen(PushScreen(screen_pose_now, vr.screen_distance - applied.screen_distance));
-			// GunCons Plugged, one gun or two: plug them in or out, in the running game too.
+			// LightGuns Plugged, one gun or two: plug them in or out, in the running game too.
 			if (const int guns = guns_to_plug(vr); guns != guns_plugged.load())
 			{
 				guns_plugged.store(guns);
@@ -762,7 +762,7 @@ int main(int argc, char* argv[])
 				gun_chosen = gun_games.IsChosen(profile_serial);
 				set_gun_mode(gun_games.IsOn(profile_serial));
 				if (gun_mode && guns_plugged.load() == 0)
-					menu.ShowNotice("No GunCon plugged in (Settings › Controls)", 3.0f);
+					menu.ShowNotice("No LightGun plugged in (Settings › Controls)", 3.0f);
 			}
 			if (ui.toggle_guns)
 			{

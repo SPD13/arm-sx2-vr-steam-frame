@@ -1110,7 +1110,7 @@ static void ApplyGunPorts(int guns)
 	if (EmuConfig.USB == old_config.USB)
 		return;
 	USB::CheckForConfigChanges(old_config);
-	Console.WriteLnFmt("Light gun: {} GunCon 2 plugged in", guns);
+	Console.WriteLnFmt("Light gun: {} LightGun 2 plugged in", guns);
 }
 
 void Emu::SetGunsPlugged(int guns)

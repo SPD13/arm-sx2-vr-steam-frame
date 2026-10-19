@@ -145,7 +145,7 @@ namespace Emu
 	};
 	void SetPad(const PadState& state);
 
-	// Light guns: a GunCon 2 on each USB port, aimed and fired from the XR thread.
+	// Light guns: a LightGun 2 on each USB port, aimed and fired from the XR thread.
 	enum GunButton : uint32_t // as usb_lightgun::HostButton
 	{
 		GUN_C = 1u << 1,
@@ -170,15 +170,15 @@ namespace Emu
 	};
 	// The gun on USB port `port` (0 or 1). Any thread; the game reads it when it polls the gun.
 	void SetGun(int port, const GunState& state);
-	// How many times the game has set the gun's calibration offset (GunCon 2 Set Param), and the last one.
+	// How many times the game has set the gun's calibration offset (LightGun 2 Set Param), and the last one.
 	unsigned GetGunCalibration(int port, int* x, int* y);
-	// Plugs a GunCon 2 into the first `guns` USB ports (0 to 2) and unplugs the rest, in the running
+	// Plugs a LightGun 2 into the first `guns` USB ports (0 to 2) and unplugs the rest, in the running
 	// game and for the next ones (PCSX2.ini). Runs on the CPU thread. A port without a gun matters:
 	// Time Crisis asks to calibrate every gun plugged in when it starts.
 	void SetGunsPlugged(int guns);
 	// Decides, as each game starts, how many guns are plugged in for it (called on the CPU thread
 	// with the disc serial).
 	void SetGunsPolicy(std::function<int(const std::string& serial)> policy);
-	// Whether the core knows the game as a GunCon 2 game.
+	// Whether the core knows the game as a LightGun 2 game.
 	bool IsLightgunGame(const std::string& serial);
 } // namespace Emu

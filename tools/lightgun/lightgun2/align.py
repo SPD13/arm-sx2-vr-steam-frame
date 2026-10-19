@@ -1,4 +1,4 @@
-"""Stage 2: build both GunCon2 shells from the right one. The right shell's scan is much cleaner than the left one's, and
+"""Stage 2: build both LightGun 2 shells from the right one. The right shell's scan is much cleaner than the left one's, and
 the two sides differ only by things the model does not take from the scan (the left side's SELECT/START holes and
 markings), so the left shell is the right one mirrored across the parting plane.
 The scan lies outer face up (+Z) on the scanner bed; it is levelled on a plane fitted to its rim (the 2 mm band inside

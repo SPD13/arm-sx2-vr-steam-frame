@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The light guns in the headset: the model in each gun hand (the PS1 gun's or the GunCon2's), with its
+// The light guns in the headset: the model in each gun hand (the PS1 gun's or the LightGun 2's), with its
 // trigger and buttons moving as they are pressed, the beam from its muzzle and the dot where it lands. The hands without
 // a gun can show their controllers, as SteamVR's models (ControllerModel), drawn alike. Drawn per eye,
 // from the eye through a quad that covers the guns and beams (GunView), shown as alpha-blended quad
@@ -55,8 +55,8 @@ public:
 		uint32_t body_color = 0x8C8C91; // sRGB 0xRRGGBB
 		float trigger = 0.0f; // how far it is pulled, 0..1
 		float press_left = 0.0f, press_right = 0.0f; // the side buttons (A and B), 0..1
-		float press_select = 0.0f, press_start = 0.0f, press_c = 0.0f; // the GunCon2's other buttons, 0..1
-		float dpad_x = 0.0f, dpad_y = 0.0f; // the GunCon2's D-pad, -1..1: +X right, +Y up
+		float press_select = 0.0f, press_start = 0.0f, press_c = 0.0f; // the LightGun 2's other buttons, 0..1
+		float dpad_x = 0.0f, dpad_y = 0.0f; // the LightGun 2's D-pad, -1..1: +X right, +Y up
 		bool beam = false; // from the muzzle to beam_end
 		bool dot = false; // at beam_end
 		XrVector3f beam_end{};

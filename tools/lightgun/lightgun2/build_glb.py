@@ -1,6 +1,6 @@
-"""Assemble the low-poly GunCon2 and write its .glb (build_glb.py <work> <out.glb>).
+"""Assemble the low-poly LightGun 2 and write its .glb (build_glb.py <work> <out.glb>).
 Working frame (mm): +X toward the muzzle, +Z up, +Y the gun's left side. Same node contract as the PS1 gun, plus the
-GunCon2's extra controls; see README.md."""
+LightGun 2's extra controls; see README.md."""
 import sys, json, struct, numpy as np, trimesh, mapbox_earcut
 from scipy import ndimage
 W, OUT = sys.argv[1], sys.argv[2]
@@ -34,7 +34,7 @@ def extrude(profile, y0, y1):
         j = (i + 1) % n; faces += [[i, n + i, n + j], [i, n + j, j]]
     m = trimesh.Trimesh(v, faces, process=True); m.fix_normals(); return m
 
-# --- trigger: the PS1 gun's curved blade, placed the same way in the GunCon2's guard opening (x -45.2..3.2,
+# --- trigger: the PS1 gun's curved blade, placed the same way in the LightGun 2's guard opening (x -45.2..3.2,
 # z -3.8..20.2: 4.0 mm further forward and 5.0 mm higher), pivot at the top
 dx, dz = 4.0, 5.0
 trig_prof = [(-14.5, 19), (-14.2, 12), (-13.2, 7.5), (-11.4, 3.5), (-9.0, 0.4), (-7.6, -2.4), (-8.4, -4.4),
@@ -175,7 +175,7 @@ def side_button(name, m, seat, note):
     return {'name': name, 'mesh': mesh(name, [(m, seat, 1)]), 'translation': to_g(seat).tolist(), 'extras': {'note': note}}
 
 def control(name, m, seat, n, up, note):
-    """one of the GunCon2's extra controls: node origin on the surface seat, local +Z out of the gun (along n),
+    """one of the LightGun 2's extra controls: node origin on the surface seat, local +Z out of the gun (along n),
     local +Y toward `up` (the top of the gun, along the surface), local +X the gun's right"""
     z = Rg @ n; y = Rg @ up; Rn = np.c_[np.cross(y, z), y, z]
     return {'name': name, 'mesh': mesh(name, [(m, seat, 1, Rn)]), 'translation': to_g(seat).tolist(),
@@ -196,7 +196,7 @@ nodes.append({'name': 'muzzle', 'translation': to_g(muzzle).tolist(), 'extras': 
 gz_ = -(Rg @ ax); gy_ = Rg @ np.array([ax[2], 0, -ax[0]]); gx_ = np.cross(gy_, gz_)
 nodes.append({'name': 'grip', 'translation': [0, 0, 0], 'rotation': quat_from(np.c_[gx_, gy_, gz_]),
               'extras': {'note': 'grip centre; local -Z runs up the raked grip axis, +Y points forward'}})
-gltf = {'asset': {'version': '2.0', 'generator': 'ARMSX2 VR tools/lightgun/guncon2'}, 'scene': 0, 'scenes': [{'name': 'lightgun', 'nodes': [0]}],
+gltf = {'asset': {'version': '2.0', 'generator': 'ARMSX2 VR tools/lightgun/lightgun2'}, 'scene': 0, 'scenes': [{'name': 'lightgun', 'nodes': [0]}],
         'nodes': nodes, 'meshes': meshes, 'materials': materials, 'accessors': accessors, 'bufferViews': views,
         'buffers': [{'byteLength': len(bin_)}]}
 js = json.dumps(gltf, separators=(',', ':')).encode(); js += b' ' * ((4 - len(js) % 4) % 4)

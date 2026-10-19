@@ -167,7 +167,7 @@ private:
 	ControllerState m_controller, m_controller_before;
 
 	// The Controls page's tab: the DualShock 2's controls, or a gun's (which one).
-	bool m_controls_guncon = false;
+	bool m_controls_lightgun = false;
 	int m_controls_gun = 0;
 
 	// Light gun mode for the running game, and what the Light Gun page asked for.

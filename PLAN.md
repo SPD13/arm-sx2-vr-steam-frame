@@ -3,7 +3,7 @@
 ## Context
 We want a native, standalone PS2 emulator for Valve's Steam Frame. It has two VR-specific features:
 1. **Volumetric window.** The game is shown on a virtual screen with real 3D parallax, rebuilt from the PS2 depth buffer.
-2. **VR light gun.** VR controllers act as GunCon 2 light guns, with a 3D gun model, a beam to the screen, and a hit dot.
+2. **VR light gun.** VR controllers act as LightGun 2 light guns, with a 3D gun model, a beam to the screen, and a hit dot.
 
 The project directory is currently empty. The plan rests on web and source research done in this session.
 
@@ -29,12 +29,12 @@ The project directory is currently empty. The plan rests on web and source resea
 **Emulator base: ARMSX2** (github.com/ARMSX2/ARMSX2, GPLv3, PCSX2 fork)
 - It is the only open-source PS2 emulator with full ARM64 recompilers (EE, VU0/1 microVU, IOP, with fastmem).
 - It already ships Linux arm64 nightly builds (4K and 16K page sizes), plus a libretro core and an SDL build.
-- It is very active and inherits PCSX2's compatibility, Vulkan GS and GunCon 2 emulation.
+- It is very active and inherits PCSX2's compatibility, Vulkan GS and LightGun 2 emulation.
 - Alternatives ruled out:
   - Upstream PCSX2: no ARM64 JIT.
   - LRPS2: x86 only.
   - AetherSX2/NetherSX2: closed source, legally unusable.
-  - Play!: about 60% compatibility, no GunCon 2.
+  - Play!: about 60% compatibility, no LightGun 2.
 
 **Depth: feasible for an estimated 70–80% of 3D games, but only by changing the emulator.**
 - How the PS2 handles depth:
@@ -72,8 +72,8 @@ The project directory is currently empty. The plan rests on web and source resea
 
 - ARMSX2's Android build already wires this up for touch aiming (`platforms/android/app/src/main/cpp/native-lib.cpp`, around line 2673, `usbLightgunAim` / `usbLightgunButton`). That code is our template.
 - Limit: `MAX_POINTER_DEVICES = 1`, so two guns at once needs a small patch.
-- Feedback: the GunCon 2 has no recoil signal, so we synthesize haptics when the trigger is pulled.
-- Gun model: `assets/lightgun.glb`, a low-poly model of the PS1 light gun that is our own creation: drawn on 2026-10-18 from public photos (`tools/lightgun/photo`), with no 3D scan data and no logos or markings, as is the GunCon 2 model (`assets/lightgun2.glb`). They replaced the first models, rebuilt from shell scans whose licence was missing or unknown. The user chose on 2026-10-12 to match the real shape closely. Pipeline and node contract: `tools/lightgun/README.md`.
+- Feedback: the LightGun 2 has no recoil signal, so we synthesize haptics when the trigger is pulled.
+- Gun model: `assets/lightgun.glb`, a low-poly model of the PS1 light gun that is our own creation: drawn on 2026-10-18 from public photos (`tools/lightgun/photo`), with no 3D scan data and no logos or markings, as is the LightGun 2 model (`assets/lightgun2.glb`). They replaced the first models, rebuilt from shell scans whose licence was missing or unknown. The user chose on 2026-10-12 to match the real shape closely. Pipeline and node contract: `tools/lightgun/README.md`.
 
 ## Architecture
 
@@ -87,7 +87,7 @@ ps2-volumetric/                      (this repo, GPLv3)
     emu/      EmuBridge.*            boot/pause/save-state, receives a VolumetricFrame each vsync, audio
     volume/   DepthNormalize.comp    percentile range fit, temporal smoothing, edge-aware hole fill
               VolumetricWindow.*     displaced grid mesh (later: per-eye relief ray-march)
-    gun/      LightGun.*             ray → heightfield hit → GunCon2 aim + buttons, beam + dot, haptics
+    gun/      LightGun.*             ray → heightfield hit → LightGun 2 aim + buttons, beam + dot, haptics
               GunModel.*             glTF loader (cgltf), muzzle node, grip alignment
     ui/       VrMenu.*, SettingsMenu.*  gear button + settings panel as quad layers, laser-pointer input; drawn on the
                                      CPU (Canvas/Gui), since PCSX2's ImGui context is a global the GS threads own
@@ -140,7 +140,7 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
    - A miss sends (-1,-1). Pulling the trigger while off-screen is then the game's own reload.
 3. **Button mapping.**
 
-   | Controller input | GunCon 2 |
+   | Controller input | LightGun 2 |
    |---|---|
    | Trigger | Trigger (13) |
    | A / B face buttons | A (3) / B (2) |
@@ -155,7 +155,7 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
    - The beam is a thin additive cylinder from the muzzle to the hit point, ending in an emissive dot on the surface.
    - The beam and dot hide when the gun points off-screen.
    - Each trigger pull gets a short `xrApplyHapticFeedback` pulse as synthetic recoil.
-5. **Light gun game mode.** When a game's serial is in the GunCon 2 table, automatically set USB port 1 (and port 2 when two guns are enabled) to `guncon2` and show the guns.
+5. **Light gun game mode.** When a game's serial is in the LightGun 2 table, automatically set USB port 1 (and port 2 when two guns are enabled) to `guncon2` and show the guns.
 
 ## Milestones
 - **M0, feasibility spike (go/no-go): DONE 2026-10-11, GO.** Time Crisis II runs at 60 fps / 100% speed natively on the Frame at native and 3× upscale. Details in `docs/m0-results.md`. Follow-ups:
@@ -169,7 +169,7 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
   - Next: full multiview port (both eyes every frame), then sprite/bullet placement and profile-driven parameters.
 - **M4, light gun: BUILT, NOT YET TESTED ON THE FRAME (2026-10-13).** Branch `lightgun` (worktree `../ps2-volumetric-lightgun`, fork branch `lightgun`).
   - Core: `usb_lightgun::SetHostState` gives each USB port its own aim and buttons (two guns, no `MAX_POINTER_DEVICES` change); depth capture can be switched while running; frames carry the picture's draw rect.
-  - Host: the gun model (`assets/lightgun.glb`, our own, drawn from photos) in each gun hand, coloured per settings, trigger and side buttons animated; muzzle beam and dot in a projection layer of their own; depth-aware aim in Portal Z mode (glass otherwise); recoil haptics; per-game light gun mode (`lightgun.ini`) with a crosshair button and a one/two guns button beside the screen; the gun as the menu pointer; GunCon tabs for gun 1 and 2 in Settings › Controls; a Light Gun settings page; `--gun-script` for headless tests.
+  - Host: the gun model (`assets/lightgun.glb`, our own, drawn from photos) in each gun hand, coloured per settings, trigger and side buttons animated; muzzle beam and dot in a projection layer of their own; depth-aware aim in Portal Z mode (glass otherwise); recoil haptics; per-game light gun mode (`lightgun.ini`) with a crosshair button and a one/two guns button beside the screen; the gun as the menu pointer; LightGun tabs for gun 1 and 2 in Settings › Controls; a Light Gun settings page; `--gun-script` for headless tests.
   - Checked on the Mac only: syntax of every host and patched core file, the aim math against analytic answers, the GLB loader, the gun control sets, page previews, a CPU render of the posed model.
 - **M5, polish and ship.**
   - In-headset settings menu: started (gear button, Display / 3D / Graphics / Audio / Game / Controls pages, Exit).

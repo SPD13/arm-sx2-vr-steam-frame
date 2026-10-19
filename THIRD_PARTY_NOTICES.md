@@ -82,7 +82,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### The light gun models
 
-`assets/lightgun.glb` and `assets/lightgun2.glb` are not third-party: they are this project's own creations, under the same licence as the rest of it. Their side outlines were traced from photos on Wikimedia Commons: [GunCon e GunCon 2.jpg](https://commons.wikimedia.org/wiki/File:GunCon_e_GunCon_2.jpg) by Eduardo Shiroma (CC BY 3.0), and [Namco-GunCon-PS1.jpg](https://commons.wikimedia.org/wiki/File:Namco-GunCon-PS1.jpg) by Evan-Amos and [GunCon 1 and 2.jpg](https://commons.wikimedia.org/wiki/File:GunCon_1_and_2.jpg) by A Nobody (both public domain). The photos are not included.
+`assets/lightgun.glb` and `assets/lightgun2.glb` are not third-party: they are this project's own creations, under the same licence as the rest of it. Their side outlines were traced from photos on Wikimedia Commons: [LightGun e LightGun 2.jpg](https://commons.wikimedia.org/wiki/File:GunCon_e_GunCon_2.jpg) by Eduardo Shiroma (CC BY 3.0), and [Namco-LightGun-PS1.jpg](https://commons.wikimedia.org/wiki/File:Namco-GunCon-PS1.jpg) by Evan-Amos and [LightGun 1 and 2.jpg](https://commons.wikimedia.org/wiki/File:GunCon_1_and_2.jpg) by A Nobody (both public domain). The photos are not included.
 
 ### cgltf 1.15
 

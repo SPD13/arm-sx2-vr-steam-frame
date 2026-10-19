@@ -49,15 +49,15 @@ struct VrSettings
 	bool show_perf = false; // the performance window left of the screen (PerfWindow)
 	// Light gun (whether the controllers are the guns is per game, in lightgun.ini: see GunGames)
 	float gun_players = 1.0f; // 1 or 2 guns, one per hand
-	bool guns_plugged = true; // the GunCons are in the USB ports (light gun mode only switches the controls)
+	bool guns_plugged = true; // the LightGuns are in the USB ports (light gun mode only switches the controls)
 	bool gun_left_hand = false; // the first gun is in the left hand
 	float gun_beam = 0.0f; // 0 beam and dot, 1 dot only, 2 neither
-	float gun_pedal = 0.0f; // the GunCon button the pedal input presses: 0 A, 1 B, 2 C
+	float gun_pedal = 0.0f; // the LightGun button the pedal input presses: 0 A, 1 B, 2 C
 	float gun_haptics = 0.6f; // strength of the recoil pulse, 0 off
 	float gun_pitch = 0.0f; // degrees the gun is tilted up in the hand
-	// What a gun looks like in the hand: 0 the PS1 GunCon, 1 the GunCon2, 2 no gun (the VR controller,
-	// its beam from the controller's pointing ray).
-	float gun_model = 0.0f;
+	// What a gun looks like in the hand: 0 LightGun 1 (the PS1 gun), 1 LightGun 2 (the PS2 gun), 2 no
+	// gun (the VR controller, its beam from the controller's pointing ray).
+	float gun_model = 1.0f;
 	// The guns' bodies, sRGB 0xRRGGBB: gun 1 alone, gun 1 with two guns, and gun 2.
 	uint32_t gun_color = 0x8C8C91; // gray
 	uint32_t gun_color_2p = 0xC0282D; // red

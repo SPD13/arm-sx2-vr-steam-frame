@@ -25,7 +25,7 @@ public:
 		Trigger, // pivots at its node origin: pull = negative rotation about local +X
 		ButtonLeft, // on the -X side: press = +X
 		ButtonRight, // on the +X side: press = -X
-		// The GunCon2's extra controls, absent from the PS1 gun. Each node's local +Z points out of the gun.
+		// The LightGun 2's extra controls, absent from the PS1 gun. Each node's local +Z points out of the gun.
 		ButtonSelect, // press = local -Z
 		ButtonStart, // press = local -Z
 		ButtonC, // press = local -Z

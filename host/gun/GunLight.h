@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// The light gun's light sensor. A real GunCon 2 reads the CRT: it sees the picture where it aims, and
+// The light gun's light sensor. A real LightGun 2 reads the CRT: it sees the picture where it aims, and
 // reports "off the screen" (0, 0) when there is no light. Games rely on that: Time Crisis calibrates
 // by showing a black frame after the calibration shot and waiting for the gun to see nothing. The
 // emulated gun aims without seeing, so the host tells it, for each presented picture, whether the

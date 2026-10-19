@@ -1,6 +1,6 @@
 # ARMSX2 VR Steam Frame Edition
 
-A standalone PlayStation 2 emulator for the Steam Frame. It runs entirely on the headset, so the Frame does not need to be connected to a PC to play: a computer is only used to install it and update it. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with GunCon 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping, HD texture packs and Wi-Fi transfer of games, BIOS files and texture packs (zip, 7z and RAR archives are unpacked on the headset).
+A standalone PlayStation 2 emulator for the Steam Frame. It runs entirely on the headset, so the Frame does not need to be connected to a PC to play: a computer is only used to install it and update it. It runs [ARMSX2](https://github.com/ARMSX2/ARMSX2) (an ARM64 fork of PCSX2) inside a native OpenXR app and shows the game on a virtual screen, either **volumetric** (the game drawn from each eye, so the world sits behind the screen like a window) or **flat**, switched at once from a button beside the screen. Light gun games are played with LightGun 2 guns held in the hands. Everything is driven from the headset: a settings menu, a game list, pause and quit buttons, controller mapping, HD texture packs and Wi-Fi transfer of games, BIOS files and texture packs (zip, 7z and RAR archives are unpacked on the headset).
 
 [![ARMSX2 VR Steam Frame Edition: the trailer](docs/images/steam-frame-trailer.jpg)](https://youtu.be/cGu4wy_Wa-Q)
 
@@ -141,7 +141,7 @@ Round buttons sit just outside the screen, on its right side, so they never cove
 |---|---|
 | ⚙ Gear | Opens the [settings menu](#settings-menu) |
 | 🎮 Gamepad (below the gear) | Opens the [game list](#game-list) |
-| 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game: the controllers are the GunCons or the DualShock 2; lit while on. The guns stay plugged in either way |
+| 🔫 Gun (after a gap below the gamepad) | Turns [light gun](#light-gun) mode on or off for the running game: the controllers are the LightGuns or the DualShock 2; lit while on. The guns stay plugged in either way |
 | 👤 One / 👥 two people (below it) | One gun or two; only while light gun mode is on |
 | ▣ Cube / ■ square (at mid height) | Switches the [3D mode](#3d) at once, in turn: **Flat** (square), **Volumetric** (cube, lit) and **Volumetric+** (cubes, lit) |
 | 👁 Eye (below the cube) | Switches [passthrough](#display) at once: your room around the screen (eye, lit) or the dark void (crossed-out eye). Greyed when SteamVR offers no passthrough |
@@ -230,13 +230,13 @@ While it runs, the page shows the address to open (for example `http://192.168.1
 
 ### Controls
 
-Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **GunCon**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown (not the colours).
+Two tabs: **DualShock 2**, its 18 controls with the controller input each one has, and **LightGun**, the 13 controls of gun 1 or gun 2. **Reset to defaults** resets the set shown (not the colours).
 
-Under the GunCon controls, the gun's colour, from gray, black, white, red, blue, green, orange and purple; it applies at once. Gun 1 has one colour for playing alone (gray by default) and one for two players (red); gun 2 has one (blue). The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. See [Controller mapping](#controller-mapping).
+Under the LightGun controls, the gun's colour, from gray, black, white, red, blue, green, orange and purple; it applies at once. Gun 1 has one colour for playing alone (gray by default) and one for two players (red); gun 2 has one (blue). The trigger stays black and the side buttons red. Any other colour can be set in `VR.ini`. See [Controller mapping](#controller-mapping).
 
-**Gun Beam** (on by default), in the GunCon tab below the controls, shows the laser beam from the gun's muzzle; off, only the dot where it lands shows. It applies to both guns, and is the same setting as **Beam** on the Light Gun page.
+**Gun Beam** (on by default), in the LightGun tab below the controls, shows the laser beam from the gun's muzzle; off, only the dot where it lands shows. It applies to both guns, and is the same setting as **Beam** on the Light Gun page.
 
-**GunCons Plugged** (on by default) plugs the GunCon 2 guns into the console's USB ports, one or two as the Light Gun page's **Guns** says, in every game; off, the game sees no gun. It applies at once, in the running game too. Light gun mode does not plug or unplug them: it only decides whether the controllers are the guns or the DualShock 2.
+**LightGuns Plugged** (on by default) plugs the light guns (LightGun 2) into the console's USB ports, one or two as the Light Gun page's **Guns** says, in every game; off, the game sees no gun. It applies at once, in the running game too. Light gun mode does not plug or unplug them: it only decides whether the controllers are the guns or the DualShock 2.
 
 **Show VR Controllers** (on by default) shows your controllers in the headset, as SteamVR's own Steam Frame controller models, with their buttons, triggers, grips and sticks moving as you press them. In light gun mode a hand holding a gun shows the gun instead (or its controller, whatever this switch says, when **Gun model** is VR Controller); with one gun, the other hand still shows its controller. The models are read from the SteamVR install (`/opt/steamvr` on the Steam Frame); without them, no controllers are shown.
 
@@ -244,11 +244,11 @@ Under the GunCon controls, the gun's colour, from gray, black, white, red, blue,
 
 | Option | Values | Notes |
 |---|---|---|
-| Light gun mode | Auto · Off · On | For the running game, as the gun button. **Auto** is on for the games the emulator knows as GunCon 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
+| Light gun mode | Auto · Off · On | For the running game, as the gun button. **Auto** is on for the games the emulator knows as LightGun 2 games (and those whose profile says `lightgun = 1`). Saved per game in `lightgun.ini`. |
 | Guns | One gun · Two guns | Two: one in each hand, for two players. As the people button. |
 | Gun hand | Right · Left | The hand that holds gun 1. |
-| Gun model | GunCon 1 · GunCon 2 · VR Controller | What the guns look like: the PS1 GunCon, the GunCon 2 (both our own models, drawn from public photos; the GunCon 2's Select, Start, C and D-pad move too), or no gun at all: the hand shows its Steam Frame controller and the beam starts from it. Only the look changes; the game sees a GunCon 2 either way. |
-| Beam | Beam and dot · Dot · Off | What shows where the gun points. On a menu or a button the dot always shows. **Gun Beam** under Controls › GunCon switches between the first two. |
+| Gun model | LightGun 1 · LightGun 2 · VR Controller | What the guns look like: **LightGun 1**, the PS1 light gun, or **LightGun 2**, the PS2 light gun (both our own models, drawn from public photos; LightGun 2's Select, Start, C and D-pad move too), or no gun at all: the hand shows its Steam Frame controller and the beam starts from it. Only the look changes; the game sees a LightGun 2 either way. |
+| Beam | Beam and dot · Dot · Off | What shows where the gun points. On a menu or a button the dot always shows. **Gun Beam** under Controls › LightGun switches between the first two. |
 | Pedal button | A · B · C | The gun button the pedal input presses: the one the game takes cover with. |
 | Recoil | Off – 100 % | Strength of the controller's pulse on each shot. |
 | Gun angle | −30° – 30° | Tilts the gun in your hand, and its aim with it. |
@@ -273,7 +273,7 @@ The gamepad button opens the list of games in the games folder (`roms/`), with f
 - **Favourites.** Click the ☆ next to a game to star it (it turns gold); click again to remove it. Kept in `favorites.txt`.
 - **HD.** A game with an HD texture pack installed (see [Texture packs](#texture-packs)) has an **HD** badge after its title.
 - **Starting a game.** Click its row. If another game is running, a popup asks first, since progress since the last save is lost. Clicking the running game just resumes it.
-- **Restarting.** The running game's row has a **Restart** button: after a confirmation (its current state and play since the last save are lost) the console resets and the game starts over. Time Crisis then shows its GunCon 2 calibration screen again.
+- **Restarting.** The running game's row has a **Restart** button: after a confirmation (its current state and play since the last save are lost) the console resets and the game starts over. Time Crisis then shows its LightGun 2 calibration screen again.
 - **Starting without a game.** `ps2v` without a disc image starts with no game and opens the list. A game that fails to start brings the list back with the reason.
 - **Where the data comes from.** Titles, serials and play time come from PCSX2's game list (play time is recorded when a game stops). A running game keeps the disc drive locked, so the list cannot rescan until it stops: games added meanwhile appear under their file name and get their real title afterwards.
 - **"Added"** is the file's inode change time, which an upload, copy or move into the folder sets even when the copy keeps the original modification date. Renaming a file, or changing its permissions, counts as adding it again.
@@ -365,21 +365,21 @@ Grips and triggers are analog: mapped to L1, R1, L2 or R2 they keep their pressu
 
 ## Light gun
 
-In light gun mode each gun hand holds a light gun (a GunCon 2 to the game, plugged into the console's USB ports). Its trigger and side buttons move as you press them, and the gun stays steady in the hand however fast you move it or your head. Its colour is set under **Settings › Controls › GunCon**: by default gun 1 is gray when you play alone and red with two guns, and gun 2 is blue.
+In light gun mode each gun hand holds a light gun (a LightGun 2 to the game, plugged into the console's USB ports). Its trigger and side buttons move as you press them, and the gun stays steady in the hand however fast you move it or your head. Its colour is set under **Settings › Controls › LightGun**: by default gun 1 is gray when you play alone and red with two guns, and gun 2 is blue.
 
-- **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Volumetric mode it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it (tried in Time Crisis II and Ninja Assault). Otherwise it stops on the screen glass. **Gun Beam** (Settings › Controls › GunCon) hides the beam and keeps the dot.
+- **Aiming.** The beam leaves the gun's muzzle and ends in a dot where it lands. In Volumetric mode it goes into the window and stops on what you see there, so you shoot at the enemy, not at the glass in front of it (tried in Time Crisis II and Ninja Assault). Otherwise it stops on the screen glass. **Gun Beam** (Settings › Controls › LightGun) hides the beam and keeps the dot.
 - **Shooting** off the picture is a reload, as with the real gun.
 - **Menus.** The gun is also the pointer: aim it at a menu or a button and pull the trigger. A trigger pulled on the menu never fires in the game.
 - **Recoil.** Each shot gives a short pulse in the controller.
 - **Two guns.** With **Two guns**, the other hand holds gun 2 (USB port 2), with a blue beam (gun 1's is red), for two-player games. With one gun, the other hand's grip is the pedal.
-- **Calibration.** Time Crisis games open a GunCon 2 calibration screen when they start with a gun plugged in: aim at the crosshair and pull the trigger, then press A to confirm. "Gun calibrated" shows below the screen when the game takes it. As on a real gun, the guns see no light while the picture is black, which is what the game checks after the shot; the emulator's messages are drawn above the screen, not in the picture, so they never light it. The **calibration shot** (Y by default, and **Calibrate** on the Light Gun page) does the same without that check. The emulator also knows the screen size of about 30 GunCon 2 games.
-- **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again and the guns are put down: still plugged in, so the game never sees them go, but off the screen with nothing pressed. Switch back and forth as often as you like, for a game's menus say. Whether the guns are plugged in at all is **GunCons Plugged** under Settings › Controls (on by default); with it off, light gun mode shows "No GunCon plugged in". Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
+- **Calibration.** Time Crisis games open a LightGun 2 calibration screen when they start with a gun plugged in: aim at the crosshair and pull the trigger, then press A to confirm. "Gun calibrated" shows below the screen when the game takes it. As on a real gun, the guns see no light while the picture is black, which is what the game checks after the shot; the emulator's messages are drawn above the screen, not in the picture, so they never light it. The **calibration shot** (Y by default, and **Calibrate** on the Light Gun page) does the same without that check. The emulator also knows the screen size of about 30 LightGun 2 games.
+- **Turning it on and off.** The gun button switches light gun mode for the running game, and it is remembered for that game. Off, the controllers are a DualShock 2 again and the guns are put down: still plugged in, so the game never sees them go, but off the screen with nothing pressed. Switch back and forth as often as you like, for a game's menus say. Whether the guns are plugged in at all is **LightGuns Plugged** under Settings › Controls (on by default); with it off, light gun mode shows "No LightGun plugged in". Only the guns in use are plugged in (a game asks to calibrate every gun it finds when it starts): switching to two guns plugs the second one in, which a game may only notice at its next start.
 
-### GunCon controls
+### LightGun controls
 
-**Settings › Controls › GunCon** maps each gun's 13 controls like the DualShock 2's. Defaults:
+**Settings › Controls › LightGun** maps each gun's 13 controls like the DualShock 2's. Defaults:
 
-| GunCon 2 | Gun 1 (right hand) | Gun 2 (left hand) |
+| LightGun 2 | Gun 1 (right hand) | Gun 2 (left hand) |
 |---|---|---|
 | Trigger | Right trigger | Left trigger |
 | A / B | A / B | Left grip / D-pad down |
@@ -401,7 +401,7 @@ Everything lives in the data folder, `$XDG_DATA_HOME/ps2v` (by default `~/.local
 |---|---|
 | `inis/PCSX2.ini` | Emulator settings (graphics, audio and the rest of PCSX2's options) |
 | `inis/VR.ini` | Screen, 3D and Wi-Fi transfer settings, see [VR.ini reference](#vrini-reference) |
-| `inis/Controls.ini` | Controller mapping: `[Pad1]` for the DualShock 2 (`cross = a`, `select = menu`, `left_stick = left_stick` …), `[GunCon1]` and `[GunCon2]` for the guns (`trigger = right_trigger`, `calibrate = y`, `pedal = left_grip` …) |
+| `inis/Controls.ini` | Controller mapping: `[Pad1]` for the DualShock 2 (`cross = a`, `select = menu`, `left_stick = left_stick` …), `[LightGun1]` and `[LightGun2]` for the guns (`trigger = right_trigger`, `calibrate = y`, `pedal = left_grip` …; read from `[GunCon1]` and `[GunCon2]`, their names until October 2026, when the new ones are missing) |
 | `inis/lightgun.ini` | Light gun mode per game, by serial, when you chose it: `[Games] SLUS-20219 = true` |
 | `inis/favorites.txt` | Favourite games, one path per line |
 | `inis/playtime.dat` | Play time per game (PCSX2's) |
@@ -437,7 +437,7 @@ Values are read in this order, each overriding the one before: built-in defaults
 | | `gun_pedal` | 0 | 0 A, 1 B, 2 C | | live |
 | | `gun_haptics` | 0.6 | 0 – 1 | | live |
 | | `gun_pitch` | 0 | −45 – 45° | | live |
-| | `gun_model` | 0 | 0 GunCon, 1 GunCon 2, 2 VR controller (no gun) | | live |
+| | `gun_model` | 1 | 0 LightGun 1, 1 LightGun 2, 2 VR controller (no gun) | | live |
 | | `gun_color` | `#8c8c91` | `#rrggbb`: gun 1, one player | | live |
 | | `gun_color_2p` | `#c0282d` | `#rrggbb`: gun 1, two players | | live |
 | | `gun2_color` | `#2f5fd0` | `#rrggbb`: gun 2 | | live |
@@ -485,7 +485,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 | Controllers | `XrApp.{h,cpp}`, `Controls.{h,cpp}` | `XrApp` reports the controllers as they are (one OpenXR action per button, grip, trigger and stick); `ControlMap` turns that into the DualShock 2 state. |
 | Wi-Fi transfer | `web/` | `WebServer`, a small POSIX HTTP server; the page `web/index.html` is embedded into the binary at build time by `web/embed.cmake`. An archive that needs an answer (files to replace, which game a pack is for) waits unpacked in `transfer/` for up to 30 minutes, at `/api/pending/<id>`. |
 | Archives and texture packs | `Unarchive.{h,cpp}`, `TexturePacks.{h,cpp}` | `Unarchive` reads zip, 7z and RAR with libarchive (built static by `tools/build-frame.sh`: the Steam Runtime has none). `TexturePacks` lists, installs and removes packs in the core's texture folder with ARMSX2's path rules, from the fork's `platforms/ios/.../IOS/TexturePackPaths.h`. `Emu::TexturePackChanged` reloads the running game's pack as the core's Reload Texture Replacements hotkey does. |
-| Light gun | `gun/` | `GunModel` loads a gun model (`assets/lightgun.glb`, the PS1 gun, or `assets/lightgun2.glb`, the GunCon2, both our own creations) with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the GunCon reports; `GunLight` is the guns' light sensor: a black picture (under 2% of it lit) is no light, so the guns report off the screen; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. The depth comes from the core (`GSRendererHW::SnapshotDepthBeforeDraw`): a frame's depth is copied before drawing moves to another colour target or wipes the depth, whether with a clear (Time Crisis II) or a full-screen draw at the far end of the depth range (Ninja Assault). |
+| Light gun | `gun/` | `GunModel` loads a gun model (`assets/lightgun.glb`, the PS1 gun, or `assets/lightgun2.glb`, the PS2 gun, both our own creations) with cgltf; `GunRenderer` draws the guns, beams and dots per eye and shows each eye's picture on quad layers last in the list (SteamVR puts quad layers over projection layers, so the guns are not a projection layer); `GunView` fits a quad that stands still in the room between the eye and the guns, drawn through from wherever the eye is. SteamVR applies a quad's new pose a frame after its picture, so each eye has two quads: the one showing the guns never moves, and the other is fitted while empty and takes over the next frame when the guns near an edge; `GunAim` finds where a beam lands (the glass, or in volumetric mode the surface behind it, marched on `GunDepth`'s grid of the left eye's depth) and the pixel the LightGun reports; `GunLight` is the guns' light sensor: a black picture (under 2% of it lit) is no light, so the guns report off the screen; `GunGames` keeps the per-game mode. The core patch in `usb-lightgun/guncon2.cpp` (`usb_lightgun::SetHostState`) gives each USB port its own aim and buttons. The depth comes from the core (`GSRendererHW::SnapshotDepthBeforeDraw`): a frame's depth is copied before drawing moves to another colour target or wipes the depth, whether with a clear (Time Crisis II) or a full-screen draw at the far end of the depth range (Ninja Assault). |
 | Trailer capture | `capture/`, `shaders/capture_*` | Only with `--capture`; without it nothing is created and each frame costs a null check. `TrailerCapture` copies each game frame's pictures, depth and HUD mask with compute passes into host-visible slots and hands them to `CaptureWriter`, whose five threads LZ4 them into one file per frame; it adds a line per headset frame (head, eyes, screen, guns, menus) and writes the menu images (`VrMenu::DescribeForCapture`) when they change. The file format is in `capture/CaptureFormat.h`. |
 | Emulator | `Emu.{h,cpp}` | The CPU thread, PCSX2's host callbacks, and what the menus need: pause, settings, save states, the game list, switching games. The core hands its on-screen messages over (the fork's `ImGuiManager::SetOSDMessageHook`) instead of drawing them into the picture; `Emu::GetMessages` keeps them until they expire. Switching runs on the CPU thread, and resuming from a menu is skipped while a switch is under way so it cannot cancel it. |
 
@@ -499,7 +499,7 @@ The host code is in [`host/`](host); ARMSX2 is the submodule [`external/armsx2`]
 - The controller actions were renamed for mapping, so any SteamVR-side rebinding made for this app starts over.
 - Wi-Fi transfer is plain HTTP, and whether SteamOS lets port 8080 through has not been checked.
 - The game list cannot rescan while a game runs (see [Game list](#game-list)).
-- **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the GunCon 2 being plugged in or out mid-game (set GunCons Plugged before the game starts if not), the cost of the depth copies it turns on in volumetric mode, and GunCon 2 games other than Time Crisis II and Ninja Assault. A game's depth is found with rules that fit those two (see [How it works](#how-it-works)); in a game that draws its depth another way the beam may stop on the glass, and `--depth-trace` shows why. Ninja Assault uses little of its depth range, so its scenery sits near the back of the window.
+- **Light gun, not yet tried in the headset:** two-gun play, whether a game notices the LightGun 2 being plugged in or out mid-game (set LightGuns Plugged before the game starts if not), the cost of the depth copies it turns on in volumetric mode, and LightGun 2 games other than Time Crisis II and Ninja Assault. A game's depth is found with rules that fit those two (see [How it works](#how-it-works)); in a game that draws its depth another way the beam may stop on the glass, and `--depth-trace` shows why. Ninja Assault uses little of its depth range, so its scenery sits near the back of the window.
 - The guns see no light while the picture is black, as a real gun does: a shot fired during a fade to black counts as a shot off the screen (a reload in Time Crisis). Calibration with the trigger was only tried in Time Crisis II; the calibration shot (Y) works without the light check.
 - In flat mode the beam stops on the glass.
 

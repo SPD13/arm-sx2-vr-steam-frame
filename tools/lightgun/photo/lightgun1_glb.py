@@ -1,4 +1,4 @@
-"""Stage 3: assemble the PS1 light gun drawn from photos and write its .glb (guncon1_glb.py <work> <out.glb>).
+"""Stage 3: assemble the PS1 light gun drawn from photos and write its .glb (lightgun1_glb.py <work> <out.glb>).
 Same node contract as before; see ../README.md."""
 import sys, numpy as np, trimesh
 import glb

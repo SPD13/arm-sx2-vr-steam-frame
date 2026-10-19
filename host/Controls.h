@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // Which controller input drives which DualShock 2 control, and which drives which button of the two
-// light guns (GunCon 2), set in Settings › Controls and kept in Controls.ini in the settings folder.
+// light guns (LightGun 2), set in Settings › Controls and kept in Controls.ini in the settings folder.
 // The DualShock 2 set is used while light gun mode is off, the gun sets while it is on.
 //
 // XrApp reports the controllers as they are (ControllerState: buttons, grips, triggers, sticks);
@@ -75,7 +75,7 @@ enum class Ps2Control : uint8_t
 	Count
 };
 
-// A light gun's (GunCon 2's) controls, in the order the Controls page lists them. Pedal is no button
+// A light gun's (LightGun 2's) controls, in the order the Controls page lists them. Pedal is no button
 // of the gun: it takes cover, by pressing the gun button the game uses for that (VrSettings::gun_pedal).
 enum class GunControl : uint8_t
 {
@@ -90,7 +90,7 @@ enum class GunControl : uint8_t
 	Left,
 	Right,
 	Reload, // shoot off the screen
-	Calibrate, // the calibration shot (Time Crisis's GunCon 2 calibration screen), aimed like a shot
+	Calibrate, // the calibration shot (Time Crisis's LightGun 2 calibration screen), aimed like a shot
 	Pedal,
 	Count
 };

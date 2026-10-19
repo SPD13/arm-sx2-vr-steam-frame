@@ -39,7 +39,7 @@ namespace
 	constexpr float TRIGGER_ROUGHNESS = 0.4f;
 	constexpr uint32_t BUTTON_COLOR = 0xC81E1E;
 	constexpr float BUTTON_ROUGHNESS = 0.45f;
-	// The GunCon2's other buttons and D-pad: black, as on the real gun.
+	// The LightGun 2's other buttons and D-pad: black, as on the real gun.
 	constexpr uint32_t CONTROL_COLOR = 0x1A1A1A;
 	constexpr float CONTROL_ROUGHNESS = 0.45f;
 

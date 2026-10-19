@@ -44,7 +44,7 @@ GunAim AimGun(const XrPosef& muzzle, const GunScreen& screen, const GunStereo* s
 		return aim;
 	aim.on_screen = true;
 
-	// The unshifted screen point S (meters) the GunCon reports, and where the beam ends.
+	// The unshifted screen point S (meters) the LightGun reports, and where the beam ends.
 	float sx = glass.x, sy = glass.y;
 	XrVector3f end = glass;
 

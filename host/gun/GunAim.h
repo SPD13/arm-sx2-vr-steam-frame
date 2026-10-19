@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// Where a light gun's beam lands, and where the GunCon must report it.
+// Where a light gun's beam lands, and where the LightGun must report it.
 //
 // On a flat screen that is where the beam crosses the screen. In geometric stereo (Z mode) the GS
 // draws each vertex shifted by eye_offset * k * f, k = R / (D + R) for an eye D in front of the
@@ -9,7 +9,7 @@
 // images then agree on one point for every unshifted screen point S: with g = k f, it lies g D /
 // (1 - g) behind the screen, on the line from the screen centre's viewer through S. So the beam is
 // marched into the portal: each step is seen from the left eye, whose image the depth grid comes
-// from, until it reaches the surface there; the GunCon gets that surface point's unshifted S.
+// from, until it reaches the surface there; the LightGun gets that surface point's unshifted S.
 //
 // Volumetric+ (the GS's portal) places S's point D0 (1/u - 1) behind the screen, u = Znorm /
 // convergence, for the screen distance D0, and draws it at S r / den + eye (1 - u) / den from an eye
