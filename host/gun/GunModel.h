@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 ARMSX2 VR contributors
 // SPDX-License-Identifier: GPL-3.0+
 
-// A light gun's 3D model, assets/lightgun.glb or assets/guncon2.glb (see tools/lightgun/README.md for
+// A light gun's 3D model, assets/lightgun.glb or assets/lightgun2.glb (see tools/lightgun/README.md for
 // what the host may rely on): its parts as ranges of one vertex and index list, each with its node's pose in the
 // model, and the muzzle marker the beam starts from. Metres; +Y up, -Z along the bore, +X the gun's
 // right side; the model's origin is the grip centre.

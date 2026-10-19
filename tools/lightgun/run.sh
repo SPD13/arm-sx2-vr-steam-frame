@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild assets/lightgun.glb from the two shell scans.
+# Rebuild the scan-based light gun (assets/lightgun-scan.glb, not shipped) from the two shell scans.
 # Usage: tools/lightgun/run.sh <dir with LeftScan.obj + RightScan.obj> <work dir> [python]
 # Python needs: numpy scipy trimesh pymeshlab scikit-image rtree shapely mapbox-earcut pillow
 set -euo pipefail
@@ -12,5 +12,5 @@ mkdir -p "$WORK"
 "$PY" "$HERE/fields.py" "$WORK" > /dev/null
 "$PY" "$HERE/solid.py" "$WORK" 0.5
 "$PY" "$HERE/decimate.py" "$WORK" 2600
-"$PY" "$HERE/build_glb.py" "$WORK" "$REPO/assets/lightgun.glb"
-"$PY" "$HERE/view_glb.py" "$HERE" "$REPO/assets/lightgun.glb" "$REPO/docs/images/lightgun-preview.png"
+"$PY" "$HERE/build_glb.py" "$WORK" "$REPO/assets/lightgun-scan.glb"
+"$PY" "$HERE/view_glb.py" "$HERE" "$REPO/assets/lightgun-scan.glb" "$WORK/lightgun-scan-preview.png"

@@ -1,4 +1,4 @@
-"""Assemble the low-poly light gun and write assets/lightgun.glb.
+"""Assemble the scan-based low-poly light gun (not shipped; run.sh writes assets/lightgun-scan.glb).
 Working frame (mm): +X toward the muzzle, +Z up, +Y the gun's left side."""
 import sys, json, struct, numpy as np, trimesh
 from scipy import ndimage

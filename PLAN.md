@@ -73,7 +73,7 @@ The project directory is currently empty. The plan rests on web and source resea
 - ARMSX2's Android build already wires this up for touch aiming (`platforms/android/app/src/main/cpp/native-lib.cpp`, around line 2673, `usbLightgunAim` / `usbLightgunButton`). That code is our template.
 - Limit: `MAX_POINTER_DEVICES = 1`, so two guns at once needs a small patch.
 - Feedback: the GunCon 2 has no recoil signal, so we synthesize haptics when the trigger is pulled.
-- Gun model: `assets/lightgun.glb`, a low-poly model rebuilt from scans of the PS1 light gun shells, with the trademarks removed (no "namco" or PlayStation marks). The user chose on 2026-10-12 to match the real shape closely. Pipeline and node contract: `tools/lightgun/README.md`.
+- Gun model: `assets/lightgun.glb`, a low-poly model of the PS1 light gun that is our own creation: drawn on 2026-10-18 from public photos (`tools/lightgun/photo`), with no 3D scan data and no logos or markings, as is the GunCon 2 model (`assets/lightgun2.glb`). They replaced the first models, rebuilt from shell scans whose licence was missing or unknown. The user chose on 2026-10-12 to match the real shape closely. Pipeline and node contract: `tools/lightgun/README.md`.
 
 ## Architecture
 
@@ -169,7 +169,7 @@ Keep the patches small and isolated so we can keep merging upstream ARMSX2 chang
   - Next: full multiview port (both eyes every frame), then sprite/bullet placement and profile-driven parameters.
 - **M4, light gun: BUILT, NOT YET TESTED ON THE FRAME (2026-10-13).** Branch `lightgun` (worktree `../ps2-volumetric-lightgun`, fork branch `lightgun`).
   - Core: `usb_lightgun::SetHostState` gives each USB port its own aim and buttons (two guns, no `MAX_POINTER_DEVICES` change); depth capture can be switched while running; frames carry the picture's draw rect.
-  - Host: the scanned gun model (`assets/lightgun.glb`) in each gun hand, coloured per settings, trigger and side buttons animated; muzzle beam and dot in a projection layer of their own; depth-aware aim in Portal Z mode (glass otherwise); recoil haptics; per-game light gun mode (`lightgun.ini`) with a crosshair button and a one/two guns button beside the screen; the gun as the menu pointer; GunCon tabs for gun 1 and 2 in Settings › Controls; a Light Gun settings page; `--gun-script` for headless tests.
+  - Host: the gun model (`assets/lightgun.glb`, our own, drawn from photos) in each gun hand, coloured per settings, trigger and side buttons animated; muzzle beam and dot in a projection layer of their own; depth-aware aim in Portal Z mode (glass otherwise); recoil haptics; per-game light gun mode (`lightgun.ini`) with a crosshair button and a one/two guns button beside the screen; the gun as the menu pointer; GunCon tabs for gun 1 and 2 in Settings › Controls; a Light Gun settings page; `--gun-script` for headless tests.
   - Checked on the Mac only: syntax of every host and patched core file, the aim math against analytic answers, the GLB loader, the gun control sets, page previews, a CPU render of the posed model.
 - **M5, polish and ship.**
   - In-headset settings menu: started (gear button, Display / 3D / Graphics / Audio / Game / Controls pages, Exit).

@@ -426,7 +426,7 @@ int main(int argc, char* argv[])
 	// The gun models by VrSettings::gun_model: the PS1 GunCon, the GunCon2.
 	const std::string assets = Path::Combine(EmuFolders::AppRoot, "assets");
 	if (!gun_renderer.Create(xr, device, gs->GetPhysicalDevice(), queue, queue_family,
-			{Path::Combine(assets, "lightgun.glb"), Path::Combine(assets, "guncon2.glb")}))
+			{Path::Combine(assets, "lightgun.glb"), Path::Combine(assets, "lightgun2.glb")}))
 		Console.Error("Light gun: neither guns nor controllers can be shown.");
 	else if (!gun_renderer.HasGun(0) && !gun_renderer.HasGun(1))
 		Console.Error("Light gun: no gun model; the guns are the VR controllers.");

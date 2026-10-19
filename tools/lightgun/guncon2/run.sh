@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild assets/guncon2.glb from the GunCon2 right shell scan (mirrored for the left shell).
+# Rebuild the scan-based GunCon2 (assets/lightgun2-scan.glb, not shipped) from its right shell scan (mirrored for the left shell).
 # Usage: tools/lightgun/guncon2/run.sh <dir with Right.stl> <work dir> [python]
 # Python needs: numpy scipy trimesh pymeshlab scikit-image rtree shapely mapbox-earcut pillow
 set -euo pipefail
@@ -11,5 +11,5 @@ mkdir -p "$WORK"
 "$PY" "$LG/fields.py" "$WORK" > /dev/null
 "$PY" "$LG/solid.py" "$WORK" 0.5 "$HERE/markings.json"
 "$PY" "$LG/decimate.py" "$WORK" 2600
-"$PY" "$HERE/build_glb.py" "$WORK" "$REPO/assets/guncon2.glb"
-"$PY" "$LG/view_glb.py" "$LG" "$REPO/assets/guncon2.glb" "$REPO/docs/images/guncon2-preview.png"
+"$PY" "$HERE/build_glb.py" "$WORK" "$REPO/assets/lightgun2-scan.glb"
+"$PY" "$LG/view_glb.py" "$LG" "$REPO/assets/lightgun2-scan.glb" "$WORK/lightgun2-scan-preview.png"

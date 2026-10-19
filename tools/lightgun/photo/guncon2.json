@@ -1,0 +1,83 @@
+{
+  "note": "Side outline of the PS2 light gun, traced by hand from public photos (see ../README.md). Points are pixels in the photo below, after cropping it at 'crop' (x0, y0): +y down. The photo shows the gun's left side, so the muzzle points to -x ('muzzle_left'). Widths are full widths in mm: the rear block from the D-pad's share of the rear face (0.6) and its length along the raked face in the side photo (20 mm), the others in proportion to it in the same photo; the housing is the widest part, 'size_mm' width.",
+  "photo": "https://commons.wikimedia.org/wiki/File:GunCon_e_GunCon_2.jpg",
+  "crop": [860, 900],
+  "muzzle_left": true,
+  "size_mm": {"length": 226.9, "height": 154.1, "width": 40.0},
+  "parts": {
+    "slide": {
+      "width": 32.0, "round": 3.0, "crown_mm": 14.0,
+      "poly": [
+        [70, 86], [76, 69], [1000, 69], [1014, 80], [1024, 104], [1028, 152], [650, 152], [646, 226], [70, 226]
+      ]
+    },
+    "front_sight": {
+      "width": 6.0, "round": 1.0,
+      "poly": [
+        [108, 74], [128, 49], [195, 47], [198, 74]
+      ]
+    },
+    "rib": {
+      "width": 14.0, "round": 1.5,
+      "poly": [
+        [815, 74], [822, 61], [950, 61], [955, 74]
+      ]
+    },
+    "rear_sight": {
+      "width": 16.0, "round": 1.0, "notch_width": 1.8, "notch_depth_mm": 3.0,
+      "poly": [
+        [925, 74], [990, 36], [1000, 36], [1004, 74]
+      ]
+    },
+    "rear_block": {
+      "width": 34.0, "round": 4.0,
+      "poly": [
+        [905, 140], [1026, 140], [1030, 155], [1137, 332], [1132, 345], [905, 345]
+      ]
+    },
+    "frame": {
+      "width": 30.0, "round": 3.0,
+      "poly": [
+        [70, 150], [1028, 150], [1137, 332], [1150, 368], [1175, 390], [1200, 412], [985, 548], [940, 550], [620, 528],
+        [612, 520], [612, 415], [560, 388], [475, 385], [300, 340], [100, 335], [70, 325]
+      ]
+    },
+    "grip": {
+      "width": 27.0, "round": 7.0,
+      "poly": [
+        [1190, 398], [1215, 455], [1225, 490], [1250, 550], [1275, 600], [1300, 675], [1315, 750], [1320, 825], [1315, 875],
+        [1305, 895], [1295, 920], [1125, 922], [1050, 900], [1045, 850], [1030, 700], [1015, 575], [1005, 545], [975, 540]
+      ]
+    },
+    "housing": {
+      "width": 40.0, "round": 3.0,
+      "poly": [
+        [108, 327], [410, 327], [475, 372], [477, 478], [468, 488], [130, 462], [104, 450], [100, 440], [100, 335]
+      ]
+    },
+    "guard_hole": {
+      "cut": true, "round": 2.0,
+      "poly": [
+        [665, 375], [688, 347], [950, 347], [968, 365], [970, 470], [950, 500], [925, 507], [700, 477], [670, 458], [660, 415]
+      ]
+    }
+  },
+  "tubes": {
+    "upper": {"center_y": 165, "diameter_px": 128, "front_px": 46, "back_px": 80, "bore_px": 96, "bore_depth_mm": 3.5, "round": 2.5},
+    "lower": {"center_y": 401, "diameter_px": 62, "front_px": 72, "back_px": 110, "bore_px": 34, "bore_depth_mm": 3.0}
+  },
+  "trigger": {
+    "pivot": [885, 345], "width": 7.0,
+    "poly": [
+      [865, 352], [905, 352], [902, 375], [890, 415], [870, 455], [842, 488], [828, 489], [835, 478], [860, 445], [878, 402], [868, 370]
+    ]
+  },
+  "grip_axis": {"centre_mm": 42.4, "rake_mm": [7.4, 57.4]},
+  "controls": {
+    "a_b": {"center": [765, 250], "length_px": 128, "height_px": 78, "top_mm": 1.4},
+    "select": {"center": [497, 295], "diameter_px": 44, "top_mm": 1.0},
+    "start": {"center": [580, 295], "diameter_px": 44, "top_mm": 1.0},
+    "dpad": {"face": [[1030, 155], [1137, 332]], "center_y": 238, "span_mm": 21.0, "arm_mm": 7.0, "top_mm": 2.5},
+    "c": {"width_mm": 14.0, "poly": [[1050, 897], [1105, 897], [1135, 914], [1230, 919], [1233, 934], [1062, 937], [1050, 926]]}
+  }
+}

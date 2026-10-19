@@ -30,7 +30,7 @@ Steam keys a non-Steam shortcut's artwork by the shortcut's app ID (`<id>`, the 
 
 - **ARMSX2 pillar.** Cut from the ARMSX2 app icon (`external/armsx2/platforms/ios/app/src/main/assets/app_icons/icon.png`, GPLv3 with the ARMSX2 sources) and added onto the background, so its glow blends in.
 - **Title font.** Bebas Neue, shipped by the ARMSX2 Android app (`res/font/bebas_neue.ttf`, SIL Open Font License 1.1). Only rendered text is in the images; the font file is not copied.
-- **Light gun.** `assets/lightgun.glb`, rendered by `gun.py`. This is a numpy rasteriser with perspective, cyan and violet rim lights in the ARMSX2 palette, and emissive lenses with bloom. Each scene picks the camera roll so the bore points at the red aim dot in the window (`solve_shot`).
+- **Light gun.** `assets/lightgun.glb`, rendered by `gun.py`. This is a numpy rasteriser with perspective, cyan and violet rim lights in the ARMSX2 palette, and emissive lenses with bloom. Each scene picks the camera roll so the bore points at the red aim dot in the window (`solve_shot`). The images now in `assets/steam/` and `assets/steam-final/` were rendered from the earlier, scan-based model; run `make_art.py` again to render them from our own model.
 - **The window.** The glowing frame stands for the volumetric window the game is shown in on the Frame.
 - **Alpha badge.** An amber pill reading "ALPHA" in Bebas Neue, with an amber halo (`alpha_badge`, `put_badge`). It goes in the top right corner of the capsule, the wide capsule, the hero (set in from the edges so Steam's cropping keeps it) and the icon, and under the end of "STEAM FRAME EDITION" in the logo. The `ALPHA` constant at the top of `make_art.py` turns it on.
 
