@@ -177,7 +177,7 @@ To see the bug again, disable the fix: make `RestartMultiviewPassForNewConstants
 ```
 tools/mv-debug/run.sh <name>                       # one run: step out, 7 present dumps, verdicts
 EXTRA="TU_DEBUG=sysmem" tools/mv-debug/run.sh <name>   # extra environment for ps2v
-tools/mv-debug/stepout.sh <name> "first last"...   # one dump per flush range (PS2V_FLUSH_FILE)
+tools/mv-debug/stepout.sh <name> "first last"...   # one dump per flush range (VOLUMETRIC_FLUSH_FILE)
 tools/mv-debug/capture.sh <name>                   # the run.sh run under gfxreconstruct
 ```
 
@@ -234,7 +234,7 @@ These results do not depend on run counts, so they stand.
 | Depth buffer content? | Per-draw depth saves | Correct in a broken frame; the same object as the fog pass's depth source. |
 | Render-pass coalescing? | ARMSX2's pass scheduler | Already off (`CoalesceRenderPasses = false`). |
 | SteamVR fragment-density-map (foveation) layer? | Validation layer, then disabling it (`DISABLE_VULKAN_FDM_INJECTION_LAYER`, `VK_LOADER_LAYERS_DISABLE`) | The FDM errors also appear in **mono**. Unrelated; the changes were reverted. |
-| Where in the frame does it go wrong? | Render target saved every 30 draws (`PS2V_TRACE_SAVE_EVERY`) | Furniture already triplicated after 30 draws: draws misplace geometry from the start of the frame. |
+| Where in the frame does it go wrong? | Render target saved every 30 draws (`VOLUMETRIC_TRACE_SAVE_EVERY`) | Furniture already triplicated after 30 draws: draws misplace geometry from the start of the frame. |
 
 **Conclusion of phase 1:** the emulator asks for the right draws with the right inputs. The GPU executes some of them wrongly, and only in multiview.
 
@@ -244,8 +244,8 @@ Each experiment was an env switch in the fork; all were removed after the fix (s
 
 | Experiment | Recorded result | In hindsight |
 |---|---|---|
-| GPU wait after every draw (`PS2V_FLUSH_FILE "0 9999"`) | "A broken run stays broken" | **Wrong.** A misjudged run. Retested in phase 4: 0 of 8. |
-| Per-draw render-target saves (`PS2V_TRACE_SAVE`) | Frames came out right while saving | Consistent with the fix: each save ends the pass. |
+| GPU wait after every draw (`VOLUMETRIC_FLUSH_FILE "0 9999"`) | "A broken run stays broken" | **Wrong.** A misjudged run. Retested in phase 4: 0 of 8. |
+| Per-draw render-target saves (`VOLUMETRIC_TRACE_SAVE`) | Frames came out right while saving | Consistent with the fix: each save ends the pass. |
 | Render-target layout round trip per draw (`PS2V_MV_RT_BARRIER`) | Broken, 1 of 4 | Probably a misread: this experiment ends the pass after every draw, which phase 4 showed is enough. |
 | Run pending clears outside passes (`PS2V_MV_EAGER_CLEAR`) | Broken (green noise) | Plausible: it only ends the pass when a clear is pending, not on constant changes. |
 | Copy road instead of in-pass self-reads (texture barriers off) | Broken | Plausible: does not touch constant offsets. |
@@ -296,7 +296,7 @@ What this did show: the bug depends on timing or memory visibility, not only on 
 | Cached-coherent streaming rings instead of write-combined (`PS2V_CACHED_RINGS`) | 4 of 8 | Not CPU write visibility through write-combined memory. |
 | GS thread slowed by 30 µs / 150 µs per draw (`PS2V_GS_DELAY_US`) | 2 of 8 / 7 of 8 | Timing changes the rate, with no clear trend. Not a simple CPU-side race. |
 | No vertex-shader expansion (`PS2V_NO_VSEXPAND`) | 8 of 8 | Not the storage-buffer vertex path. |
-| GPU wait after every draw (`PS2V_FLUSH_FILE "0 99999"`) | **0 of 8** | Ending the pass and waiting prevents it. |
+| GPU wait after every draw (`VOLUMETRIC_FLUSH_FILE "0 99999"`) | **0 of 8** | Ending the pass and waiting prevents it. |
 | Wait after draws 0–70 only / after draw 70 onwards only | **0 of 6** each | Both halves prevent it. Not fully explained: the driver may keep stale state across draws until a submit resets it. |
 | One wait per frame (`"0 1"`, after the first draw) | 2 of 8 | A single break is not enough. |
 | **End the pass after every draw, no wait** (`PS2V_MV_ENDPASS`) | **0 of 8** | **Key result:** no GPU wait is needed. It is not a CPU/GPU race; the pass boundary is what matters. |
@@ -328,10 +328,10 @@ All off unless set. The one-off experiment switches from the hunt were removed a
 
   | Variable | Effect |
   |---|---|
-  | `PS2V_TRACE_SAVE=dir` | Saves the render target after every draw of a traced frame. Adds a GPU flush per draw, which changes the outcome. |
-  | `PS2V_TRACE_SAVE_EVERY=N` | Saves only every Nth draw instead. |
-  | `PS2V_TRACE_SAVE_DS=1` | Saves the depth buffer instead of the render target. |
-  | `PS2V_FLUSH_FILE=file` | The file holds "first last"; draws in that index range end the pass and wait for the GPU. Re-read every frame, so it can be changed during a run (`tools/mv-debug/stepout.sh`). |
+  | `VOLUMETRIC_TRACE_SAVE=dir` | Saves the render target after every draw of a traced frame. Adds a GPU flush per draw, which changes the outcome. |
+  | `VOLUMETRIC_TRACE_SAVE_EVERY=N` | Saves only every Nth draw instead. |
+  | `VOLUMETRIC_TRACE_SAVE_DS=1` | Saves the depth buffer instead of the render target. |
+  | `VOLUMETRIC_FLUSH_FILE=file` | The file holds "first last"; draws in that index range end the pass and wait for the GPU. Re-read every frame, so it can be changed during a run (`tools/mv-debug/stepout.sh`). |
 
 - **`CheckStereoRenderPass`** logs `VK stereo: ... render pass on a N-layer target` when a pass's view count does not match its target's layers (a path still missing a per-layer loop; none expected).
 - **Vulkan validation:** the layer is copied to `~/vklayers` on the Frame. Run with `VK_LAYER_PATH=/home/steamos/vklayers VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation`. `VK_KHRONOS_VALIDATION_DUPLICATE_MESSAGE_LIMIT=100000` makes counts comparable between runs.

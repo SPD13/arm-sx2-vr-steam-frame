@@ -142,9 +142,9 @@ Settings › Graphics › **Blending accuracy** (Minimum, Basic, Medium, High), 
 | `Pacing:` log line | Every 10 s: frames, display slots missed, layers, frames written by the GS or copied by the host, features on; in gun mode also the light sensor's reading |
 | `VK stereo:` / `VK stats:` log lines | Every 600 presents: render passes and restarts per present; draw calls, pass area, barriers, copies, uploads, readbacks, blocking waits, hash cache misses, pipeline switches per frame |
 | `debug/state-stutter.p2s` | Saved automatically, once per run, at the first 10 s window under 600 frames (not in a menu); replay with `--load-state` |
-| `PS2V_MV_RESTART=vs\|none` | Restarts multiview passes only for VS constants, or never (brings back the Turnip corruption where it strikes; for measurements) |
+| `VOLUMETRIC_MV_RESTART=vs\|none` | Restarts multiview passes only for VS constants, or never (brings back the Turnip corruption where it strikes; for measurements) |
 | `PS2V_NO_PRESENT_COPY=1` | The host copies each frame into the swapchain, as before 4.3 |
-| `PS2V_NO_DIRECT_PRESENT=1` | The GS copies into the armed images instead of drawing into them |
+| `VOLUMETRIC_NO_DIRECT_PRESENT=1` | The GS copies into the armed images instead of drawing into them |
 | `Emu::SaveDebugState(name)` | Saves a state to `<data>/debug/<name>` from the host |
 
 **Headless benchmark on the Frame** (not in the repo, in `~/bench`):

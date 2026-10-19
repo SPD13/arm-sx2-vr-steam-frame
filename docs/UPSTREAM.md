@@ -40,7 +40,7 @@ git config rerere.autoupdate true
 |---|---|
 | `pcsx2/GS/GSVolumetric.h` / `.cpp` | The API the host uses (enable, stereo settings, eye views, debug dumps and traces) and its shared state; the VSync bookkeeping (`BeginVSync`, `EndMerge`). |
 | `pcsx2/GS/Renderers/HW/GSRendererHWVolumetric.h` / `.cpp` | The hardware renderer's depth capture (pairings, snapshots, `MergeDepth`), eye tagging, stereo draw classification and VS constants, and draw traces. Its state is one member, `GSRendererHW::m_vr`. |
-| `pcsx2/GS/Renderers/Vulkan/GSDeviceVKVolumetric.cpp` | Turning on multiview, the right-eye backbuffer, the depth/pre-HUD images handed over in `VKLibretro::Frame`, render-pass checks, the Turnip constant-buffer workaround, and the `PS2V_FLUSH_FILE` debugging. |
+| `pcsx2/GS/Renderers/Vulkan/GSDeviceVKVolumetric.cpp` | Turning on multiview, the right-eye backbuffer, the depth/pre-HUD images handed over in `VKLibretro::Frame`, render-pass checks, the Turnip constant-buffer workaround, and the `VOLUMETRIC_FLUSH_FILE` debugging. |
 
 ### What stays in upstream files
 
