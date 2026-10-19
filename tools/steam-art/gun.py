@@ -47,8 +47,8 @@ def camera(yaw, pitch, roll=0.0):
     return Rz @ Rx @ Ry @ side
 
 ALBEDO = {'shell': np.array([0.46, 0.47, 0.5]), 'trim': np.array([0.3, 0.3, 0.33]),
-          'lens': np.array([0.3, 0.02, 0.02])}
-SPEC = {'shell': (0.22, 10), 'trim': (0.4, 30), 'lens': (1.0, 90)}
+          'lens': np.array([0.3, 0.02, 0.02]), 'button': np.array([0.62, 0.07, 0.07])}
+SPEC = {'shell': (0.22, 10), 'trim': (0.4, 30), 'lens': (1.0, 90), 'button': (0.5, 40)}
 def _unit(v): v = np.array(v, float); return v / np.linalg.norm(v)
 KEY = _unit([-0.35, 0.7, 0.75]);    KEY_C = np.array([0.95, 0.97, 1.0]) * 1.5
 FILL = _unit([0.6, -0.3, 0.75]);   FILL_C = np.array([0.35, 0.45, 0.8]) * 0.5
